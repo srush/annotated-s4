@@ -29,6 +29,8 @@ class SSM:
         assert A.shape[1] == B.shape[0]
         self.N = self.A.shape[0]
         self.discrete = discrete
+        
+
 
 def make_HiPPO(N):
     p = np.sqrt(2 * np.arange(1, N+1) + 1.)
@@ -62,7 +64,7 @@ def discretizeSSM_bilinear(ssm, step):
 
 def K_conv_naive(ssm, L):
     assert ssm.discrete
-    return np.array([(ssm.C @ power(ssm.A, l) @ ssm.B).reshape()[0]
+    return np.array([(ssm.C @ power(ssm.A, l) @ ssm.B).reshape()
                      for l in range(L)])
 
 def K_gen_naive(ssm, L):
@@ -84,8 +86,10 @@ def K_gen_inverse(ssm, L):
 
 
 def convFromGen(gen, L):
+    order = np.array([i if i == 0 else L - i for i in range(L)])
     K_hat = applyAtRootsOfUnity(gen, L)
-    return np.fft.ifft(K_hat, L)
+    out = np.fft.ifft(K_hat, L).reshape(L)
+    return out[order]
 
 
 # Compute a Cauchy dot product $$m v$$ where
