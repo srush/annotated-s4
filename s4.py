@@ -132,13 +132,13 @@ class S4:
         self.q = q
         self.B = Param((N, 1))
         self.C = Param((1, N))
-        self.A = np.diag(self.Gamma) - self.p @ self.q.conj().T
+        self.A = np.diag(self.Gamma) - self.p[:, np.newaxis] * self.q[np.newaxis, :].conj()
 
         self.ssm = SSM(self.A, self.B, self.C)
         self.discrete = discretizeSSM_bilinear(self.ssm, step)
         
-        # self.Ct = (np.eye(N) - power(self.discrete.A, self.L)).conj().T @ self.discrete.C.ravel()
-        self.Ct = self.discrete.C @ (np.eye(N) - power(self.discrete.A, self.L))
+        self.Ct = (np.eye(N) - power(self.discrete.A, self.L)).conj().T @ self.discrete.C.ravel()
+        # self.Ct = self.discrete.C @ (np.eye(N) - power(self.discrete.A, self.L))
         
     def K_gen(self):
         return ssmGeneratingFn((self.Ct.conj().ravel(), self.q.conj().ravel()),
@@ -148,7 +148,7 @@ class S4:
     def forward(self):
         self.B
 
-L = 4        
+L = 16
 s = S4(L, 2)
 out = K_conv_naive(s.discrete, L)
 out
@@ -174,8 +174,8 @@ out2 = convFromGen(out2, L)
 out2
 
 
-# L = 32  
-# s = S4(L, 2)
-# out2 = s.K_gen()
-# out2 = convFromGen(out2, L)
-# out2
+L = 16000
+s = S4(L, 2)
+out2 = s.K_gen()
+out2 = convFromGen(out2, L)
+out2
