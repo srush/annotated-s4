@@ -3,38 +3,37 @@
 # ## Efficiently Modeling Long Sequences with Structured State Spaces
 # https://arxiv.org/abs/2111.00396
 
-import jax.numpy as np
-import numpy as onp
+
 import jax
+import jax.numpy as np
 import matplotlib.pyplot as plt
 from jax.scipy.signal import convolve
 from jax.numpy.linalg import matrix_power as power
 from jax.numpy.linalg import inv, eigvals, eig
 import torchvision
 import torch
-
-# Problem Definition
-
-
-# (Density modeling on MNist) 
-
 import optax
 from flax import linen as nn
 import flax
 from flax.training import train_state
 import torchvision.transforms as transforms
 
+# Problem Definition
+
 transform = transforms.Compose([
     transforms.ToTensor(),
     transforms.Lambda(lambda x: x.view(1, 784).t())
 ])
 
-
 trainset = torchvision.datasets.MNIST(
     root='./data', train=True, download=True, transform=transform)
-
 valset = torchvision.datasets.MNIST(
     root='./data', train=True, download=True, transform=transform)
+trainloader = torch.utils.data.DataLoader(
+    trainset, batch_size=128, shuffle=True, num_workers=10)
+valloader = torch.utils.data.DataLoader(
+    valset, batch_size=128, shuffle=False, num_workers=10)
+
 
 class MNistModel(nn.Module):
     layer : nn.Module
@@ -59,9 +58,6 @@ class MNistModel(nn.Module):
         self.decoder = nn.Dense(self.d_output)
 
     def __call__(self, x):
-        """
-        Input x is shape (L, d_input)
-        """
         def run(x):
             x = self.encoder(x)
             x = x.T
@@ -75,20 +71,15 @@ class MNistModel(nn.Module):
             x = self.decoder(x)
             return x
         return jax.vmap(run)(x)
-        
-trainloader = torch.utils.data.DataLoader(
-    trainset, batch_size=128, shuffle=True, num_workers=10)
-valloader = torch.utils.data.DataLoader(
-    valset, batch_size=128, shuffle=False, num_workers=10)
 
-
+# Make this an RNN or CNN for sanity?
+    
 class Layer(nn.Module): 
     def setup(self):
         pass
     def __call__(self, x):
         return x
 
-# loss
 def cross_entropy_loss(*, logits, labels):
     one_hot_labels = jax.nn.one_hot(labels[..., 0], num_classes=256)
     return -np.mean(np.sum(one_hot_labels * logits, axis=-1))
@@ -111,7 +102,7 @@ def create_train_state(model, init_rng, dropout_rng, learning_rate, momentum):
 def train_step(state, batch, model):    
     def loss_fn(params):
         logits = model.apply({'params': params}, batch[:, :-1], rngs={"dropout" : dropout_rng})
-        loss = cross_entropy_loss(logits=logits, labels=batch[:, 1:])
+        loss = cross_entropy_loss(logits=logits[:, :batch.shape[1]], labels=batch[:, 1:])
         return loss, logits
     grad_fn = jax.value_and_grad(loss_fn, has_aux=True)
     (_, logits), grads = grad_fn(state.params)
@@ -127,38 +118,12 @@ def train_epoch(state, model):
 # model = MNistModel(Layer)
 # train_epoch(create_train_state(model, init_rng, dropout_rng, 0.1, 0.01), model)
 
-# 
-# def Param(shape):
-#     return jax.random.uniform(key, shape)
-
-
-# def simple_regression(model):
-#     def loss(params):
-#         yhat = model(params, y)
-#         return -np.square(y[1:] - yhat).mean()
-#     return loss
-
-# # Train
-# def train(params, model):
-#     loss_grad = jax.value_and_grad(simple_regression(model))
-#     for i in range(10):
-#         loss, gParams = loss_grad(params)
-#         params = [p + LR * g for p, g in zip(params, gParams)]
-#         print(loss)
-    # return params
-
 
 
 
 # # Part 1: The Model
 
 # The state space model 
-
-# x = np.linspace(0, 10, 64)
-# y = np.sin(x) + jax.random.uniform(key, (64,))
-# plt.plot(x, y)
-# __st.pyplot()
-
 
 # ## State Space Models
 
@@ -288,7 +253,6 @@ class S4Layer(nn.Module):
 
 
 def run_train():
-    params = train(params, model)
 
     # Run the ssm
     ssm = discretize_SSM(A, params[0], params[1])
@@ -334,13 +298,6 @@ def convFromGen(gen, L):
     order = np.array([i if i == 0 else L - i for i in range(L)])
     out = np.fft.ifft(atRoots, L).reshape(L)
     return out[order]
-
-# K = K_conv(*discSSM, L=16)
-# K2 = convFromGen(K_gen_simple(*discSSM, L=16), 16)
-
-# K
-
-# K2.real
 
 
 # What was the point of that? Well working with the generating
@@ -427,33 +384,22 @@ def make_DPLR_HiPPO(N):
     return hippo, diag, 0.5 * p, q, v
 
 
-# A, Gamma, p, q, _ = make_DPLR_HiPPO(N1)
-
-# out = K_gen_simple(A, B, C)(1)
-
-# # Ct = (np.eye(self.N) - power(A, self.L)).conj().T @ C.ravel()
-# out2 = K_gen_DPLR(Gamma, p, q, B, C)(1)
-
-# out
-
-# out2
-
-
 # ## The Model
 class S4(nn.Module):
     H : int = 50
     L : int = 16
     N : int = 50
     step : int = 1
-    
+   
     def setup(self):
         self.A, self.Gamma, self.p, self.q, _ = make_DPLR_HiPPO(self.N)
         self.B = self.param('B', nn.initializers.zeros, (self.H, self.N, 1))
         self.C = self.param('C', nn.initializers.zeros, (self.H, 1, self.N))
-        
+       
         Abar, _, Cbar = discretize_SSM(self.A, self.B, self.C, self.step)
-        self.Ct = jax.vmap(lambda Cbar: (np.eye(self.N) - power(Abar, self.L)).conj().T @ Cbar.ravel())(Cbar)
-    
+        self.Ct = jax.vmap(
+            lambda Cbar: (np.eye(self.N) - power(Abar, self.L)).conj().T @ Cbar.ravel())(Cbar)
+   
     def __call__(self, y):
         def create_ssms(B, Ct):
             K_gen = K_gen_DPLR(self.Gamma, self.p, self.q, B, Ct, self.step)
@@ -466,31 +412,6 @@ model = MNistModel(layer=S4(H=256, L=64))
 train_epoch(create_train_state(model, init_rng, dropout_rng, 0.1, 0.01), model)
 
     
-# x = np.linspace(0, 1000, 16384)
-# y = np.sin(x) + np.sin(x * 10)
-# # plt.plot(x, y)
-
-# M = S4(16384, 100)
-# def model(params, y):
-#     M.set_params(params)
-#     out = M.K_gen()
-#     conv = convFromGen(out, M.L)
-#     return nonCircularConvolution(y, conv)
-
-
-# params = train(M.get_params(), model)
-
-
-# M.set_params(params)
-# ssm = M.discrete
-# v = iterative_SSM(ssm, y)
-
-
-# plt.plot(x[1:64], v)
-# plt.plot(x[1:64], y[1:])
-# __st.pyplot()
-
-
 
 # # Part 3: Pathing.
 
