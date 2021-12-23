@@ -15,6 +15,7 @@ repos:
             -   id: check-toml
             -   id: check-merge-conflict
             -   id: check-added-large-files
+                args: ['--maxkb=2000']
 
     -   repo: https://github.com/psf/black
         rev: 21.8b0
