@@ -1,0 +1,11 @@
+[flake8]
+exclude = .git
+max-line-length = 79
+ignore =
+    E203,   # Black default for colon/whitespace handling...
+    E266,   # Too many leading #s for block comment -- conflicts with jupytext
+    E501,   # Line length issues... black takes care of code, but comments/markdown are not handled
+    E741,   # Ambiguous one-character variable names -- e.g., `I` or `l`
+
+per-file-ignores =
+    */__init__.py: F401

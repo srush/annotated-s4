@@ -7,16 +7,22 @@ the other that installs for GPU.
 
 ### CPU-Only (MacOS, Linux)
 
-```bash 
+```bash
 # Set up virtual/conda environment of your choosing & activate...
 pip install -r requirements-cpu.txt
+
+# Set up pre-commit
+pre-commit install
 ```
 
-### GPU (CUDA 11.3)
+### GPU (CUDA > 11 & CUDNN > 8.0.5)
 
 ```bash
 # Set up virtual/conda environment of your choosing & activate...
-pip install -r requirements.txt
+pip install -r requirements-gpu.txt
+
+# Set up pre-commit
+pre-commit install
 ```
 
 ## Dependencies from Scratch
@@ -28,11 +34,14 @@ In case the above `requirements.txt` don't work, here are the commands used to d
 ```bash
 # Set up virtual/conda environment of your choosing & activate... then install the following:
 pip install --upgrade "jax[cpu]"
-pip install torch torchvision torchaudio
 pip install flax
+pip install torch torchvision torchaudio
 
 # Defaults
-pip install ipython matplotlib
+pip install black flake8 isort ipython matplotlib pre-commit tqdm
+
+# Set up pre-commit
+pre-commit install
 ```
 
 ### GPU (CUDA > 11, CUDNN > 8.0.5)
@@ -40,9 +49,12 @@ pip install ipython matplotlib
 ```bash
 # Set up virtual/conda environment of your choosing & activate... then install the following:
 pip install jax[cuda11_cudnn805] -f https://storage.googleapis.com/jax-releases/jax_releases.html
-pip install torch torchvision torchaudio
 pip install flax
+pip install torch torchvision torchaudio
 
 # Defaults
-pip install ipython matplotlib 
+pip install black flake8 isort ipython matplotlib pre-commit tqdm
+
+# Set up pre-commit
+pre-commit install
 ```

@@ -8,7 +8,8 @@ from functools import partial
 
 import jax
 import jax.numpy as np
-import matplotlib.pyplot as plt
+
+# import matplotlib.pyplot as plt
 import numpy as onp
 import optax
 import torch
@@ -22,9 +23,10 @@ from jax.scipy.signal import convolve
 from torch.utils.data import TensorDataset
 from tqdm import tqdm
 
+
 # RUN CONSTANTS (OPTIONS)
-MODEL = "ff"            # Option in < ff | lstm | s4-naive | s4-opt >
-DATASET = "sin-ax+b"    # Option in < sin-x | sin-ax+b | mnist >
+MODEL = "ff"  # Option in < ff | lstm | s4-naive | s4-opt >
+DATASET = "sin-ax+b"  # Option in < sin-x | sin-ax+b | mnist >
 
 ## Problem Definition
 if DATASET == "sin-x":
@@ -40,7 +42,9 @@ if DATASET == "sin-x":
     y = onp.digitize(onp.sin(x), onp.linspace(-1, 1, num=N_CLASSES))
 
     # Tile this 1024 times (10 batches)...
-    data = torch.Tensor(onp.tile(onp.expand_dims(onp.expand_dims(y, -1), 0), reps=[1024, 1, 1]))
+    data = torch.Tensor(
+        onp.tile(onp.expand_dims(onp.expand_dims(y, -1), 0), reps=[1024, 1, 1])
+    )
 
     # Build Datasets -- Two entries to match MNIST (inputs, targets) structure...
     trainset, testset = TensorDataset(data, data), TensorDataset(data[:1], data[:1])
@@ -64,8 +68,12 @@ elif DATASET == "sin-ax+b":
         data_key, a_rng, b_rng = jax.random.split(data_key, num=3)
 
         # Compute a, b
-        a, b = jax.random.uniform(a_rng, minval=1.0, maxval=A_MAX), jax.random.uniform(b_rng, maxval=B_MAX)
-        train_data.append(onp.digitize(onp.sin(a * x + b), onp.linspace(-1, 1, num=N_CLASSES)))
+        a, b = jax.random.uniform(a_rng, minval=1.0, maxval=A_MAX), jax.random.uniform(
+            b_rng, maxval=B_MAX
+        )
+        train_data.append(
+            onp.digitize(onp.sin(a * x + b), onp.linspace(-1, 1, num=N_CLASSES))
+        )
 
     # Test Data (1 Batch)
     print("\t=>> Generating 128 Test Examples...")
@@ -73,13 +81,19 @@ elif DATASET == "sin-ax+b":
         data_key, a_rng, b_rng = jax.random.split(data_key, num=3)
 
         # Compute a, b
-        a, b = jax.random.uniform(a_rng, minval=1.0, maxval=A_MAX), jax.random.uniform(b_rng, maxval=B_MAX)
-        test_data.append(onp.digitize(onp.sin(a * x + b), onp.linspace(-1, 1, num=N_CLASSES)))
+        a, b = jax.random.uniform(a_rng, minval=1.0, maxval=A_MAX), jax.random.uniform(
+            b_rng, maxval=B_MAX
+        )
+        test_data.append(
+            onp.digitize(onp.sin(a * x + b), onp.linspace(-1, 1, num=N_CLASSES))
+        )
 
     # Build Datasets -- Two entries to match MNIST (inputs, targets) structure...
     train_data = torch.Tensor(onp.expand_dims(onp.array(train_data), -1))
     test_data = torch.Tensor(onp.expand_dims(onp.array(test_data), -1))
-    trainset, testset = TensorDataset(train_data, train_data), TensorDataset(test_data, test_data)
+    trainset, testset = TensorDataset(train_data, train_data), TensorDataset(
+        test_data, test_data
+    )
 
 elif DATASET == "mnist":
     # Constants
@@ -87,17 +101,30 @@ elif DATASET == "mnist":
 
     # MNIST Sequence Modeling --> Predict next pixel value from history (autoregressively)
     print("[*] Generating MNIST Sequence Modeling Dataset...")
-    transform = transforms.Compose([transforms.ToTensor(), transforms.Lambda(lambda x: x.view(1, 784).t())])
+    transform = transforms.Compose(
+        [
+            transforms.ToTensor(),
+            transforms.Lambda(lambda x: x.view(1, 784).t()),
+        ]
+    )
 
-    trainset = torchvision.datasets.MNIST(root="./data", train=True, download=True, transform=transform)
-    testset = torchvision.datasets.MNIST(root="./data", train=False, download=True, transform=transform)
+    trainset = torchvision.datasets.MNIST(
+        root="./data", train=True, download=True, transform=transform
+    )
+    testset = torchvision.datasets.MNIST(
+        root="./data", train=False, download=True, transform=transform
+    )
 
 else:
     raise NotImplementedError(f"Dataset `{DATASET}` not yet implemented...")
 
 # Build data loaders, with fixed batch size
-trainloader = torch.utils.data.DataLoader(trainset, batch_size=128, shuffle=True, num_workers=0)
-testloader = torch.utils.data.DataLoader(testset, batch_size=128, shuffle=False, num_workers=0)
+trainloader = torch.utils.data.DataLoader(
+    trainset, batch_size=128, shuffle=True, num_workers=0
+)
+testloader = torch.utils.data.DataLoader(
+    testset, batch_size=128, shuffle=False, num_workers=0
+)
 
 
 # General Skeleton for S4 --> takes an S4Layer (naive/without-optimization, or fully loaded)
@@ -168,7 +195,10 @@ key, init_rng, dropout_rng = jax.random.split(key, num=3)
 
 # Initialize training state...
 def create_train_state(model, init_rng, dropout_rng):
-    params = model.init({"params": init_rng, "dropout": dropout_rng}, np.ones((128, SEQ_LENGTH - 1, 1)))["params"]
+    params = model.init(
+        {"params": init_rng, "dropout": dropout_rng},
+        np.ones((128, SEQ_LENGTH - 1, 1)),
+    )["params"]
     tx = optax.adamw(1e-3)
     return train_state.TrainState.create(apply_fn=model.apply, params=params, tx=tx)
 
@@ -176,8 +206,12 @@ def create_train_state(model, init_rng, dropout_rng):
 # S4 training loop (@Sidd - Reconcile all loops if possible?)
 def s4_train_step(state, batch, model):
     def loss_fn(params):
-        logits = model.apply({"params": params}, batch[:, :-1], rngs={"dropout": dropout_rng})
-        loss = cross_entropy_loss(logits=logits[:, : batch.shape[1]], labels=batch[:, 1:])
+        logits = model.apply(
+            {"params": params}, batch[:, :-1], rngs={"dropout": dropout_rng}
+        )
+        loss = cross_entropy_loss(
+            logits=logits[:, : batch.shape[1]], labels=batch[:, 1:]
+        )
         return loss, logits
 
     grad_fn = jax.value_and_grad(loss_fn, has_aux=True)
@@ -215,7 +249,9 @@ def train_epoch(state, model):
     if MODEL == "ff":
         train_step = ff_train_step
     else:
-        raise NotImplementedError(f"Training step for model `{MODEL}` not yet implemented...")
+        raise NotImplementedError(
+            f"Training step for model `{MODEL}` not yet implemented..."
+        )
 
     # Store Metrics
     batch_losses = []
@@ -234,7 +270,9 @@ def validate_mnist(params, model):
     if MODEL == "ff":
         eval_step = ff_eval_step
     else:
-        raise NotImplementedError(f"Training step for model `{MODEL}` not yet implemented...")
+        raise NotImplementedError(
+            f"Training step for model `{MODEL}` not yet implemented..."
+        )
 
     # Compute average loss & accuracy
     losses, accuracies = [], []
@@ -271,16 +309,19 @@ else:
     raise NotImplementedError(f"Model `{MODEL}` not yet implemented...")
 
 # Create boilerplate train state and jump into training
-train_state = create_train_state(model, init_rng, dropout_rng)
+state = create_train_state(model, init_rng, dropout_rng)
 for epoch in range(10):
     print(f"[*] Starting Training Epoch {epoch + 1}...")
-    train_loss = train_epoch(train_state, model)
+    train_loss = train_epoch(state, model)
 
     print(f"[*] Running Epoch {epoch + 1} Validation...")
-    test_loss, test_acc = validate_mnist(train_state.params, model)
+    test_loss, test_acc = validate_mnist(state.params, model)
 
     print(f"\n=>> Epoch {epoch + 1} Metrics ===")
-    print(f"\tTrain Loss: {train_loss:.5f} -- Test Loss: {test_loss:.5f} -- Test Accuracy: {test_acc:.4f}\n")
+    print(
+        f"\tTrain Loss: {train_loss:.5f} -- Test Loss: {test_loss:.5f} -- Test"
+        f" Accuracy: {test_acc:.4f}\n"
+    )
 
 # model = MNistModel(Layer)
 # train_epoch(create_train_state(model, init_rng, dropout_rng, 0.1, 0.01), model)
@@ -575,7 +616,9 @@ class OptimizedS4Layer(nn.Module):
         self.C = self.param("C", nn.initializers.zeros, (self.H, 1, self.N))
 
         Abar, _, Cbar = discretize_SSM(self.A, self.B, self.C, self.step)
-        self.Ct = jax.vmap(lambda Cbar: (np.eye(self.N) - power(Abar, self.L)).conj().T @ Cbar.ravel())(Cbar)
+        self.Ct = jax.vmap(
+            lambda Cbar: (np.eye(self.N) - power(Abar, self.L)).conj().T @ Cbar.ravel()
+        )(Cbar)
 
     def __call__(self, y):
         def create_ssms(B, Ct):
