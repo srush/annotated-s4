@@ -21,5 +21,4 @@ jobs:
             pip install flake8
             pip install isort
         - name: Lint & check for errors w/ black & flake8
-            # Error out if any errors...
             make check
