@@ -134,3 +134,9 @@ data/
 # Mac OS
 .DS_Store
 .idea/
+
+# Artifacts
+*.html
+*.ipynb
+*.streambook.py
+*.notebook.py
