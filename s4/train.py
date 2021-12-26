@@ -16,12 +16,14 @@ from .data import Datasets
 # We define a couple of utility functions below to compute a standard cross-entropy loss, and compute
 # "token"-level prediction accuracy.
 
-@partial(np.vectorize, signature='(c),()->()')
+
+@partial(np.vectorize, signature="(c),()->()")
 def cross_entropy_loss(logits, label):
     one_hot_label = jax.nn.one_hot(label, num_classes=logits.shape[0])
     return -np.sum(one_hot_label * logits)
 
-@partial(np.vectorize, signature='(c),()->()')
+
+@partial(np.vectorize, signature="(c),()->()")
 def compute_accuracy(logits, label):
     return np.argmax(logits) == label
 
@@ -34,8 +36,7 @@ def create_train_state(model, rng, bsz=128, seq_len=784, lr=1e-3):
     model = model(training=True)
     init_rng, dropout_rng = jax.random.split(rng, num=2)
     params = model.init(
-        {"params": init_rng, "dropout": dropout_rng},
-        np.ones((bsz, seq_len - 1, 1))
+        {"params": init_rng, "dropout": dropout_rng}, np.ones((bsz, seq_len - 1, 1))
     )["params"]
     tx = optax.adamw(lr)
     return train_state.TrainState.create(apply_fn=model.apply, params=params, tx=tx)
@@ -80,19 +81,18 @@ def validate(params, model, testloader):
 # feed-forward model attempts to predict $x_{t+1}$. During generation, the predicted "token" is fed as the new current
 # element.
 
+
 class FeedForwardModel(nn.Module):
     d_model: int
-    
+
     def setup(self):
         self.dense = nn.Dense(self.d_model)
-    
+
     def __call__(self, x):
         "x - L x N"
         return nn.relu(self.dense(x))
 
 
-
-    
 # We define separate step functions for running training and evaluation steps, accordingly. These step functions are
 # each wrapped in a call to `@jax.jit` which fuses operations, generally leading to high performance gains. These @jit
 # calls will become increasingly important as we optimize S4.
@@ -101,7 +101,7 @@ class FeedForwardModel(nn.Module):
 @partial(jax.jit, static_argnums=(3,))
 def train_step(state, rng, batch, model):
     def loss_fn(params):
-        logits = model.apply({"params": params}, batch[:, :-1],  rngs={"dropout": rng})
+        logits = model.apply({"params": params}, batch[:, :-1], rngs={"dropout": rng})
         loss = np.mean(cross_entropy_loss(logits, batch[:, 1:, 0]))
         return loss, logits
 
@@ -126,20 +126,21 @@ def eval_step(batch, params, model):
 
 class LSTMRecurrentModel(nn.Module):
     d_model: int
-    
+
     def setup(self):
-        LSTM = nn.scan(nn.LSTMCell,
-                       in_axes=0, out_axes=0,
-                       variable_broadcast='params',
-                       split_rngs={'params': False})
+        LSTM = nn.scan(
+            nn.LSTMCell,
+            in_axes=0,
+            out_axes=0,
+            variable_broadcast="params",
+            split_rngs={"params": False},
+        )
         dummy_rng = jax.random.PRNGKey(0)
         self.init_h = nn.LSTMCell.initialize_carry(dummy_rng, (), self.d_model)
         self.LSTM = LSTM(name="lstm_cell")
 
     def __call__(self, xs):
         return self.LSTM(self.init_h, xs)[1]
-
-
 
 
 # General Skeleton for residual Sequence model with  --> takes an sequence layer
@@ -150,18 +151,23 @@ class SeqModel(nn.Module):
     n_layers: int
     dropout: float = 0.2
     training: bool = True
+
     def setup(self):
         self.encoder = nn.Dense(self.d_model)
-        self.layers = tuple([
-            (self.layer(self.d_model),
-             nn.LayerNorm(),
-             nn.Dropout(self.dropout, deterministic=not self.training))
-            for _ in range(self.n_layers)
-        ])
+        self.layers = tuple(
+            [
+                (
+                    self.layer(self.d_model),
+                    nn.LayerNorm(),
+                    nn.Dropout(self.dropout, deterministic=not self.training),
+                )
+                for _ in range(self.n_layers)
+            ]
+        )
         self.decoder = nn.Dense(self.d_output)
 
     def __call__(self, x):
-        # x - L x N 
+        # x - L x N
         x = self.encoder(x)
         for layer, norm, dropout in self.layers:
             z = dropout(layer(x))
@@ -190,12 +196,16 @@ def example_train(
 
     print("[*] Starting Training =>> Initializing Model + Train State...")
 
-    BatchSeqModel = nn.vmap(SeqModel,
-                            in_axes=0, out_axes=0,
-                            variable_axes={"params" : None, "dropout": None},
-                            split_rngs={"params" : False, "dropout" : False}
+    BatchSeqModel = nn.vmap(
+        SeqModel,
+        in_axes=0,
+        out_axes=0,
+        variable_axes={"params": None, "dropout": None},
+        split_rngs={"params": False, "dropout": False},
     )
-    model = partial(BatchSeqModel, layer=model_cls, d_output=n_classes, d_model=64, n_layers=4)
+    model = partial(
+        BatchSeqModel, layer=model_cls, d_output=n_classes, d_model=64, n_layers=4
+    )
     state = create_train_state(model, rng, bsz=bsz, seq_len=seq_len)
 
     # Loop over epochs
@@ -204,9 +214,7 @@ def example_train(
         state, train_loss = train_epoch(state, train_rng, model, trainloader)
 
         print(f"[*] Running Epoch {epoch + 1} Validation...")
-        test_loss, test_acc = validate(
-            state.params, model, testloader
-        )
+        test_loss, test_acc = validate(state.params, model, testloader)
 
         print(f"\n=>> Epoch {epoch + 1} Metrics ===")
         print(
@@ -214,21 +222,23 @@ def example_train(
             f" Accuracy: {test_acc:.4f}\n"
         )
 
-    
+
 Models = {
-    "ff" : FeedForwardModel,
-    "lstm" : LSTMRecurrentModel,
-    }
-    
+    "ff": FeedForwardModel,
+    "lstm": LSTMRecurrentModel,
+}
+
 
 def run_train():
     example_train()
-    
+
+
 if __name__ == "__main__":
     import argparse
+
     parser = argparse.ArgumentParser()
-    parser.add_argument('--dataset', type=str, choices= Datasets.keys(), required=True)
-    parser.add_argument('--model', type=str, choices= Models.keys(), required=True)
+    parser.add_argument("--dataset", type=str, choices=Datasets.keys(), required=True)
+    parser.add_argument("--model", type=str, choices=Models.keys(), required=True)
     args = parser.parse_args()
 
-    example_train(Models[args.model],  Datasets[args.dataset])
+    example_train(Models[args.model], Datasets[args.dataset])
