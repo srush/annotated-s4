@@ -34,6 +34,7 @@ from flax import linen as nn
 from jax.numpy.linalg import eig, inv, matrix_power
 from jax.scipy.signal import convolve
 
+
 # ## Simple Sequence Modeling Datasets
 # To show how S4 behaves on various sequence modeling tasks, we create three simple datasets, ranging from a simple toy
 # overfitting example, to a more complex $sin$ function tracing problem, finally ending with an MNIST image generation
@@ -252,7 +253,7 @@ def convFromGen(gen, L):
 
 def K_gen_inverse(A, B, C, L):
     I = np.eye(A.shape[0])
-    A_L = power(A, L)
+    A_L = matrix_power(A, L)
     C2 = C @ (I - A_L)
     return lambda z: (C2 @ inv(I - A * z) @ B).reshape()
 
@@ -349,7 +350,8 @@ class OptimizedS4Layer(nn.Module):
 
         Abar, _, Cbar = discretize_SSM(self.A, self.B, self.C, self.step)
         self.Ct = jax.vmap(
-            lambda Cbar: (np.eye(self.N) - power(Abar, self.L)).conj().T @ Cbar.ravel()
+            lambda Cbar: (np.eye(self.N) - matrix_power(Abar, self.L)).conj().T
+            @ Cbar.ravel()
         )(Cbar)
 
     def __call__(self, y):

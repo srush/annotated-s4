@@ -1,11 +1,12 @@
-import optax
-from flax.training import train_state
-import jax
 from functools import partial
+import jax
 import jax.numpy as np
-from tqdm import tqdm
+import optax
 from flax import linen as nn
+from flax.training import train_state
+from tqdm import tqdm
 from .data import Datasets
+
 
 # ## Baseline Models
 #

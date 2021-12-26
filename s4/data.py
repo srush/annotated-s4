@@ -1,10 +1,11 @@
+import jax
+import numpy as np
 import torch
 import torchvision
 import torchvision.transforms as transforms
 from torch.utils.data import TensorDataset
-import numpy as np
 from tqdm import tqdm
-import jax
+
 
 # ### $sin(x)$
 # **Task**: Overfit to a 8-bit quantized sin(x) from 0 - 2*Pi -- sampled 360 times.
