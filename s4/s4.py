@@ -33,7 +33,7 @@ import jax.numpy as np
 from flax import linen as nn
 from jax.numpy.linalg import eig, inv, matrix_power
 from jax.scipy.signal import convolve
-
+from functools import partial
 
 # ## Simple Sequence Modeling Datasets
 # To show how S4 behaves on various sequence modeling tasks, we create three simple datasets, ranging from a simple toy
@@ -89,8 +89,7 @@ from jax.scipy.signal import convolve
 
 # https://en.wikipedia.org/wiki/Bilinear_transform
 
-
-def discretize_SSM(A, B, C, step=1):
+def discretize_SSM(A, B, C, step):
     I = np.eye(A.shape[0])
     BL = inv((I - (step / 2.0) * A))
     Abar = BL @ (I + (step / 2.0) * A)
@@ -111,7 +110,6 @@ def iterative_SSM(A, B, C, y):
     def f(X, y):
         X = A @ X + (B * y).ravel()
         return X, C @ X
-
     return jax.lax.scan(f, np.zeros(B.shape[0]), y)[1]
 
 
@@ -128,7 +126,6 @@ def iterative_SSM(A, B, C, y):
 
 # We call $K \in R^L$ the convolutional filter representation of the discrete SSM.
 
-
 def K_conv(A, B, C, L):
     return np.array([(C @ matrix_power(A, l) @ B).reshape() for l in range(L)])
 
@@ -137,9 +134,41 @@ def K_conv(A, B, C, L):
 
 # This convolution is big though!
 
-
+# @partial(np.vectorize, signature="(c),(c)->(c)")
 def nonCircularConvolution(x, filt):
-    return convolve(x, filt, mode="full", method="fft")[: x.shape[0]]
+    return convolve(x, filt, mode="full")[: x.shape[0]]
+
+
+# ## Running it
+
+class NaiveSSMLayer(nn.Module):
+    A : np.DeviceArray
+    N : int
+    d_model : int
+    l_max: int 
+    dropout: float = 0.2
+    
+
+    def setup(self):
+        self.B = self.param("B", nn.initializers.lecun_normal(), (self.N, 1))
+        self.C = self.param("C", nn.initializers.lecun_normal(), (1, self.N))
+        self.D = self.param("D", nn.initializers.ones, (1,))
+        
+    def __call__(self, y):
+        ssm = discretize_SSM(self.A, self.B, self.C, step=1. / self.l_max)
+        K = K_conv(*ssm, self.l_max)
+        return nonCircularConvolution(y, K) + self.D * y
+
+NaiveSSMLayer = nn.vmap(
+    NaiveSSMLayer,
+    in_axes=1,
+    out_axes=1,
+    variable_axes={"params": 1},
+    split_rngs={"params": True},
+)
+
+    
+# This creates d_output number of SSM layers
 
 
 # ## HiPPO matrices
@@ -150,47 +179,12 @@ def nonCircularConvolution(x, filt):
 def make_HiPPO(N):
     p = np.sqrt(2 * np.arange(1, N + 1) + 1.0)
     A = p[:, np.newaxis] @ p[np.newaxis, :]
-    return -np.tril(A, k=-1) - np.diag(np.arange(1, N + 1) + 1)
+    return np.tril(A, k=-1) + np.diag(np.arange(1, N + 1) + 1)
 
 
-# ## Running it
 
-# Create a model
-# N1 = 16
-# L1 = 64
-# LR = 0.1
-# A, B, C = make_HiPPO(N1), Param((N1, 1)), Param((1, N1))
-# params = [B, C]
-
-# def model(params, y):
-#     ssm = discretize_SSM(A, params[0], params[1])
-#     # Turn to convolution
-#     K = K_conv(*ssm, L1)
-#     # Run as convolution
-#     return nonCircularConvolution(y, K)
-
-
-class NaiveS4Layer(nn.Module):
-    H: int = 50
-    l_max: int = 16
-    dropout: float = 0.2
-    N: int = 50
-
-    def setup(self):
-        self.A = make_HiPPO(self.N).reshape(1, self.N, self.N)
-        self.B = self.param("B", nn.initializers.zeros, (self.H, self.N, 1))
-        self.C = self.param("C", nn.initializers.zeros, (self.H, 1, self.N))
-
-    def __call__(self, y):
-        def create_ssms(A, B, C):
-            ssm = discretize_SSM(A, B, C)
-            return K_conv(*ssm, self.l_max)
-
-        K = jax.vmap(lambda B, C: create_ssms(self.A, B, C))(self.B, self.C)
-
-        # Run as convolution
-        return jax.vmap(nonCircularConvolution)(y, K)
-
+def NaiveSSMInit(N):
+    return partial(NaiveSSMLayer, A=make_HiPPO(N), N=N)
 
 # def run_train():
 #
@@ -238,7 +232,7 @@ def convFromGen(gen, L):
     atRoots = jax.vmap(gen)(r)
     order = np.array([i if i == 0 else L - i for i in range(L)])
     out = np.fft.ifft(atRoots, L).reshape(L)
-    return out[order]
+    return out[order].real
 
 
 # What was the point of that? Well working with the generating
@@ -278,7 +272,7 @@ def K_gen_inverse(A, B, C, L):
 
 # Will make a simple function to compute sums of this form.
 
-
+@partial(np.vectorize, signature="(c),(),(c)->()")
 def cauchy_dot(v, omega, lambd):
     return (v / (omega - lambd)).sum()
 
@@ -299,8 +293,7 @@ def cauchy_dot(v, omega, lambd):
 
 # The math to get there for real is a bit complex, but here is what the function looks like
 
-
-def K_gen_DPLR(Gamma, p, q, B, Ct, step=1):
+def K_gen_DPLR(Gamma, p, q, B, Ct, step):
     aterm = (Ct.conj().ravel(), q.conj().ravel())
     bterm = (B.ravel(), p.ravel())
 
@@ -325,44 +318,60 @@ eig_cpu = jax.jit(eig, backend="cpu")
 def make_DPLR_HiPPO(N):
     p = np.sqrt(2 * np.arange(1, N + 1) + 1.0)
     q = p
-    A = p[:, np.newaxis] @ q[np.newaxis, :]
+    A = p[:, np.newaxis] * q[np.newaxis, :]
     hippo = -np.tril(A, k=-1) - np.diag(np.arange(1, N + 1) + 1)
     S = hippo + 0.5 * A + 0.5 * np.eye(N)
-
-    # Skew symmetric -- @Sidd Note: eig/eigvals not GPU/lax-backed, so call from cpu instead...
     diag, v = eig_cpu(S)
-    diag -= 0.5
+    diag = diag - 0.5
+    # Skew symmetric -- @Sidd Note: eig/eigvals not GPU/lax-backed, so call from cpu instead...
 
     return hippo, diag, 0.5 * p, q, v
 
 
 # ## The Model
-class OptimizedS4Layer(nn.Module):
-    H: int = 50
-    L: int = 16
-    N: int = 50
-    step: int = 1
+class S4Layer(nn.Module):
+    A : np.DeviceArray
+    p : np.DeviceArray
+    q : np.DeviceArray
+    Gamma : np.DeviceArray
+    N : int
+    d_model: int 
+    l_max: int
 
     def setup(self):
-        self.A, self.Gamma, self.p, self.q, _ = make_DPLR_HiPPO(self.N)
-        self.B = self.param("B", nn.initializers.zeros, (self.H, self.N, 1))
-        self.C = self.param("C", nn.initializers.zeros, (self.H, 1, self.N))
-
+        self.step = 1. / self.l_max
+        self.B = self.param("B", nn.initializers.lecun_normal(), (self.N, 1))
+        self.C = self.param("C", nn.initializers.lecun_normal(), (1, self.N))
+        self.D = self.param("D", nn.initializers.ones, (1,))
         Abar, _, Cbar = discretize_SSM(self.A, self.B, self.C, self.step)
-        self.Ct = jax.vmap(
-            lambda Cbar: (np.eye(self.N) - matrix_power(Abar, self.L)).conj().T
-            @ Cbar.ravel()
-        )(Cbar)
+        I = np.eye(self.N)
+        self.Ct = (I - matrix_power(Abar, self.l_max)).conj().T @ Cbar.ravel()
 
     def __call__(self, y):
-        def create_ssms(B, Ct):
-            K_gen = K_gen_DPLR(self.Gamma, self.p, self.q, B, Ct, self.step)
-            return convFromGen(K_gen, self.L)
+        K_gen = K_gen_DPLR(self.Gamma, self.p, self.q, self.B, self.Ct, self.step)
+        K = convFromGen(K_gen, self.l_max)
+        return nonCircularConvolution(y, K) + self.D * y
 
-        K = jax.vmap(create_ssms)(self.B, self.Ct)
-        return jax.vmap(nonCircularConvolution)(y, K)
+S4Layer = nn.vmap(
+    S4Layer,
+    in_axes=1,
+    out_axes=1,
+    variable_axes={"params": 1},
+    split_rngs={"params": True},
+)
 
+    
+def S4LayerInit(N):
+    # Factor hippo into a unitary transform of a DPLR
+    _, Gamma, p, q, V = make_DPLR_HiPPO(N)
+    Vc = V.conj().T
+    p = Vc @ p
+    q = Vc @ q.conj()
+    A = np.diag(Gamma) - p[:, np.newaxis] @ q[:, np.newaxis].conj().T
+    # A = np.diag(Gamma) - p @ q.conj().T
+    return partial(S4Layer, N=N, A=A, p=p, q=q, Gamma=Gamma)
 
+    
 # # Part 3: Putting S4 to the Test
 
 # ## Path-X

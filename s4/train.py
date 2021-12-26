@@ -3,7 +3,8 @@ import jax
 import jax.numpy as np
 import optax
 from flax import linen as nn
-from flax.training import train_state
+from flax.training import train_state, checkpoints
+
 from tqdm import tqdm
 from .data import Datasets
 
@@ -85,7 +86,7 @@ def validate(params, model, testloader):
 
 class FeedForwardModel(nn.Module):
     d_model: int
-
+    l_max : int
     def setup(self):
         self.dense = nn.Dense(self.d_model)
 
@@ -102,11 +103,12 @@ class FeedForwardModel(nn.Module):
 @partial(jax.jit, static_argnums=(3,))
 def train_step(state, rng, batch, model):
     def loss_fn(params):
-        logits = model.apply({"params": params}, batch[:, :-1], rngs={"dropout": rng})
+        logits, mod_vars = model.apply({"params": params}, batch[:, :-1], rngs={"dropout": rng},
+                                       mutable=["intermediates"])
         loss = np.mean(cross_entropy_loss(logits, batch[:, 1:, 0]))
         return loss, logits
-
     grad_fn = jax.value_and_grad(loss_fn, has_aux=True)
+    # print(state.params)
     (loss, logits), grads = grad_fn(state.params)
     state = state.apply_gradients(grads=grads)
     return state, loss
@@ -127,39 +129,46 @@ def eval_step(batch, params, model):
 
 class LSTMRecurrentModel(nn.Module):
     d_model: int
-
+    l_max : int
     def setup(self):
         LSTM = nn.scan(
-            nn.LSTMCell,
+            nn.OptimizedLSTMCell,
             in_axes=0,
             out_axes=0,
             variable_broadcast="params",
             split_rngs={"params": False},
         )
         dummy_rng = jax.random.PRNGKey(0)
-        self.init_h = nn.LSTMCell.initialize_carry(dummy_rng, (), self.d_model)
+        self.init_h = nn.OptimizedLSTMCell.initialize_carry(dummy_rng, (), self.d_model)
         self.LSTM = LSTM(name="lstm_cell")
 
     def __call__(self, xs):
         return self.LSTM(self.init_h, xs)[1]
 
 
+
+
+    
 # General Skeleton for residual Sequence model with  --> takes an sequence layer
 class SeqModel(nn.Module):
     layer: nn.Module
     d_output: int
     d_model: int
+    l_max : int
     n_layers: int
     dropout: float = 0.2
     training: bool = True
-
+    sampling: bool = False
+    
     def setup(self):
         self.encoder = nn.Dense(self.d_model)
         self.layers = tuple(
             [
                 (
-                    self.layer(self.d_model),
+                    self.layer(d_model=self.d_model, l_max=self.l_max),
                     nn.LayerNorm(),
+                    nn.Dense(self.d_model),
+                    nn.Dense(self.d_model),
                     nn.Dropout(self.dropout, deterministic=not self.training),
                 )
                 for _ in range(self.n_layers)
@@ -170,12 +179,22 @@ class SeqModel(nn.Module):
     def __call__(self, x):
         # x - L x N
         x = self.encoder(x)
-        for layer, norm, dropout in self.layers:
-            z = dropout(layer(x))
+        for l, (layer, norm, inp, out, dropout) in enumerate(self.layers):
+            x2 = layer(inp(x))
+            z = dropout(out(nn.gelu(x2)))
+            # z = x2
             x = norm(z + x)
+
         x = self.decoder(x)
         return nn.log_softmax(x)
 
+BatchSeqModel = nn.vmap(
+        SeqModel,
+        in_axes=0,
+        out_axes=0,
+        variable_axes={"params": None, "dropout": None},
+        split_rngs={"params": False, "dropout": False},
+    )
 
 # ## Sanity Checks
 # Here we provide examples for training & evaluation our baseline models on the various datasets.
@@ -197,31 +216,26 @@ def example_train(
 
     print("[*] Starting Training =>> Initializing Model + Train State...")
 
-    BatchSeqModel = nn.vmap(
-        SeqModel,
-        in_axes=0,
-        out_axes=0,
-        variable_axes={"params": None, "dropout": None},
-        split_rngs={"params": False, "dropout": False},
-    )
     model = partial(
-        BatchSeqModel, layer=model_cls, d_output=n_classes, d_model=64, n_layers=4
+        BatchSeqModel, layer=model_cls, d_output=n_classes, d_model=64, n_layers=4, l_max=seq_len
     )
     state = create_train_state(model, rng, bsz=bsz, seq_len=seq_len)
 
     # Loop over epochs
     for epoch in range(epochs):
-        print(f"[*] Starting Training Epoch {epoch + 1}...")
-        state, train_loss = train_epoch(state, train_rng, model, trainloader)
 
         print(f"[*] Running Epoch {epoch + 1} Validation...")
         test_loss, test_acc = validate(state.params, model, testloader)
-
+        checkpoints.save_checkpoint("mnist", state, epoch)
         print(f"\n=>> Epoch {epoch + 1} Metrics ===")
+        print(f"[*] Starting Training Epoch {epoch + 1}...")
+        state, train_loss = train_epoch(state, train_rng, model, trainloader)
+
         print(
             f"\tTrain Loss: {train_loss:.5f} -- Test Loss: {test_loss:.5f} -- Test"
             f" Accuracy: {test_acc:.4f}\n"
         )
+
 
 
 Models = {
@@ -229,9 +243,6 @@ Models = {
     "lstm": LSTMRecurrentModel,
 }
 
-
-def run_train():
-    example_train()
 
 
 if __name__ == "__main__":

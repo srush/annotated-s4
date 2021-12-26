@@ -21,7 +21,7 @@ def create_sin_x_dataset(n_examples=1024, bsz=128):
     print("[*] Generating Toy Dataset: sin(x)...")
 
     # Constants
-    SEQ_LENGTH, N_CLASSES = 360, 8
+    SEQ_LENGTH, N_CLASSES = 200, 8
     x = np.linspace(0, 2 * np.pi, num=SEQ_LENGTH)
     y = np.digitize(np.sin(x), np.linspace(-1, 1, num=N_CLASSES))
 
@@ -130,7 +130,7 @@ def create_mnist_dataset(bsz=128):
 
 
 Datasets = {
-    "MNist": create_mnist_dataset,
+    "mnist": create_mnist_dataset,
     "sin": create_sin_x_dataset,
     "sin_noise": create_sin_ax_b_dataset,
 }
