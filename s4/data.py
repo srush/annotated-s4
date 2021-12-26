@@ -129,7 +129,7 @@ def create_mnist_dataset(bsz=128):
 
 
 Datasets = {
-    "MNist" : create_mnist_dataset,
-    "sin" : create_sin_x_dataset,
-    "sin_noise" : create_sin_ax_b_dataset
-    }
+    "MNist": create_mnist_dataset,
+    "sin": create_sin_x_dataset,
+    "sin_noise": create_sin_ax_b_dataset,
+}
