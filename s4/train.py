@@ -3,8 +3,7 @@ import jax
 import jax.numpy as np
 import optax
 from flax import linen as nn
-from flax.training import train_state, checkpoints
-
+from flax.training import checkpoints, train_state
 from tqdm import tqdm
 from .data import Datasets
 
@@ -86,7 +85,8 @@ def validate(params, model, testloader):
 
 class FeedForwardModel(nn.Module):
     d_model: int
-    l_max : int
+    l_max: int
+
     def setup(self):
         self.dense = nn.Dense(self.d_model)
 
@@ -103,10 +103,15 @@ class FeedForwardModel(nn.Module):
 @partial(jax.jit, static_argnums=(3,))
 def train_step(state, rng, batch, model):
     def loss_fn(params):
-        logits, mod_vars = model.apply({"params": params}, batch[:, :-1], rngs={"dropout": rng},
-                                       mutable=["intermediates"])
+        logits, mod_vars = model.apply(
+            {"params": params},
+            batch[:, :-1],
+            rngs={"dropout": rng},
+            mutable=["intermediates"],
+        )
         loss = np.mean(cross_entropy_loss(logits, batch[:, 1:, 0]))
         return loss, logits
+
     grad_fn = jax.value_and_grad(loss_fn, has_aux=True)
     # print(state.params)
     (loss, logits), grads = grad_fn(state.params)
@@ -129,7 +134,8 @@ def eval_step(batch, params, model):
 
 class LSTMRecurrentModel(nn.Module):
     d_model: int
-    l_max : int
+    l_max: int
+
     def setup(self):
         LSTM = nn.scan(
             nn.OptimizedLSTMCell,
@@ -146,20 +152,17 @@ class LSTMRecurrentModel(nn.Module):
         return self.LSTM(self.init_h, xs)[1]
 
 
-
-
-    
 # General Skeleton for residual Sequence model with  --> takes an sequence layer
 class SeqModel(nn.Module):
     layer: nn.Module
     d_output: int
     d_model: int
-    l_max : int
+    l_max: int
     n_layers: int
     dropout: float = 0.2
     training: bool = True
     sampling: bool = False
-    
+
     def setup(self):
         self.encoder = nn.Dense(self.d_model)
         self.layers = tuple(
@@ -188,13 +191,14 @@ class SeqModel(nn.Module):
         x = self.decoder(x)
         return nn.log_softmax(x)
 
+
 BatchSeqModel = nn.vmap(
-        SeqModel,
-        in_axes=0,
-        out_axes=0,
-        variable_axes={"params": None, "dropout": None},
-        split_rngs={"params": False, "dropout": False},
-    )
+    SeqModel,
+    in_axes=0,
+    out_axes=0,
+    variable_axes={"params": None, "dropout": None},
+    split_rngs={"params": False, "dropout": False},
+)
 
 # ## Sanity Checks
 # Here we provide examples for training & evaluation our baseline models on the various datasets.
@@ -218,7 +222,12 @@ def example_train(
     print("[*] Starting Training =>> Initializing Model + Train State...")
 
     model = partial(
-        BatchSeqModel, layer=model_cls, d_model=d_model, d_output=n_classes, n_layers=4, l_max=seq_len
+        BatchSeqModel,
+        layer=model_cls,
+        d_model=d_model,
+        d_output=n_classes,
+        n_layers=4,
+        l_max=seq_len,
     )
     state = create_train_state(model, rng, bsz=bsz, seq_len=seq_len)
 
@@ -238,12 +247,10 @@ def example_train(
         )
 
 
-
 Models = {
     "ff": FeedForwardModel,
     "lstm": LSTMRecurrentModel,
 }
-
 
 
 if __name__ == "__main__":

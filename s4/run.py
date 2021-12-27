@@ -1,6 +1,6 @@
-from .train import example_train
 from .data import Datasets
-from .s4 import S4LayerInit, NaiveSSMInit
+from .s4 import NaiveSSMInit, S4LayerInit
+from .train import example_train
 
 
 if __name__ == "__main__":

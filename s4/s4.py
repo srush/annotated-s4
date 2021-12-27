@@ -28,12 +28,13 @@
 
 # We'll be using Jax to build S4 (see notes at the end for justification)
 
+from functools import partial
 import jax
 import jax.numpy as np
 from flax import linen as nn
 from jax.numpy.linalg import eig, inv, matrix_power
 from jax.scipy.signal import convolve
-from functools import partial
+
 
 # ## Simple Sequence Modeling Datasets
 # To show how S4 behaves on various sequence modeling tasks, we create three simple datasets, ranging from a simple toy
@@ -89,6 +90,7 @@ from functools import partial
 
 # https://en.wikipedia.org/wiki/Bilinear_transform
 
+
 def discretize_SSM(A, B, C, step):
     I = np.eye(A.shape[0])
     BL = inv((I - (step / 2.0) * A))
@@ -110,6 +112,7 @@ def iterative_SSM(A, B, C, y):
     def f(X, y):
         X = A @ X + (B * y).ravel()
         return X, C @ X
+
     return jax.lax.scan(f, np.zeros(B.shape[0]), y)[1]
 
 
@@ -126,6 +129,7 @@ def iterative_SSM(A, B, C, y):
 
 # We call $K \in R^L$ the convolutional filter representation of the discrete SSM.
 
+
 def K_conv(A, B, C, L):
     return np.array([(C @ matrix_power(A, l) @ B).reshape() for l in range(L)])
 
@@ -141,23 +145,24 @@ def nonCircularConvolution(x, filt):
 
 # ## Running it
 
+
 class NaiveSSMLayer(nn.Module):
-    A : np.DeviceArray
-    N : int
-    d_model : int
-    l_max: int 
+    A: np.DeviceArray
+    N: int
+    d_model: int
+    l_max: int
     dropout: float = 0.2
-    
 
     def setup(self):
         self.B = self.param("B", nn.initializers.lecun_normal(), (self.N, 1))
         self.C = self.param("C", nn.initializers.lecun_normal(), (1, self.N))
         self.D = self.param("D", nn.initializers.ones, (1,))
-        
+
     def __call__(self, y):
-        ssm = discretize_SSM(self.A, self.B, self.C, step=1. / self.l_max)
+        ssm = discretize_SSM(self.A, self.B, self.C, step=1.0 / self.l_max)
         K = K_conv(*ssm, self.l_max)
         return nonCircularConvolution(y, K) + self.D * y
+
 
 NaiveSSMLayer = nn.vmap(
     NaiveSSMLayer,
@@ -167,7 +172,7 @@ NaiveSSMLayer = nn.vmap(
     split_rngs={"params": True},
 )
 
-    
+
 # This creates d_output number of SSM layers
 
 
@@ -182,9 +187,9 @@ def make_HiPPO(N):
     return np.tril(A, k=-1) + np.diag(np.arange(1, N + 1) + 1)
 
 
-
 def NaiveSSMInit(N):
     return partial(NaiveSSMLayer, A=make_HiPPO(N), N=N)
+
 
 # def run_train():
 #
@@ -272,6 +277,7 @@ def K_gen_inverse(A, B, C, L):
 
 # Will make a simple function to compute sums of this form.
 
+
 @partial(np.vectorize, signature="(c),(),(c)->()")
 def cauchy_dot(v, omega, lambd):
     return (v / (omega - lambd)).sum()
@@ -292,6 +298,7 @@ def cauchy_dot(v, omega, lambd):
 
 
 # The math to get there for real is a bit complex, but here is what the function looks like
+
 
 def K_gen_DPLR(Gamma, p, q, B, Ct, step):
     aterm = (Ct.conj().ravel(), q.conj().ravel())
@@ -330,16 +337,16 @@ def make_DPLR_HiPPO(N):
 
 # ## The Model
 class S4Layer(nn.Module):
-    A : np.DeviceArray
-    p : np.DeviceArray
-    q : np.DeviceArray
-    Gamma : np.DeviceArray
-    N : int
-    d_model: int 
+    A: np.DeviceArray
+    p: np.DeviceArray
+    q: np.DeviceArray
+    Gamma: np.DeviceArray
+    N: int
+    d_model: int
     l_max: int
 
     def setup(self):
-        self.step = 1. / self.l_max
+        self.step = 1.0 / self.l_max
         self.B = self.param("B", nn.initializers.lecun_normal(), (self.N, 1))
         self.C = self.param("C", nn.initializers.lecun_normal(), (1, self.N))
         self.D = self.param("D", nn.initializers.ones, (1,))
@@ -352,6 +359,7 @@ class S4Layer(nn.Module):
         K = convFromGen(K_gen, self.l_max)
         return nonCircularConvolution(y, K) + self.D * y
 
+
 S4Layer = nn.vmap(
     S4Layer,
     in_axes=1,
@@ -360,7 +368,7 @@ S4Layer = nn.vmap(
     split_rngs={"params": True},
 )
 
-    
+
 def S4LayerInit(N):
     # Factor hippo into a unitary transform of a DPLR
     _, Gamma, p, q, V = make_DPLR_HiPPO(N)
@@ -371,7 +379,7 @@ def S4LayerInit(N):
     # A = np.diag(Gamma) - p @ q.conj().T
     return partial(S4Layer, N=N, A=A, p=p, q=q, Gamma=Gamma)
 
-    
+
 # # Part 3: Putting S4 to the Test
 
 # ## Path-X
