@@ -5,7 +5,7 @@ import optax
 from flax import linen as nn
 from flax.training import checkpoints, train_state
 from tqdm import tqdm
-from .data import Datasets
+from data import Datasets
 
 
 # ## Baseline Models
