@@ -203,6 +203,7 @@ BatchSeqModel = nn.vmap(
 def example_train(
     model_cls,
     create_dataset_fn,
+    d_model=256,
     bsz=128,
     epochs=10,
 ):
@@ -217,7 +218,7 @@ def example_train(
     print("[*] Starting Training =>> Initializing Model + Train State...")
 
     model = partial(
-        BatchSeqModel, layer=model_cls, d_output=n_classes, d_model=64, n_layers=4, l_max=seq_len
+        BatchSeqModel, layer=model_cls, d_model=d_model, d_output=n_classes, n_layers=4, l_max=seq_len
     )
     state = create_train_state(model, rng, bsz=bsz, seq_len=seq_len)
 
