@@ -25,9 +25,10 @@ def test_ssm():
     out3 = s4.convFromGen(out3, L)
     assert np.allclose(out2, out3, atol=1e-2, rtol=1e-2)
 
-
     u = jax.random.uniform(rng, (L,))
-    y2 = s4.scanSSM(s4.stepSSM(*ssm), u[:, np.newaxis], np.zeros((ssm[0].shape[0],))).ravel()
+    y2 = s4.scanSSM(
+        s4.stepSSM(*ssm), u[:, np.newaxis], np.zeros((ssm[0].shape[0],))
+    ).ravel()
     y3 = s4.nonCircularConvolution(u, out)
     assert np.allclose(y2, y3, atol=1e-2, rtol=1e-2)
 

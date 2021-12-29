@@ -31,12 +31,14 @@
 from functools import partial
 import jax
 import jax.numpy as np
-from flax import linen as nn
-from jax.numpy.linalg import eig, inv, matrix_power
-from jax.scipy.signal import convolve
 import matplotlib.pyplot as plt
 import seaborn
 from celluloid import Camera
+from flax import linen as nn
+from jax.numpy.linalg import eig, inv, matrix_power
+from jax.scipy.signal import convolve
+
+
 # Define CPU asymmetric eigenvalue decomposition
 eig_cpu = jax.jit(eig, backend="cpu")
 
@@ -69,10 +71,9 @@ seaborn.set_context("paper")
 # Concretely, the parameters of the model are  $\mathbf{A} \in \mathbb{R}^{N \times N}, \mathbf{B} \in \mathbb{R}^{N \times 1}, \mathbf{C} \in \mathbb{R}^{1 \times N}, \mathbf{D}\in \mathbb{R}^{1 \times 1}$. Following the S4 paper we will assume $\mathbf{D}=0$ and ignore.
 
 
-
 # Instead of working with the continuous functions, we approximate the SSM
 # into a discrete time-series representation. This acts on specific samples
-# of the input sequence. 
+# of the input sequence.
 
 
 # This is done by applying a with a [bilinear transformation]
@@ -96,8 +97,6 @@ def discretize(A, B, C, step):
     return Abar, Bbar, C
 
 
-
-
 # This allows us to run the model as a discrete recurrence.
 
 # $$
@@ -116,17 +115,22 @@ def stepSSM(A, B, C):
         x_t = A @ x_t + B @ u_t
         y_t = C @ x_t
         return x_t, y_t
+
     return step
+
+
 def scanSSM(step_fn, u, init):
     assert u.shape[1] == 1
     return jax.lax.scan(step_fn, init, u)[1]
 
+
 def runSSM(ssm, u):
-    step = 1. / u.shape[0] 
+    step = 1.0 / u.shape[0]
     ssm = discretize(*ssm, step=step)
     return scanSSM(stepSSM(*ssm), u[:, np.newaxis], np.zeros((ssm[0].shape[0],)))
 
-# ### Example: Mass on a spring. 
+
+# ### Example: Mass on a spring.
 
 # To test our SSM implementation, let us implement a class SSM
 # for mechanics described [here](https://en.wikipedia.org/wiki/State-space_representation#Moving_object_example).
@@ -140,17 +144,15 @@ def runSSM(ssm, u):
 
 # Can be computed with the following SSM.
 
+
 def example_mass(k, b, m):
-    A = np.array([[0, 1],
-                  [- k/ m, -b/ m]])
-    B = np.array([0, 1. / m]).reshape(2, 1)
+    A = np.array([[0, 1], [-k / m, -b / m]])
+    B = np.array([0, 1.0 / m]).reshape(2, 1)
     C = np.array([0, 1]).reshape(1, 2)
     return A, B, C
 
 
-
-
-# We can discretize this and see the output. 
+# We can discretize this and see the output.
 
 
 def example_ssm():
@@ -174,18 +176,22 @@ def example_ssm():
     for i in range(0, L, 2):
         ax1.plot(t[:i], u[:i], color="red")
         ax2.plot(t[:i], y[:i], color="blue")
-        ax3.boxplot([[y[i,0]-0.04, y[i,0], y[i,0]+0.04]],
-                    showcaps=False, whis=False, vert=False, widths=10)
+        ax3.boxplot(
+            [[y[i, 0] - 0.04, y[i, 0], y[i, 0] + 0.04]],
+            showcaps=False,
+            whis=False,
+            vert=False,
+            widths=10,
+        )
         camera.snap()
     return camera.animate()
 
 
 pass
-#anim = example_ssm()
-#anim.save('line.gif', dpi=80, writer='imagemagick')
+# anim = example_ssm()
+# anim.save('line.gif', dpi=80, writer='imagemagick')
 
 # __st.image('line.gif')
-
 
 
 # ## Convolution
@@ -201,7 +207,7 @@ pass
 # x_{2} &= \mathbf{\bar{A}}^2 \mathbf{\bar{B}} u_0  + \mathbf{\bar{A}} \mathbf{\bar{B}} u_1 + \mathbf{\bar{B}} u_2\\
 # y_{2} &= \mathbf{\bar{C}} \mathbf{\bar{A}}^2 \mathbf{\bar{B}} u_0  + \mathbf{\bar{C}} \mathbf{\bar{A}} \mathbf{\bar{B}} u_1 + \mathbf{\bar{C}} \mathbf{\bar{B}} u_2\\
 #  \end{aligned}
-# $$ 
+# $$
 
 # This implies that $y_l$ will be a function of the $l$ previous $u_{<=l}$ terms and require $\mathbf{\bar{A}}^l$.
 
@@ -213,14 +219,13 @@ pass
 # $$y_{n-1} = \mathbf{\bar{C}} \mathbf{\bar{A}}^{l-1} \mathbf{\bar{B}} u_0  + \ldots + \mathbf{\bar{C}} \mathbf{\bar{B}} u_{l-1}$$
 
 # This calculation can therefore be done with a convolution instead of a recurrence, with the caveat that the convolutional filter
-# grows with the sequence length. Assuming the sequence is of length $L$ we compute the convolutional filter $\mathbf{K}\in\mathbb{R}^L$. 
+# grows with the sequence length. Assuming the sequence is of length $L$ we compute the convolutional filter $\mathbf{K}\in\mathbb{R}^L$.
 
 # $$
 # \begin{aligned}
 # \mathbf{K} &= (\mathbf{\bar{C}} \mathbf{\bar{B}}, \mathbf{\bar{C}} \mathbf{\bar{A}}^1 \mathbf{\bar{B}}, \ldots, \mathbf{\bar{C}} \mathbf{\bar{A}}^{L-1} \mathbf{\bar{B}}) \\
 # \end{aligned}
 # $$
-
 
 
 def K_conv(A, B, C, L):
@@ -230,7 +235,7 @@ def K_conv(A, B, C, L):
 # We can then compute $y$ by "full" convolution with this $K$. Note:
 # full convolution willinclude all include all possible overlaps. The
 # first term $y_0 = \mathbf{K}_0 u_0$ and subsequently $y_l =
-# \sum_{t=0}^l \mathbf{K}_t u_{l-t}$. We throw out terms where $l >= L$. 
+# \sum_{t=0}^l \mathbf{K}_t u_{l-t}$. We throw out terms where $l >= L$.
 
 
 def nonCircularConvolution(u, K):
@@ -244,10 +249,11 @@ def nonCircularConvolution(u, K):
 
 # We can see that both approaches compute the same value.
 
+
 def example_both(ssm, u):
     L = u.shape[0]
-    step = 1. / L
-    
+    step = 1.0 / L
+
     ssm = discretize(*ssm, step=step)
 
     # Recurrent
@@ -255,9 +261,10 @@ def example_both(ssm, u):
 
     # Convolution
     conv = nonCircularConvolution(u, K_conv(*ssm, L))
-    return rec, conv    
+    return rec, conv
 
-x = example_both(example_mass(1,1,1), u=np.arange(10))
+
+x = example_both(example_mass(1, 1, 1), u=np.arange(10))
 x
 
 
@@ -266,15 +273,21 @@ x
 
 # For this model to work, initialization is really important.
 
-# ... 
+# ...
+
 
 def make_HiPPO(N):
-    return np.array([[
-        np.sqrt (2 * n + 1) * np.sqrt(2 * k + 1)
-        if n > k else (
-            n + 1 if n == k else 0.
-        )
-        for k in range(1, N+1) ] for n in range(1, N+1)])
+    return np.array(
+        [
+            [
+                np.sqrt(2 * n + 1) * np.sqrt(2 * k + 1)
+                if n > k
+                else (n + 1 if n == k else 0.0)
+                for k in range(1, N + 1)
+            ]
+            for n in range(1, N + 1)
+        ]
+    )
 
 
 # ## A First SSM Network.
@@ -286,6 +299,7 @@ def make_HiPPO(N):
 
 # We assume that we are going to be learning the parameters $B$ and $C$.
 # The main code simply discretizes these and then computes $y$ with a convolution.
+
 
 class NaiveSSMLayer(nn.Module):
     A: np.DeviceArray
@@ -305,6 +319,7 @@ class NaiveSSMLayer(nn.Module):
     def __call__(self, u):
         return nonCircularConvolution(u, self.K) + self.D * u
 
+
 # In practice though we don't just want to run one SSM, but ideally we
 # would learn hundreds of SSM. We do this by copying the network structure
 # $H$ different times.
@@ -316,9 +331,10 @@ NaiveSSMLayer = nn.vmap(
     variable_axes={"params": 1},
     split_rngs={"params": True},
 )
+
+
 def NaiveSSMInit(N):
     return partial(NaiveSSMLayer, A=make_HiPPO(N), N=N)
-
 
 
 # # Part 2: Doing it Fast - S4
@@ -333,7 +349,7 @@ def NaiveSSMInit(N):
 
 # The key idea that S4 is going to exploit is truncated [generating functions](https://en.wikipedia.org/wiki/Generating_function).
 
-# In particular we are going to view the convolutional filter $\mathbf{K}$, 
+# In particular we are going to view the convolutional filter $\mathbf{K}$,
 
 # $$
 # \begin{aligned}
@@ -348,6 +364,7 @@ def NaiveSSMInit(N):
 # \mathbf{\hat{K}}(z) = \mathbf{\bar{C}} \mathbf{\bar{B}} + \mathbf{\bar{C}} \mathbf{\bar{A}}^1 \mathbf{\bar{B}} z^1 + \ldots + \mathbf{\bar{C}} \mathbf{\bar{A}}^{L-1} \mathbf{\bar{B}} z^{l-1} \\
 # \end{aligned}
 # $$
+
 
 def K_gen_simple(*ssm, L):
     K = K_conv(*ssm, L)
@@ -375,12 +392,13 @@ def convFromGen(gen, L):
     order = np.array([i if i == 0 else L - i for i in range(L)])
     return out[order].real
 
+
 # Check they return the same thing.
 
 ssm = example_mass(1, 1, 1)
 a = convFromGen(K_gen_simple(*ssm, L=16), 16)
 b = K_conv(*ssm, L=16)
-check = np.isclose(a,  b, rtol=1e-2,atol=1e-4).all()
+check = np.isclose(a, b, rtol=1e-2, atol=1e-4).all()
 check
 
 # What was the point of that? Well working with the generating
@@ -394,7 +412,8 @@ check
 # \mathbf{\hat{K}}(z) = \mathbf{\bar{C}} ( I - \mathbf{A}^L z^L) (I - \mathbf{A} z)^{-1} \mathbf{\bar{B}}
 #  \end{aligned}$$
 
-# Furthermore when applied at the roots of unity for $L$ the $z^L$ term goes away. 
+# Furthermore when applied at the roots of unity for $L$ the $z^L$ term goes away.
+
 
 def K_gen_inverse(A, B, C, L):
     I = np.eye(A.shape[0])
@@ -402,22 +421,23 @@ def K_gen_inverse(A, B, C, L):
     C2 = C @ (I - A_L)
     return lambda z: (C2 @ inv(I - A * z) @ B).reshape()
 
+
 c = convFromGen(K_gen_simple(*ssm, L=16), 16)
-heck = np.isclose(a,  c, rtol=1e-2,atol=1e-4).all()
+heck = np.isclose(a, c, rtol=1e-2, atol=1e-4).all()
 check
 
 # ## Step 2: Diagonal Plus Low Rank
 
 # Moving to generating function allows us to replace the matrix power
 # with an inverse. However this inverse still needs to be calculated
-# $L$ times (for each of the roots of unity). 
+# $L$ times (for each of the roots of unity).
 
 # $$ \begin{aligned}
 # \mathbf{\hat{K}}(z) = \mathbf{\bar{C}} ( I - \mathbf{A}^L) (I - \mathbf{A} z)^{-1} \mathbf{\bar{B}} = \mathbf{\tilde{C}} (I - \mathbf{\bar{A}} z)^{-1} \mathbf{\bar{B}}
 #  \end{aligned}$$
 
 # The way S4 gets around this issue is to assume special structure on the
-# matrix A. 
+# matrix A.
 
 # First, imagine $A=\Lambda$ for a diagonal $\Lambda$. Substituting in the discretization formula the authors
 # show that the generating function can be written in the following manner,
@@ -426,7 +446,6 @@ check
 # \mathbf{\hat{K}}(z) & = \mathbf{\tilde{C}} (I - \mathbf{\bar{A}} z)^{-1} \mathbf{\bar{B}}=   c \cdot \mathbf{\tilde{C}} (g(z) - \mathbf{A})^{-1} \mathbf{\bar{B}} \\
 #  &= c \sum_i \cdot \frac{\tilde{C}_i \bar{B}_i} {(g(z) - \Lambda_{i})} = c \cdot k_{z, \Lambda}(\mathbf{\tilde{C}}, \mathbf{\bar{B}}) \\
 #  \end{aligned}$$
-
 
 
 # This term does not require an inverse and can be computed as a weighted dot product.
@@ -455,11 +474,11 @@ def cauchy_dot(v, omega, lambd):
 #  \end{aligned}
 # $$
 
-# When substituted in these components into the formula above and distributed, the low-rank  
-# turns it into 4 weighted dot products. 
+# When substituted in these components into the formula above and distributed, the low-rank
+# turns it into 4 weighted dot products.
 
 # $$ \begin{aligned}
-# \mathbf{\hat{K}}(z) & = c [k_{z, \Lambda}(\mathbf{\tilde{C}}, \mathbf{\mathbf{B}}) - k_{z, \Lambda}(\mathbf{\tilde{C}}, \mathbf{\mathbf{p}}) (1 - k_{z, \Lambda}(\mathbf{q^*}, \mathbf{\mathbf{p}}) )^{-1} k_{z, \Lambda}(\mathbf{q^*}, \mathbf{\mathbf{B}}) ] 
+# \mathbf{\hat{K}}(z) & = c [k_{z, \Lambda}(\mathbf{\tilde{C}}, \mathbf{\mathbf{B}}) - k_{z, \Lambda}(\mathbf{\tilde{C}}, \mathbf{\mathbf{p}}) (1 - k_{z, \Lambda}(\mathbf{q^*}, \mathbf{\mathbf{p}}) )^{-1} k_{z, \Lambda}(\mathbf{q^*}, \mathbf{\mathbf{B}}) ]
 #  \end{aligned}$$
 
 
@@ -472,7 +491,7 @@ def K_gen_DPLR(Lambda, p, q, B, Ct, step):
 
     def gen(o):
         g = (2.0 / step) * ((1.0 - o) / (1.0 + o))
-        c = (2.0 / (1.0 + o))
+        c = 2.0 / (1.0 + o)
         k = lambda a: cauchy_dot(a, g, Lambda)
         k00 = k(aterm[0] * bterm[0])
         k01 = k(aterm[0] * bterm[1])
@@ -482,10 +501,11 @@ def K_gen_DPLR(Lambda, p, q, B, Ct, step):
 
     return gen
 
+
 # Now we can check whether this worked.
 
 d = convFromGen(K_gen_simple(*ssm, L=16), 16)
-heck = np.isclose(a,  d, rtol=1e-2,atol=1e-4).all()
+heck = np.isclose(a, d, rtol=1e-2, atol=1e-4).all()
 check
 
 
@@ -495,7 +515,7 @@ check
 # However we are not interested in any A. We want the A matrix to follow the HiPPO formulation.
 
 # It turns out that the HiPPO matrix above is not DPLR. However the paper shows that it is normal plus low-rank.
-# They also show that NPLR matrices are *unitarily* equivalent to a DPLR matrix. For our purposes this 
+# They also show that NPLR matrices are *unitarily* equivalent to a DPLR matrix. For our purposes this
 # means that there is some DPLR matrix that is just as good as HiPPO. The paper shows how to compute it.
 
 
@@ -512,13 +532,10 @@ def make_DPLR_HiPPO(N):
     hippo = -np.tril(pq, k=-1) - np.diag(np.arange(1, N + 1) + 1)
     # Add in a rank 1 term. Makes it skew-symmetric
     S = hippo + (0.5 * pq + 0.5 * np.eye(N))
-    # Diagonalize to S to V^* \Lambda V 
+    # Diagonalize to S to V^* \Lambda V
     diag, v = eig_cpu(S)
     diag = diag - 0.5
     return hippo, diag, 0.5 * p, q, v
-
-
-
 
 
 # # Part 3: Putting S4 to the Test
@@ -529,6 +546,7 @@ def make_DPLR_HiPPO(N):
 # Our full S4 Layer is roughly similar to the simple SSM layer above. The only difference
 # is in the the computation of $K$ which is now done through the structured simplification
 # of the generating function.
+
 
 class S4Layer(nn.Module):
     A: np.DeviceArray
@@ -569,6 +587,7 @@ S4Layer = nn.vmap(
 
 # $$\mathbf{A} = \Lambda - (\mathbf{V}^* \mathbf{p}) ( \mathbf{V}^* \mathbf{q}) ^*$$
 
+
 def S4LayerInit(N):
     # Factor hippo into a unitary transform of a DPLR
     _, Lambda, p, q, V = make_DPLR_HiPPO(N)
@@ -579,7 +598,4 @@ def S4LayerInit(N):
     return partial(S4Layer, N=N, A=A, p=p, q=q, Lambda=Lambda)
 
 
-
-
 # ## Path-X
-
