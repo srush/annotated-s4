@@ -43,9 +43,11 @@ def run_test(fn):
     if __name__ == "__main__":
         fn()
 
+
 def run_example(fn):
     if __name__ == "__main__":
         fn()
+
 
 # Define CPU asymmetric eigenvalue decomposition
 eig_cpu = jax.jit(eig, backend="cpu")
@@ -78,12 +80,14 @@ seaborn.set_context("paper")
 
 # Concretely, the parameters of the model are  $\mathbf{A} \in \mathbb{R}^{N \times N}, \mathbf{B} \in \mathbb{R}^{N \times 1}, \mathbf{C} \in \mathbb{R}^{1 \times N}, \mathbf{D}\in \mathbb{R}^{1 \times 1}$. Following the S4 paper we will assume $\mathbf{D}=0$ and ignore.
 
+
 def randomSSM(rng, N):
     a_r, b_r, c_r = jax.random.split(rng, 3)
     A = jax.random.uniform(a_r, (N, N))
     B = jax.random.uniform(b_r, (N, 1))
     C = jax.random.uniform(c_r, (1, N))
     return A, B, C
+
 
 # Instead of working with the continuous functions, we approximate the SSM
 # into a discrete time-series representation. This acts on specific samples
@@ -199,8 +203,8 @@ def example_ssm():
         )
         camera.snap()
     camera.animate()
-    anim.save('line.gif', dpi=80, writer='imagemagick')
-    
+    anim.save("line.gif", dpi=80, writer="imagemagick")
+
 
 run_example(example_ssm)
 
@@ -270,7 +274,9 @@ def nonCircularConvolution(u, K):
 def example_both(ssm, u):
     return rec, conv
 
+
 # Check they return the same thing.
+
 
 def test_cnn_rnn():
     ssm = randomSSM(jax.random.PRNGKey(0), 4)
@@ -285,6 +291,7 @@ def test_cnn_rnn():
     # Convolution
     conv = nonCircularConvolution(u, K_conv(*ssm, L))
     assert np.isclose(rec.ravel(), conv.ravel(), rtol=1e-2, atol=1e-4).all()
+
 
 # ## HiPPO
 
@@ -413,13 +420,13 @@ def convFromGen(gen, L):
 
 # Check they return the same thing.
 
+
 def test_gen():
     ssm = randomSSM(jax.random.PRNGKey(0), 4)
     b = K_conv(*ssm, L=16)
-    
+
     a = convFromGen(K_gen_simple(*ssm, L=16), 16)
     assert np.isclose(a, b, rtol=1e-2, atol=1e-4).all()
-
 
 
 # What was the point of that? Well working with the generating
@@ -442,10 +449,11 @@ def K_gen_inverse(A, B, C, L):
     C2 = C @ (I - A_L)
     return lambda z: (C2 @ inv(I - A * z) @ B).reshape()
 
+
 def test_gen_inverse():
     ssm = randomSSM(jax.random.PRNGKey(0), 4)
     b = K_conv(*ssm, L=16)
-    
+
     a = convFromGen(K_gen_inverse(*ssm, L=16), 16)
     assert np.isclose(a, b, rtol=1e-2, atol=1e-4).all()
 
@@ -531,6 +539,7 @@ def K_gen_DPLR(Lambda, p, q, B, Ct, step):
 
 # Now we can check whether this worked. First we generate a random DPLR A
 
+
 def randomSSSM(rng, N):
     l_r, p_r, q_r, b_r, c_r = jax.random.split(rng, 5)
     Lambda = jax.random.uniform(l_r, (N,))
@@ -538,11 +547,11 @@ def randomSSSM(rng, N):
     q = jax.random.uniform(q_r, (N,))
     B = jax.random.uniform(b_r, (N, 1))
     C = jax.random.uniform(c_r, (1, N))
-    return Lambda, p, q, B, C 
-
+    return Lambda, p, q, B, C
 
 
 # New we check that the DPLR method yields the same filter.
+
 
 def test_gen_dplr():
     L = 16
@@ -551,12 +560,12 @@ def test_gen_dplr():
     # Create a DPLR A matrix and discritize
     Lambda, p, q, B, C = randomSSSM(jax.random.PRNGKey(0), 4)
     A = np.diag(Lambda) - p[:, np.newaxis] * q[np.newaxis, :]
-    Ab, Bb, Cb = discretize(A, B, C, 1. / L)
+    Ab, Bb, Cb = discretize(A, B, C, 1.0 / L)
     a = K_conv(Ab, Bb, Cb, L=L)
 
     # Compare to the S4 approach.
     Ct = (I - matrix_power(Ab, L)).conj().T @ Cb.ravel()
-    b = convFromGen(K_gen_DPLR(Lambda, p, q, B, Ct, step=1. / L), L)
+    b = convFromGen(K_gen_DPLR(Lambda, p, q, B, Ct, step=1.0 / L), L)
     assert np.isclose(a, b, rtol=1e-2, atol=1e-4).all()
 
 
@@ -588,7 +597,9 @@ def make_DPLR_HiPPO(N):
     diag = diag - 0.5
     return hippo, diag, 0.5 * p, q, v
 
+
 # Let's check just to make sure that the identity holds.
+
 
 def test_decomp():
     N = 8
@@ -600,7 +611,6 @@ def test_decomp():
     A4 = V @ Lambda @ Vc - (p @ q.T)
     assert np.allclose(A2, A3, atol=1e-2, rtol=1e-2)
     assert np.allclose(A2, A4, atol=1e-2, rtol=1e-2)
-
 
 
 # # Part 3: Putting S4 to the Test

@@ -9,7 +9,7 @@ from .train import BatchSeqModel
 
 
 if __name__ == "__main__":
-    
+
     model = S4LayerInit(N=64)
     model = partial(
         BatchSeqModel, layer=model, d_output=256, d_model=64, n_layers=4, l_max=784
