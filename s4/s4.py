@@ -492,7 +492,10 @@ def K_gen_DPLR(Lambda, p, q, B, Ct, step):
     def gen(o):
         g = (2.0 / step) * ((1.0 - o) / (1.0 + o))
         c = 2.0 / (1.0 + o)
-        k = lambda a: cauchy_dot(a, g, Lambda)
+
+        def k(a):
+            return cauchy_dot(a, g, Lambda)
+
         k00 = k(aterm[0] * bterm[0])
         k01 = k(aterm[0] * bterm[1])
         k10 = k(aterm[1] * bterm[0])
