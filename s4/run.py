@@ -13,4 +13,4 @@ if __name__ == "__main__":
     # InitS4Layer(64)
     # model = NaiveSSMInit(64)
     model = S4LayerInit(N=64)
-    example_train(model, Datasets[args.dataset], epochs=100, d_model=256)
+    example_train(model, Datasets[args.dataset], epochs=20, d_model=256)
