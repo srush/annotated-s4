@@ -111,7 +111,7 @@ def create_mnist_dataset(bsz=128):
     tf = transforms.Compose(
         [
             transforms.ToTensor(),
-            transforms.Lambda(lambda x: x.view(1, SEQ_LENGTH).t()),
+            transforms.Lambda(lambda x: (x.view(1, SEQ_LENGTH).t() * 256).int()),
         ]
     )
 
