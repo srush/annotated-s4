@@ -14,7 +14,7 @@ def test_ssm():
     B = jax.random.uniform(rng, (N, 1))
     C = jax.random.uniform(rng, (1, N))
 
-    ssm = s4.discretize_SSM(A, B, C, 1.0 / L)
+    ssm = s4.discretize(A, B, C, 1.0 / L)
     out = s4.K_conv(*ssm, L)
 
     out2 = s4.K_gen_simple(*ssm, L=L)
@@ -25,9 +25,10 @@ def test_ssm():
     out3 = s4.convFromGen(out3, L)
     assert np.allclose(out2, out3, atol=1e-2, rtol=1e-2)
 
-    y = jax.random.uniform(rng, (L,))
-    y2 = s4.iterative_SSM(*ssm, y).ravel()
-    y3 = s4.nonCircularConvolution(y, out)
+
+    u = jax.random.uniform(rng, (L,))
+    y2 = s4.scanSSM(s4.stepSSM(*ssm), u[:, np.newaxis], np.zeros((ssm[0].shape[0],))).ravel()
+    y3 = s4.nonCircularConvolution(u, out)
     assert np.allclose(y2, y3, atol=1e-2, rtol=1e-2)
 
 
@@ -56,7 +57,7 @@ def test_s4():
     C = jax.random.uniform(rng, (1, N))
 
     step = 1.0 / L
-    ssm = s4.discretize_SSM(A, B, C, step)
+    ssm = s4.discretize(A, B, C, step)
 
     Abar, _, Cbar = ssm
     Ct = (I - matrix_power(Abar, L)).conj().T @ Cbar.ravel()
