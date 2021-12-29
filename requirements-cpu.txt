@@ -12,3 +12,5 @@ ipython
 isort
 pre-commit
 tqdm
+seaborn
+celluloid
