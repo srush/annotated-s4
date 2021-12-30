@@ -589,7 +589,7 @@ def make_DPLR_HiPPO(N):
     S = hippo + (0.5 * pq + 0.5 * np.eye(N))
     # Diagonalize to S to V^* \Lambda V
     diag, v = eig_cpu(S)
-    diag = diag - 0.5
+    diag -= 0.5
     return hippo, diag, 0.5 * p, q, v
 
 

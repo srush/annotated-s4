@@ -129,8 +129,39 @@ def create_mnist_dataset(bsz=128):
     return trainloader, testloader, N_CLASSES, SEQ_LENGTH
 
 
+# ### MNIST Classification
+# **Task**: Predict next MNIST class given sequence model over pixels (784 pixels => 10 classes values).
+def create_mnist_classification_dataset(bsz=128):
+    print("[*] Generating MNIST Classification Dataset...")
+
+    # Constants
+    SEQ_LENGTH, N_CLASSES = 784, 10
+
+    tf = transforms.Compose(
+        [
+            transforms.ToTensor(),
+            transforms.Lambda(lambda x: (x.view(1, SEQ_LENGTH).t() * 256).int()),
+        ]
+    )
+
+    train = torchvision.datasets.MNIST(
+        "./data", train=True, download=True, transform=tf
+    )
+    test = torchvision.datasets.MNIST(
+        "./data", train=False, download=True, transform=tf
+    )
+
+    # Return data loaders, with the provided batch size
+    trainloader = torch.utils.data.DataLoader(train, batch_size=bsz, shuffle=True)
+    testloader = torch.utils.data.DataLoader(test, batch_size=bsz, shuffle=False)
+
+    return trainloader, testloader, N_CLASSES, SEQ_LENGTH
+
+
 Datasets = {
     "mnist": create_mnist_dataset,
     "sin": create_sin_x_dataset,
     "sin_noise": create_sin_ax_b_dataset,
+
+    "mnist-classification": create_mnist_classification_dataset,
 }

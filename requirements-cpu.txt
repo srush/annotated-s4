@@ -11,6 +11,7 @@ flake8
 ipython
 isort
 pre-commit
+tensorflow
 tqdm
 seaborn
 celluloid

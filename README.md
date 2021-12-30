@@ -15,7 +15,7 @@ pip install -r requirements-cpu.txt
 pre-commit install
 ```
 
-### GPU (CUDA > 11 & CUDNN > 8.0.5)
+### GPU (CUDA > 11 & CUDNN > 8.2)
 
 ```bash
 # Set up virtual/conda environment of your choosing & activate...
@@ -38,22 +38,25 @@ pip install flax
 pip install torch torchvision torchaudio
 
 # Defaults
-pip install black flake8 isort ipython matplotlib pre-commit tqdm
+pip install black celluloid flake8 isort ipython matplotlib pre-commit seaborn tensorflow tqdm
 
 # Set up pre-commit
 pre-commit install
 ```
 
-### GPU (CUDA > 11, CUDNN > 8.0.5)
+### GPU (CUDA > 11, CUDNN > 8.2)
+
+Note - CUDNN > 8.2 is critical for compilation without warnings, and GPU w/ at least Turing architecture for full
+efficiency.
 
 ```bash
 # Set up virtual/conda environment of your choosing & activate... then install the following:
-pip install jax[cuda11_cudnn805] -f https://storage.googleapis.com/jax-releases/jax_releases.html
+pip install jax[cuda11_cudnn82] -f https://storage.googleapis.com/jax-releases/jax_releases.html
 pip install flax
-pip install torch torchvision torchaudio
+pip install torch==1.10.1+cpu torchvision==0.11.2+cpu torchaudio==0.10.1+cpu -f https://download.pytorch.org/whl/cpu/torch_stable.html
 
 # Defaults
-pip install black flake8 isort ipython matplotlib pre-commit tqdm
+pip install black celluloid flake8 isort ipython matplotlib pre-commit seaborn tensorflow tqdm
 
 # Set up pre-commit
 pre-commit install
