@@ -202,7 +202,7 @@ def example_ssm():
             widths=10,
         )
         camera.snap()
-    camera.animate()
+    anim = camera.animate()
     anim.save("line.gif", dpi=80, writer="imagemagick")
 
 
@@ -269,11 +269,6 @@ def nonCircularConvolution(u, K):
 # how to compute this convolution for us.
 
 # We can see that both approaches compute the same value.
-
-
-def example_both(ssm, u):
-    return rec, conv
-
 
 # Check they return the same thing.
 
