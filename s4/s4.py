@@ -36,7 +36,6 @@ import seaborn
 from celluloid import Camera
 from flax import linen as nn
 from jax.numpy.linalg import eig, inv, matrix_power
-from jax.scipy.signal import convolve
 
 
 def run_test(fn):
@@ -259,8 +258,17 @@ def K_conv(A, B, C, L):
 # \sum_{t=0}^l \mathbf{K}_t u_{l-t}$. We throw out terms where $l >= L$.
 
 
+# Original: JAX should figure this out...
+# from jax.scipy.signal import convolve
+# def nonCircularConvolution(u, K):
+#     return convolve(u, K, mode="full")[: u.shape[0]]
+
+# Manual FFT
 def nonCircularConvolution(u, K):
-    return convolve(u, K, mode="full")[: u.shape[0]]
+    ud = np.fft.rfft(np.pad(u, (0, K.shape[0])))
+    Kd = np.fft.rfft(np.pad(K, (0, u.shape[0])))
+    out = ud * Kd
+    return np.fft.irfft(out)[: u.shape[0]]
 
 
 # Finally, note that if $L$ is long this convolution should be

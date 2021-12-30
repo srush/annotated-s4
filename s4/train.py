@@ -248,7 +248,7 @@ def example_train(
         model_cls = Models[model]
 
     # Create dataset...
-    trainloader, testloader, n_classes, seq_len = create_dataset_fn()
+    trainloader, testloader, n_classes, seq_len = create_dataset_fn(bsz=bsz)
     print(f"[*] Starting `{model}` Training on `{dataset}` =>> Initializing Model + Train State...")
 
     model = partial(
@@ -287,6 +287,7 @@ if __name__ == "__main__":
     parser.add_argument("--dataset", type=str, choices=Datasets.keys(), required=True)
     parser.add_argument("--model", type=str, choices=Models.keys(), required=True)
     parser.add_argument("--epochs", type=int, default=10)
+    parser.add_argument("--bsz", type=int, default=128)
 
     # Task Parameters
     parser.add_argument("--classification", default=False, action="store_true")
@@ -298,5 +299,5 @@ if __name__ == "__main__":
     parser.add_argument("--ssm_n", type=int, default=64)
     args = parser.parse_args()
 
-    example_train(args.model, args.dataset, epochs=args.epochs, d_model=args.d_model, ssm_n=args.ssm_n,
+    example_train(args.model, args.dataset, epochs=args.epochs, d_model=args.d_model, bsz=args.bsz, ssm_n=args.ssm_n,
                   classification=args.classification)

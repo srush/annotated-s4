@@ -52,7 +52,7 @@ def create_sin_ax_b_dataset(n_examples=20000, bsz=128):
     print("[*] Generating sin(ax + b) Dataset...")
 
     # Constants – `a` sampled uniform from [1, 10], `b` sampled uniform [0, 5]
-    SEQ_LENGTH, N_CLASSES, A_MAX, B_MAX = 360, 8, 10, 5
+    SEQ_LENGTH, N_CLASSES, A_MAX, B_MAX = 16000, 8, 10, 5
     train_data, test_data = [], []
     data_key = jax.random.PRNGKey(21)
 
@@ -83,17 +83,17 @@ def create_sin_ax_b_dataset(n_examples=20000, bsz=128):
             np.digitize(np.sin(a * x + b), np.linspace(-1, 1, num=N_CLASSES))
         )
 
-        # Build Datasets - Two entries to match (inputs, targets) structure
-        train_data = torch.Tensor(np.expand_dims(np.array(train_data), -1))
-        test_data = torch.Tensor(np.expand_dims(np.array(test_data), -1))
-        train = TensorDataset(train_data, train_data)
-        test = TensorDataset(test_data, test_data)
+    # Build Datasets - Two entries to match (inputs, targets) structure
+    train_data = torch.Tensor(np.expand_dims(np.array(train_data), -1))
+    test_data = torch.Tensor(np.expand_dims(np.array(test_data), -1))
+    train = TensorDataset(train_data, train_data)
+    test = TensorDataset(test_data, test_data)
 
-        # Return data loaders, with the provided batch size
-        trainloader = torch.utils.data.DataLoader(train, batch_size=bsz, shuffle=True)
-        testloader = torch.utils.data.DataLoader(test, batch_size=bsz, shuffle=False)
+    # Return data loaders, with the provided batch size
+    trainloader = torch.utils.data.DataLoader(train, batch_size=bsz, shuffle=True)
+    testloader = torch.utils.data.DataLoader(test, batch_size=bsz, shuffle=False)
 
-        return trainloader, testloader, N_CLASSES, SEQ_LENGTH
+    return trainloader, testloader, N_CLASSES, SEQ_LENGTH
 
 
 # ### MNIST Sequence Modeling
