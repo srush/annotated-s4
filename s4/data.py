@@ -21,7 +21,7 @@ def create_sin_x_dataset(n_examples=1024, bsz=128):
     print("[*] Generating Toy Dataset: sin(x)...")
 
     # Constants
-    SEQ_LENGTH, N_CLASSES = 200, 8
+    SEQ_LENGTH, N_CLASSES, IN_DIM = 200, 8, 1
     x = np.linspace(0, 2 * np.pi, num=SEQ_LENGTH)
     y = np.digitize(np.sin(x), np.linspace(-1, 1, num=N_CLASSES))
 
@@ -38,7 +38,7 @@ def create_sin_x_dataset(n_examples=1024, bsz=128):
     trainloader = torch.utils.data.DataLoader(train, batch_size=bsz, shuffle=True)
     testloader = torch.utils.data.DataLoader(test, batch_size=bsz, shuffle=False)
 
-    return trainloader, testloader, N_CLASSES, SEQ_LENGTH
+    return trainloader, testloader, N_CLASSES, SEQ_LENGTH, IN_DIM
 
 
 # ### $sin(ax + b)$
@@ -52,7 +52,7 @@ def create_sin_ax_b_dataset(n_examples=20000, bsz=128):
     print("[*] Generating sin(ax + b) Dataset...")
 
     # Constants – `a` sampled uniform from [1, 10], `b` sampled uniform [0, 5]
-    SEQ_LENGTH, N_CLASSES, A_MAX, B_MAX = 16000, 8, 10, 5
+    SEQ_LENGTH, N_CLASSES, IN_DIM, A_MAX, B_MAX = 16000, 8, 1, 10, 5
     train_data, test_data = [], []
     data_key = jax.random.PRNGKey(21)
 
@@ -93,7 +93,7 @@ def create_sin_ax_b_dataset(n_examples=20000, bsz=128):
     trainloader = torch.utils.data.DataLoader(train, batch_size=bsz, shuffle=True)
     testloader = torch.utils.data.DataLoader(test, batch_size=bsz, shuffle=False)
 
-    return trainloader, testloader, N_CLASSES, SEQ_LENGTH
+    return trainloader, testloader, N_CLASSES, SEQ_LENGTH, IN_DIM
 
 
 # ### MNIST Sequence Modeling
@@ -106,7 +106,7 @@ def create_mnist_dataset(bsz=128):
     print("[*] Generating MNIST Sequence Modeling Dataset...")
 
     # Constants
-    SEQ_LENGTH, N_CLASSES = 784, 256
+    SEQ_LENGTH, N_CLASSES, IN_DIM = 784, 256, 1
 
     tf = transforms.Compose(
         [
@@ -126,17 +126,16 @@ def create_mnist_dataset(bsz=128):
     trainloader = torch.utils.data.DataLoader(train, batch_size=bsz, shuffle=True)
     testloader = torch.utils.data.DataLoader(test, batch_size=bsz, shuffle=False)
 
-    return trainloader, testloader, N_CLASSES, SEQ_LENGTH
+    return trainloader, testloader, N_CLASSES, SEQ_LENGTH, IN_DIM
 
 
 # ### MNIST Classification
-# **Task**: Predict next MNIST class given sequence model over pixels (784 pixels => 10 classes values).
+# **Task**: Predict MNIST class given sequence model over pixels (784 pixels => 10 classes).
 def create_mnist_classification_dataset(bsz=128):
     print("[*] Generating MNIST Classification Dataset...")
 
     # Constants
-    SEQ_LENGTH, N_CLASSES = 784, 10
-
+    SEQ_LENGTH, N_CLASSES, IN_DIM = 784, 10, 1
     tf = transforms.Compose(
         [
             transforms.ToTensor(),
@@ -155,13 +154,42 @@ def create_mnist_classification_dataset(bsz=128):
     trainloader = torch.utils.data.DataLoader(train, batch_size=bsz, shuffle=True)
     testloader = torch.utils.data.DataLoader(test, batch_size=bsz, shuffle=False)
 
-    return trainloader, testloader, N_CLASSES, SEQ_LENGTH
+    return trainloader, testloader, N_CLASSES, SEQ_LENGTH, IN_DIM
+
+
+# ### CIFAR-10 Classification
+# **Task**: Predict CIFAR-10 class given sequence model over pixels (32 x 32 x 3 RGB image => 10 classes).
+def create_cifar_classification_dataset(bsz=128):
+    print("[*] Generating CIFAR-10 Classification Dataset")
+
+    # Constants
+    SEQ_LENGTH, N_CLASSES, IN_DIM = 32 * 32, 10, 3
+    tf = transforms.Compose(
+        [
+            transforms.ToTensor(),
+            transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
+            transforms.Lambda(lambda x: x.view(3, 1024).t()),
+        ]
+    )
+
+    train = torchvision.datasets.CIFAR10(
+        "./data", train=True, download=True, transform=tf
+    )
+    test = torchvision.datasets.CIFAR10(
+        "./data", train=False, download=True, transform=tf
+    )
+
+    # Return data loaders, with the provided batch size
+    trainloader = torch.utils.data.DataLoader(train, batch_size=bsz, shuffle=True)
+    testloader = torch.utils.data.DataLoader(test, batch_size=bsz, shuffle=False)
+
+    return trainloader, testloader, N_CLASSES, SEQ_LENGTH, IN_DIM
 
 
 Datasets = {
     "mnist": create_mnist_dataset,
     "sin": create_sin_x_dataset,
     "sin_noise": create_sin_ax_b_dataset,
-
     "mnist-classification": create_mnist_classification_dataset,
+    "cifar-classification": create_cifar_classification_dataset,
 }

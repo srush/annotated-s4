@@ -16,14 +16,14 @@ help:
 	@echo "    Delete the generated, top-level s4.ipynb notebook."
 
 check:
-	isort --check s4/s4.py
-	black --check s4/s4.py
-	flake8 --show-source s4/s4.py
+	isort --check s4/s4.py s4/data.py s4/train.py s4/sample.py
+	black --check s4/s4.py s4/data.py s4/train.py s4/sample.py
+	flake8 --show-source s4/s4.py s4/data.py s4/train.py s4/sample.py
 
 autoformat:
-	isort --atomic s4/s4.py
-	black s4/s4.py
-	flake8 --show-source s4/s4.py
+	isort --atomic s4/s4.py s4/data.py s4/train.py s4/sample.py
+	black s4/s4.py s4/data.py s4/train.py s4/sample.py
+	flake8 --show-source s4/s4.py s4/data.py s4/train.py s4/sample.py
 
 notebook: s4/s4.py
 	jupytext --to notebook s4/s4.py -o s4.ipynb

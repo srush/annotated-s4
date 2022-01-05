@@ -1,5 +1,37 @@
 # S4
 
+## Experiments
+
+#### MNIST Sequence Modeling
+
+```bash
+# Default arguments
+python -m s4.train --dataset mnist --model s4 --epochs 100 --bsz 128 --d_model 128 --ssm_n 64
+```
+
+#### MNIST Classification
+
+```bash
+# Default arguments
+python -m s4.train --dataset mnist-classification --model s4 --epochs 10 --bsz 128 --d_model 128 --ssm_n 64
+```
+
+(Default Arguments, as shown above): Gets "best" 97.76% accuracy in 10 epochs @ 40s/epoch on a TitanRTX.
+
+#### CIFAR-10 Classification
+
+```bash
+# Default arguments (100 epochs for CIFAR)
+python -m s4.train --dataset cifar-classification --model s4 --epochs 100 --bsz 128 --d_model 128 --ssm_n 64
+
+# S4 replication (close enough to params in original repo's example.py -- no LR schedule though!)
+python -m s4.train --dataset cifar-classification --model s4 --epochs 100 --bsz 64 --d_model 512 --ssm_n 64
+```
+
+(Default Arguments): Gets "best" 65.51% accuracy @ 46s/epoch on a TitanRTX
+
+(S4 Arguments): @ 3m11s on a TitanRTX
+
 ## Quickstart (Development)
 
 We have two `requirements.txt` files that hold dependencies for the current project: one that is tailored to CPUs,

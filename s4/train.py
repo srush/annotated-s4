@@ -1,3 +1,5 @@
+import os
+import shutil
 from functools import partial
 import jax
 import jax.numpy as np
@@ -34,11 +36,12 @@ def compute_accuracy(logits, label):
 # This function initializes model parameters, as well as our optimizer.
 
 
-def create_train_state(model, rng, bsz=128, seq_len=784, lr=1e-3):
+def create_train_state(model, rng, in_dim=1, bsz=128, seq_len=784, lr=1e-3):
     model = model(training=True)
     init_rng, dropout_rng = jax.random.split(rng, num=2)
     params = model.init(
-        {"params": init_rng, "dropout": dropout_rng}, np.ones((bsz, seq_len - 1, 1))
+        {"params": init_rng, "dropout": dropout_rng},
+        np.ones((bsz, seq_len - 1, in_dim)),
     )["params"]
     tx = optax.adamw(lr)
     return train_state.TrainState.create(apply_fn=model.apply, params=params, tx=tx)
@@ -55,9 +58,11 @@ def train_epoch(state, rng, model, trainloader, classification=False):
     batch_losses = []
     for batch_idx, (inputs, labels) in enumerate(tqdm(trainloader)):
         inputs = np.array(inputs.numpy())
-        labels = np.array(labels.numpy())   # Not the most efficient...
+        labels = np.array(labels.numpy())  # Not the most efficient...
         rng, drop_rng = jax.random.split(rng)
-        state, loss = train_step(state, drop_rng, inputs, labels, model, classification=classification)
+        state, loss = train_step(
+            state, drop_rng, inputs, labels, model, classification=classification
+        )
         batch_losses.append(loss)
 
     # Return average loss over batches
@@ -70,8 +75,10 @@ def validate(params, model, testloader, classification=False):
     losses, accuracies = [], []
     for batch_idx, (inputs, labels) in enumerate(tqdm(testloader)):
         inputs = np.array(inputs.numpy())
-        labels = np.array(labels.numpy())   # Not the most efficient...
-        loss, acc = eval_step(inputs, labels, params, model, classification=classification)
+        labels = np.array(labels.numpy())  # Not the most efficient...
+        loss, acc = eval_step(
+            inputs, labels, params, model, classification=classification
+        )
         losses.append(loss)
         accuracies.append(acc)
 
@@ -94,7 +101,7 @@ class FeedForwardModel(nn.Module):
         self.dense = nn.Dense(self.d_model)
 
     def __call__(self, x):
-        """ x - L x N """
+        """x - L x N"""
         return nn.relu(self.dense(x))
 
 
@@ -195,7 +202,6 @@ class SeqModel(nn.Module):
         for l, (layer, norm, inp, out, dropout) in enumerate(self.layers):
             x2 = layer(inp(x))
             z = dropout(out(nn.gelu(x2)))
-            # z = x2
             x = norm(z + x)
 
         # If classifying, mean pool of sequence-length dimension (axis 0)...
@@ -221,7 +227,7 @@ Models = {
     "ff": FeedForwardModel,
     "lstm": LSTMRecurrentModel,
     "ssm-naive": NaiveSSMInit,
-    "s4": S4LayerInit
+    "s4": S4LayerInit,
 }
 
 
@@ -232,7 +238,7 @@ def example_train(
     bsz=128,
     epochs=10,
     ssm_n=64,
-    classification=False,
+    lr=1e-3,
 ):
     # Set randomness...
     print("[*] Setting Randomness...")
@@ -240,18 +246,23 @@ def example_train(
     key, rng, train_rng = jax.random.split(key, num=3)
 
     # Get model class and dataset creation function
-    dataset = dataset if not classification else dataset + "-classification"
     create_dataset_fn = Datasets[dataset]
     if model in ["ssm-naive", "s4"]:
         model_cls = Models[model](N=ssm_n)
     else:
         model_cls = Models[model]
 
-    # Create dataset...
-    trainloader, testloader, n_classes, seq_len = create_dataset_fn(bsz=bsz)
-    print(f"[*] Starting `{model}` Training on `{dataset}` =>> Initializing Model + Train State...")
+    # Check if classification dataset
+    classification = "classification" in dataset
 
-    model = partial(
+    # Create dataset...
+    trainloader, testloader, n_classes, seq_len, in_dim = create_dataset_fn(bsz=bsz)
+    print(
+        f"[*] Starting `{model}` Training on `{dataset}` =>> Initializing Model + Train"
+        " State..."
+    )
+
+    model_cls = partial(
         BatchSeqModel,
         layer=model_cls,
         d_model=d_model,
@@ -260,24 +271,58 @@ def example_train(
         l_max=seq_len,
         classification=classification,
     )
-    state = create_train_state(model, rng, bsz=bsz, seq_len=seq_len)
+    state = create_train_state(
+        model_cls, rng, in_dim=in_dim, bsz=bsz, seq_len=seq_len, lr=lr
+    )
 
     # Loop over epochs
+    best_loss, best_acc, best_epoch = 10000, 0, 0
     for epoch in range(epochs):
         print(f"[*] Starting Training Epoch {epoch + 1}...")
-        state, train_loss = train_epoch(state, train_rng, model, trainloader, classification=classification)
+        state, train_loss = train_epoch(
+            state, train_rng, model_cls, trainloader, classification=classification
+        )
 
         print(f"[*] Running Epoch {epoch + 1} Validation...")
-        test_loss, test_acc = validate(state.params, model, testloader, classification=classification)
+        test_loss, test_acc = validate(
+            state.params, model_cls, testloader, classification=classification
+        )
 
         print(f"\n=>> Epoch {epoch + 1} Metrics ===")
         print(
             f"\tTrain Loss: {train_loss:.5f} -- Test Loss: {test_loss:.5f} -- Test"
-            f" Accuracy: {test_acc:.4f}\n"
+            f" Accuracy: {test_acc:.4f}"
         )
 
-        # Save a checkpoint each epoch
-        checkpoints.save_checkpoint(f"checkpoints/{dataset}/{model}", state, epoch)
+        # Save a checkpoint each epoch & handle best (test loss... not "copacetic" but ehh)
+        ckpt_path = checkpoints.save_checkpoint(
+            f"checkpoints/{dataset}/{model}-d_model={d_model}",
+            state,
+            epoch,
+            keep=epochs,
+        )
+        if (classification and test_acc > best_acc) or (
+            not classification and test_loss < best_loss
+        ):
+            # Create new "best-{step}.ckpt and remove old one
+            shutil.copy(
+                ckpt_path,
+                f"checkpoints/{dataset}/{model}-d_model={d_model}/best_{epoch}",
+            )
+            if os.path.exists(
+                f"checkpoints/{dataset}/{model}-d_model={d_model}/best_{best_epoch}"
+            ):
+                os.remove(
+                    f"checkpoints/{dataset}/{model}-d_model={d_model}/best_{best_epoch}"
+                )
+
+            best_loss, best_acc, best_epoch = test_loss, test_acc, epoch
+
+        # Print best accuracy & loss so far...
+        print(
+            f"\tBest Test Loss: {best_loss:.5f} -- Best Test Accuracy:"
+            f" {best_acc:.4f} at Epoch {best_epoch + 1}\n"
+        )
 
 
 if __name__ == "__main__":
@@ -289,15 +334,23 @@ if __name__ == "__main__":
     parser.add_argument("--epochs", type=int, default=10)
     parser.add_argument("--bsz", type=int, default=128)
 
-    # Task Parameters
-    parser.add_argument("--classification", default=False, action="store_true")
-
     # Model Parameters
     parser.add_argument("--d_model", type=int, default=128)
 
     # S4 Specific Parameters
     parser.add_argument("--ssm_n", type=int, default=64)
+
+    # Optimization Parameters
+    parser.add_argument("--lr", type=float, default=1e-3)
+
     args = parser.parse_args()
 
-    example_train(args.model, args.dataset, epochs=args.epochs, d_model=args.d_model, bsz=args.bsz, ssm_n=args.ssm_n,
-                  classification=args.classification)
+    example_train(
+        args.model,
+        args.dataset,
+        epochs=args.epochs,
+        d_model=args.d_model,
+        bsz=args.bsz,
+        ssm_n=args.ssm_n,
+        lr=args.lr,
+    )
