@@ -305,6 +305,7 @@ def example_train(
     ssm_n=64,
     lr=1e-3,
     lr_schedule=False,
+    suffix=None,
 ):
     # Set randomness...
     print("[*] Setting Randomness...")
@@ -323,10 +324,7 @@ def example_train(
 
     # Create dataset...
     trainloader, testloader, n_classes, seq_len, in_dim = create_dataset_fn(bsz=bsz)
-    print(
-        f"[*] Starting `{model}` Training on `{dataset}` =>> Initializing Model + Train"
-        " State..."
-    )
+    print(f"[*] Starting `{model}` Training on `{dataset}` =>> Initializing...")
 
     model_cls = partial(
         BatchSeqModel,
@@ -369,8 +367,11 @@ def example_train(
         )
 
         # Save a checkpoint each epoch & handle best (test loss... not "copacetic" but ehh)
+        run_id = f"checkpoints/{dataset}/{model}-d_model={d_model}" + (
+            f"-{suffix}" if suffix is not None else ""
+        )
         ckpt_path = checkpoints.save_checkpoint(
-            f"checkpoints/{dataset}/{model}-d_model={d_model}",
+            run_id,
             state,
             epoch,
             keep=epochs,
@@ -379,16 +380,9 @@ def example_train(
             not classification and test_loss < best_loss
         ):
             # Create new "best-{step}.ckpt and remove old one
-            shutil.copy(
-                ckpt_path,
-                f"checkpoints/{dataset}/{model}-d_model={d_model}/best_{epoch}",
-            )
-            if os.path.exists(
-                f"checkpoints/{dataset}/{model}-d_model={d_model}/best_{best_epoch}"
-            ):
-                os.remove(
-                    f"checkpoints/{dataset}/{model}-d_model={d_model}/best_{best_epoch}"
-                )
+            shutil.copy(ckpt_path, f"{run_id}/best_{epoch}")
+            if os.path.exists(f"{run_id}/best_{best_epoch}"):
+                os.remove(f"{run_id}/best_{best_epoch}")
 
             best_loss, best_acc, best_epoch = test_loss, test_acc, epoch
 
@@ -407,6 +401,7 @@ if __name__ == "__main__":
     parser.add_argument("--model", type=str, choices=Models.keys(), required=True)
     parser.add_argument("--epochs", type=int, default=10)
     parser.add_argument("--bsz", type=int, default=128)
+    parser.add_argument("--suffix", type=str, default=None)
 
     # Model Parameters
     parser.add_argument("--d_model", type=int, default=128)
@@ -429,4 +424,5 @@ if __name__ == "__main__":
         ssm_n=args.ssm_n,
         lr=args.lr,
         lr_schedule=args.lr_schedule,
+        suffix=args.suffix,
     )
