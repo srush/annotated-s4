@@ -30,7 +30,8 @@ python -m s4.train --dataset cifar-classification --model s4 --epochs 100 --bsz 
 
 (Default Arguments): Gets "best" 65.51% accuracy @ 46s/epoch on a TitanRTX
 
-(S4 Arguments): @ 3m11s on a TitanRTX
+(S4 Arguments): Gets "best" 66.44% accuracy @ 3m11s on a TitanRTX
+    - Possible reasons for failure to meet replication: LR Schedule (Decay on Plateau), Custom LR per Parameter.
 
 ## Quickstart (Development)
 
