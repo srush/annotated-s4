@@ -370,7 +370,7 @@ def example_train(
 
         # Save a checkpoint each epoch & handle best (test loss... not "copacetic" but ehh)
         ckpt_path = checkpoints.save_checkpoint(
-            f"checkpoints/{dataset}/{model}-d_model={d_model}-drop2D-schedule",
+            f"checkpoints/{dataset}/{model}-d_model={d_model}",
             state,
             epoch,
             keep=epochs,
@@ -381,13 +381,13 @@ def example_train(
             # Create new "best-{step}.ckpt and remove old one
             shutil.copy(
                 ckpt_path,
-                f"checkpoints/{dataset}/{model}-d_model={d_model}-drop2D-schedule/best_{epoch}",
+                f"checkpoints/{dataset}/{model}-d_model={d_model}/best_{epoch}",
             )
             if os.path.exists(
-                f"checkpoints/{dataset}/{model}-d_model={d_model}-drop2D-schedule/best_{best_epoch}"
+                f"checkpoints/{dataset}/{model}-d_model={d_model}/best_{best_epoch}"
             ):
                 os.remove(
-                    f"checkpoints/{dataset}/{model}-d_model={d_model}-drop2D-schedule/best_{best_epoch}"
+                    f"checkpoints/{dataset}/{model}-d_model={d_model}/best_{best_epoch}"
                 )
 
             best_loss, best_acc, best_epoch = test_loss, test_acc, epoch

@@ -47,12 +47,12 @@ python -m s4.train --dataset cifar-classification --model s4 --epochs 100 --bsz 
 ```
 
 Adding a Schedule:
-- (LR 1e-2 w/ Replication Args -- "big" model): ?? @ ?? on a TitanRTX
-- (LR 1e-2 w/ Default Args -- not "bigger" model): ? @ 36s/epoch on a TitanRTX
+- (LR 1e-2 w/ Replication Args -- "big" model): ^70% (still running, 39 epochs) @ 3m16s on a TitanRTX
+- (LR 1e-2 w/ Default Args -- not "bigger" model): 71.92% @ 36s/epoch on a TitanRTX
 
 After Fixing Dropout2D (w/ Optimization in Place):
-- (LR 1e-2 w/ Replication Args -- "big" model): ?? @ 3m17s on a TitanRTX
-- (LR 1e-2 w/ Default Args -- not "bigger" model): 69.20% @ 36s/epoch on a TitanRTX
+- (LR 1e-2 w/ Replication Args -- "big" model): ^70% (still running, 47 epochs) @ 3m17s on a TitanRTX
+- (LR 1e-2 w/ Default Args -- not "bigger" model): 68.20% @ 36s/epoch on a TitanRTX
 
 After Fixing Optimization, Before Fixing Dropout2D:
 - (LR 1e-2 w/ Default Args -- not "bigger" model): 67.14% @ 36s/epoch on a TitanRTX 
