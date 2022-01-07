@@ -84,8 +84,8 @@ seaborn.set_context("paper")
 
 # $$
 #   \begin{aligned}
-#     x'(t) &= \bm{A}x(t) + \bm{B}u(t) \\
-#     y(t) &= \bm{C}x(t) + \bm{D}u(t)
+#     x'(t) &= \boldsymbol{A}x(t) + \boldsymbol{B}u(t) \\
+#     y(t) &= \boldsymbol{C}x(t) + \boldsymbol{D}u(t)
 #   \end{aligned}
 # $$
 
@@ -93,10 +93,10 @@ seaborn.set_context("paper")
 # SSMs are broadly used in many scientific disciplines and related to
 # latent state models such as Hidden Markov Models (HMM).  Our goal is
 # to simply use the SSM as a black-box representation in a deep
-# sequence model, where $\bm{A}, \bm{B}, \bm{C}, \bm{D}$ are
+# sequence model, where $\boldsymbol{A}, \boldsymbol{B}, \boldsymbol{C}, \boldsymbol{D}$ are
 # parameters learned by gradient descent.  For the remainder, we will
-# omit the parameter $\bm{D}$ for exposition (or equivalently,
-# assume $\bm{D} = 0$  because the term $\bm{D}u$ can be
+# omit the parameter $\boldsymbol{D}$ for exposition (or equivalently,
+# assume $\boldsymbol{D} = 0$  because the term $\boldsymbol{D}u$ can be
 # viewed as a skip connection and is easy to compute.
 
 
@@ -128,14 +128,14 @@ def randomSSM(rng, N):
 
 # To discretize the continuous-time SSM, we use
 # the [bilinear method](https://en.wikipedia.org/wiki/Bilinear_transform), which converts the
-# state matrix $\bm{A}$ into an approximation $\bm{\overline{A}}
+# state matrix $\boldsymbol{A}$ into an approximation $\boldsymbol{\overline{A}}
 # $ .  The discrete SSM is
 
 # $$
 # \begin{aligned}
-#   \bm{\overline{A}} &= (\bm{I} - \Delta/2 \cdot \bm{A})^{-1}(\bm{I} + \Delta/2 \cdot \bm{A}) \\
-#   \bm{\overline{B}} &= (\bm{I} - \Delta/2 \cdot \bm{A})^{-1} \Delta \bm{B} \\
-#   \bm{\overline{C}} &= \bm{C}\\
+#   \boldsymbol{\overline{A}} &= (\boldsymbol{I} - \Delta/2 \cdot \boldsymbol{A})^{-1}(\boldsymbol{I} + \Delta/2 \cdot \boldsymbol{A}) \\
+#   \boldsymbol{\overline{B}} &= (\boldsymbol{I} - \Delta/2 \cdot \boldsymbol{A})^{-1} \Delta \boldsymbol{B} \\
+#   \boldsymbol{\overline{C}} &= \boldsymbol{C}\\
 # \end{aligned}
 # $$
 
@@ -151,12 +151,12 @@ def discretize(A, B, C, step):
 # This equation is now a *sequence-to-sequence* map $u_k \mapsto y_k$ instead of function-to-function.
 # Moreover the state equation is now a recurrence in $x_k$,
 # allowing the discrete SSM to be computed like an RNN.
-# Concretely, $x_k \in \mathbb{R}^N$ can be viewed as a *hidden state* with transition matrix $\bm{\overline{A}}$.
+# Concretely, $x_k \in \mathbb{R}^N$ can be viewed as a *hidden state* with transition matrix $\boldsymbol{\overline{A}}$.
 
 # $$
 # \begin{aligned}
-#   x_{k} &= \bm{\overline{A}} x_{k-1} + \bm{\overline{B}} u_k\\
-#   y_k &= \bm{\overline{C}} x_k \\
+#   x_{k} &= \boldsymbol{\overline{A}} x_{k-1} + \boldsymbol{\overline{B}} u_k\\
+#   y_k &= \boldsymbol{\overline{C}} x_k \\
 #    \\
 # \end{aligned}
 # $$
@@ -207,8 +207,8 @@ def runSSM(A, B, C, u):
 
 # $$
 # \begin{aligned}
-# \bm{A} &= \begin{bmatrix} 0 & 1 \\ -k/m & -b/m \end{bmatrix} & \\
-# \bm{B} &= \begin{bmatrix} 0  \\ 1/m \end{bmatrix} & \bm{C} &= \begin{bmatrix} 0 & 1  \end{bmatrix} \\
+# \boldsymbol{A} &= \begin{bmatrix} 0 & 1 \\ -k/m & -b/m \end{bmatrix} & \\
+# \boldsymbol{B} &= \begin{bmatrix} 0  \\ 1/m \end{bmatrix} & \boldsymbol{C} &= \begin{bmatrix} 0 & 1  \end{bmatrix} \\
 # \end{aligned}
 # $$
 
@@ -216,15 +216,15 @@ def runSSM(A, B, C, u):
 def example_mass(k, b, m):
     A = np.array([[0, 1], [-k / m, -b / m]])
     B = np.array([[0], [1.0 / m]])
-    C = np.array([[0, 1]])
+    C = np.array([[1., 9]])
     return A, B, C
 
 
 # You should be able to convince yourself that the hidden state $x(t)$ in this model is 2D and
 # represents the velocity and position of the mass.
-# $\bm{B}$ adds velocity based on the force.
-# $\bm{C}$ returns the current position.
-# The transition $\bm{A}$ updates the state.
+# $\boldsymbol{B}$ adds velocity based on the force.
+# $\boldsymbol{C}$ returns the current position.
+# The transition $\boldsymbol{A}$ updates the state.
 
 
 # Let's run this SSM through our code.
@@ -287,13 +287,13 @@ pass
 
 # $$
 # \begin{aligned}
-#   x_0 &= \bm{\overline{B}} u_0 &
-#   x_1 &= \bm{\overline{A}} \bm{\overline{B}} u_0 + \bm{\overline{B}} u_1 &
-#   x_2 &= \bm{\overline{A}}^2 \bm{\overline{B}} u_0 + \bm{\overline{A}} \bm{\overline{B}} u_1 + \bm{\overline{B}} u_2 & \dots
+#   x_0 &= \boldsymbol{\overline{B}} u_0 &
+#   x_1 &= \boldsymbol{\overline{A}} \boldsymbol{\overline{B}} u_0 + \boldsymbol{\overline{B}} u_1 &
+#   x_2 &= \boldsymbol{\overline{A}}^2 \boldsymbol{\overline{B}} u_0 + \boldsymbol{\overline{A}} \boldsymbol{\overline{B}} u_1 + \boldsymbol{\overline{B}} u_2 & \dots
 #   \\
-#   y_0 &= \bm{\overline{C}} \bm{\overline{B}} u_0 &
-#   y_1 &= \bm{\overline{C}} \bm{\overline{A}} \bm{\overline{B}} u_0 + \bm{\overline{C}} \bm{\overline{B}} u_1 &
-#   y_2 &= \bm{\overline{C}} \bm{\overline{A}}^2 \bm{\overline{B}} u_0 + \bm{\overline{C}} \bm{\overline{A}} \bm{\overline{B}} u_1 + \bm{\overline{C}} \bm{\overline{B}} u_2
+#   y_0 &= \boldsymbol{\overline{C}} \boldsymbol{\overline{B}} u_0 &
+#   y_1 &= \boldsymbol{\overline{C}} \boldsymbol{\overline{A}} \boldsymbol{\overline{B}} u_0 + \boldsymbol{\overline{C}} \boldsymbol{\overline{B}} u_1 &
+#   y_2 &= \boldsymbol{\overline{C}} \boldsymbol{\overline{A}}^2 \boldsymbol{\overline{B}} u_0 + \boldsymbol{\overline{C}} \boldsymbol{\overline{A}} \boldsymbol{\overline{B}} u_1 + \boldsymbol{\overline{C}} \boldsymbol{\overline{B}} u_2
 #   & \dots
 # \end{aligned}
 # $$
@@ -303,25 +303,25 @@ pass
 
 # $$
 # \begin{aligned}
-#     y_k &= \bm{\overline{C}} \bm{\overline{A}}^k \bm{\overline{B}} u_0 + \bm{\overline{C}} \bm{\overline{A}}^{k-1} \bm{\overline{B}} u_1 + \dots + \bm{\overline{C}} \bm{\overline{A}} \bm{\overline{B}} u_{k-1} + \bm{\overline{C}}\bm{\overline{B}} u_k
+#     y_k &= \boldsymbol{\overline{C}} \boldsymbol{\overline{A}}^k \boldsymbol{\overline{B}} u_0 + \boldsymbol{\overline{C}} \boldsymbol{\overline{A}}^{k-1} \boldsymbol{\overline{B}} u_1 + \dots + \boldsymbol{\overline{C}} \boldsymbol{\overline{A}} \boldsymbol{\overline{B}} u_{k-1} + \boldsymbol{\overline{C}}\boldsymbol{\overline{B}} u_k
 #     \\
-#     y &= \bm{\overline{K}} \ast u %
+#     y &= \boldsymbol{\overline{K}} \ast u %
 # \end{aligned}
 
 # $$
 # \begin{aligned}
-#   \bm{\overline{K}} \in \mathbb{R}^L  = (\bm{\overline{C}}\bm{\overline{B}}, \bm{\overline{C}}\bm{\overline{A}}\bm{\overline{B}}, \dots, \bm{\overline{C}}\bm{\overline{A}}^{L-1}\bm{\overline{B}})
+#   \boldsymbol{\overline{K}} \in \mathbb{R}^L  = (\boldsymbol{\overline{C}}\boldsymbol{\overline{B}}, \boldsymbol{\overline{C}}\boldsymbol{\overline{A}}\boldsymbol{\overline{B}}, \dots, \boldsymbol{\overline{C}}\boldsymbol{\overline{A}}^{L-1}\boldsymbol{\overline{B}})
 # \end{aligned}
 # $$
 
-# We call $\bm{\overline{K}}$ the **SSM convolution kernel** or filter.
+# We call $\boldsymbol{\overline{K}}$ the **SSM convolution kernel** or filter.
 
 
 def K_conv(A, B, C, L):
     return np.array([(C @ matrix_power(A, l) @ B).reshape() for l in range(L)])
 
 
-# In other words, equation is a single (non-circular) convolution and can be computed very efficiently with FFTs, *provided* that $\bm{\overline{K}}$ is known.
+# In other words, equation is a single (non-circular) convolution and can be computed very efficiently with FFTs, *provided* that $\boldsymbol{\overline{K}}$ is known.
 
 
 def nonCircularConvolution(u, K):
@@ -354,14 +354,14 @@ def test_cnn_is_rnn(N=4, L=16, step=1.0 / 16):
 # previous work developed the HiPPO theory of continuous-time
 # memorization.
 
-# HiPPO specifies a class of certain matrices $\bm{A} \in \mathbb{R}^{N \times N}$ that when incorporated, allow the state $x(t)$ to memorize the history of the input $u(t)$.
+# HiPPO specifies a class of certain matrices $\boldsymbol{A} \in \mathbb{R}^{N \times N}$ that when incorporated, allow the state $x(t)$ to memorize the history of the input $u(t)$.
 # The most important matrix in this class is defined by the HiPPO matrix.
 
 # $$
 # \begin{aligned}
 #   (\text{\textbf{HiPPO Matrix}})
 #   \qquad
-#   \bm{A}_{nk}
+#   \boldsymbol{A}_{nk}
 #   =
 #   \begin{cases}
 #     (2n+1)^{1/2}(2k+1)^{1/2} & \text{if } n > k \\
@@ -386,7 +386,7 @@ def make_HiPPO(N):
     return np.array(mat)
 
 
-# Previous work found that simply modifying an SSM from a random matrix $\bm{A}$ to HiPPO improved its performance on the sequential MNIST benchmark from $50\%$ to $98\%$.
+# Previous work found that simply modifying an SSM from a random matrix $\boldsymbol{A}$ to HiPPO improved its performance on the sequential MNIST benchmark from $50\%$ to $98\%$.
 
 # ### Tangent: A First SSM Network.
 
@@ -450,9 +450,9 @@ def NaiveSSMInit(N):
 
 # The fundamental bottleneck in computing the discrete-time SSM
 #  is that it involves repeated matrix multiplication by
-# $\bm{\overline{A}}$.  For example, computing
+# $\boldsymbol{\overline{A}}$.  For example, computing
 # naively  involves $L$ successive multiplications
-# by $\bm{\overline{A}}$, requiring $O(N^2 L)$ operations and
+# by $\boldsymbol{\overline{A}}$, requiring $O(N^2 L)$ operations and
 # $O(NL)$ space.
 
 
@@ -461,21 +461,21 @@ def NaiveSSMInit(N):
 # > lot of clever math that applies under a structured parameterization of the
 # > model. Specifically:
 
-# The S4 techniques apply to any matrix $\bm{A}$ that can be decomposed as *Normal Plus Low-Rank (NPLR)*.
+# The S4 techniques apply to any matrix $\boldsymbol{A}$ that can be decomposed as *Normal Plus Low-Rank (NPLR)*.
 # $$
-#   \bm{A} = \bm{V} \bm{\Lambda} \bm{V}^* - \bm{p} \bm{q}^\top = \bm{V} \left( \bm{\Lambda} - \bm{V}^* \bm{p} (\bm{V}^*\bm{q})^* \right) \bm{V}^*
+#   \boldsymbol{A} = \boldsymbol{V} \boldsymbol{\Lambda} \boldsymbol{V}^* - \boldsymbol{p} \boldsymbol{q}^\top = \boldsymbol{V} \left( \boldsymbol{\Lambda} - \boldsymbol{V}^* \boldsymbol{p} (\boldsymbol{V}^*\boldsymbol{q})^* \right) \boldsymbol{V}^*
 # $$
-# for unitary $\bm{V} \in \mathbb{C}^{N \times N}$, diagonal $\bm{\Lambda}$, and low-rank factorization $\bm{p}, \bm{q} \in \mathbb{R}^{N \times r}$.  An NPLR SSM is therefore unitarily equivalent to some Diagonal Plus Low Rank (DPLR) $(\bm{\Lambda} - \bm{p}\bm{q}^*, \bm{B}, \bm{C})$ for some diagonal $\bm{\Lambda}$ and vectors $\bm{p}, \bm{q}, \bm{B}, \bm{C} \in \mathbb{C}^{N \times 1}$.
+# for unitary $\boldsymbol{V} \in \mathbb{C}^{N \times N}$, diagonal $\boldsymbol{\Lambda}$, and low-rank factorization $\boldsymbol{p}, \boldsymbol{q} \in \mathbb{R}^{N \times r}$.  An NPLR SSM is therefore unitarily equivalent to some Diagonal Plus Low Rank (DPLR) $(\boldsymbol{\Lambda} - \boldsymbol{p}\boldsymbol{q}^*, \boldsymbol{B}, \boldsymbol{C})$ for some diagonal $\boldsymbol{\Lambda}$ and vectors $\boldsymbol{p}, \boldsymbol{q}, \boldsymbol{B}, \boldsymbol{C} \in \mathbb{C}^{N \times 1}$.
 
 
 # Under this DPLR assumption, we can overcome this speed bottleneck by
 # simultaneously applying three new techniques.
 #
-#  1.  Instead of computing $\bm{\overline{K}}$ directly,
+#  1.  Instead of computing $\boldsymbol{\overline{K}}$ directly,
 #     we compute its spectrum by evaluating its **truncated generating function**  at the roots of unity.
-#     $\bm{\overline{K}}$ can then be found by applying an inverse FFT.  This generating function is closely related to the matrix resolvent, and now involves a matrix *inverse* instead of *power*.
+#     $\boldsymbol{\overline{K}}$ can then be found by applying an inverse FFT.  This generating function is closely related to the matrix resolvent, and now involves a matrix *inverse* instead of *power*.
 #  2. We show that the diagonal matrix case is equivalent to the computation of a **Cauchy kernel** $\frac{1}{\omega_j - \zeta_k}$.
-#  3. We show the low-rank term can now be corrected by applying the **Woodbury identity** which reduces $(\bm{\Lambda} + \bm{p}\bm{q}^*)^{-1}$ in terms of $\bm{\Lambda}^{-1}$, truly reducing to the diagonal case.
+#  3. We show the low-rank term can now be corrected by applying the **Woodbury identity** which reduces $(\boldsymbol{\Lambda} + \boldsymbol{p}\boldsymbol{q}^*)^{-1}$ in terms of $\boldsymbol{\Lambda}^{-1}$, truly reducing to the diagonal case.
 #
 
 # Finally we note the all HiPPO matrices have this NPLR representation. We can therefore find extract a unitarily equivalent DPLR parameterization.
@@ -483,15 +483,15 @@ def NaiveSSMInit(N):
 
 # ## Step 1. SSM Generating Functions
 
-# To address the problem of computing powers of $\bm{\overline{A}}$, we introduce another technique.
-# Instead of computing the SSM convolution filter $\bm{\overline{K}}$ directly,
+# To address the problem of computing powers of $\boldsymbol{\overline{A}}$, we introduce another technique.
+# Instead of computing the SSM convolution filter $\boldsymbol{\overline{K}}$ directly,
 # we introduce a [generating function]() on its coefficients and compute evaluations of it.
 
 # The *truncated SSM generating function* at node $z$ with truncation $L$ is
 
 
 # $$
-# \hat{\mathcal{K}}_L(z; \bm{\overline{A}}, \bm{\overline{B}}, \bm{\overline{C}}) \in \mathbb{C} := \sum_{i=0}^{L-1} \bm{\overline{C}} \bm{\overline{A}}^i \bm{\overline{B}} z^i
+# \hat{\mathcal{K}}_L(z; \boldsymbol{\overline{A}}, \boldsymbol{\overline{B}}, \boldsymbol{\overline{C}}) \in \mathbb{C} := \sum_{i=0}^{L-1} \boldsymbol{\overline{C}} \boldsymbol{\overline{A}}^i \boldsymbol{\overline{B}} z^i
 # $$
 
 
@@ -536,10 +536,10 @@ def test_gen(L=16):
 
 
 # $$
-# \hat{\mathcal{K}}_L(z) = \sum_{i=0}^{L-1} \bm{\overline{C}} \bm{\overline{A}}^i \bm{\overline{B}} z^i = \bm{\overline{C}} (\bm{I} - \bm{\overline{A}}^L z^L) (\bm{I} - \bm{\overline{A}} z)^{-1} \bm{\overline{B}} = \bm{\tilde{C}}  (\bm{I} - \bm{\overline{A}} z)^{-1} \bm{\overline{B}}
+# \hat{\mathcal{K}}_L(z) = \sum_{i=0}^{L-1} \boldsymbol{\overline{C}} \boldsymbol{\overline{A}}^i \boldsymbol{\overline{B}} z^i = \boldsymbol{\overline{C}} (\boldsymbol{I} - \boldsymbol{\overline{A}}^L z^L) (\boldsymbol{I} - \boldsymbol{\overline{A}} z)^{-1} \boldsymbol{\overline{B}} = \boldsymbol{\tilde{C}}  (\boldsymbol{I} - \boldsymbol{\overline{A}} z)^{-1} \boldsymbol{\overline{B}}
 # $$
 
-# For all $z \in \Omega_L$, we have $z^L = 1$ so that term is removed. We then pull this constant term into $\bm{\tilde{C}}$.
+# For all $z \in \Omega_L$, we have $z^L = 1$ so that term is removed. We then pull this constant term into $\boldsymbol{\tilde{C}}$.
 
 # We can compute the generating function now without building the convolution filter.
 
@@ -575,18 +575,18 @@ def test_gen_inverse():
 
 # $$
 # \begin{aligned}
-#   \bm{\tilde{C}}\left(\bm{I} - \bm{\overline{A}} \right)^{-1} \bm{\overline{B}}
+#   \boldsymbol{\tilde{C}}\left(\boldsymbol{I} - \boldsymbol{\overline{A}} \right)^{-1} \boldsymbol{\overline{B}}
 #   =
-#   \frac{2\Delta}{1+z} \bm{\tilde{C}} \left[ {2 \frac{1-z}{1+z}} - \Delta \bm{A} \right]^{-1} \bm{B}
+#   \frac{2\Delta}{1+z} \boldsymbol{\tilde{C}} \left[ {2 \frac{1-z}{1+z}} - \Delta \boldsymbol{A} \right]^{-1} \boldsymbol{B}
 # \end{aligned}
 # $$
 
 
-# > Now imagine $A=\bm{\Lambda}$ for a diagonal $\bm{\Lambda}$. Substituting in the discretization formula the authors
+# > Now imagine $A=\boldsymbol{\Lambda}$ for a diagonal $\boldsymbol{\Lambda}$. Substituting in the discretization formula the authors
 # > show that the generating function can be written in the following manner,
 
 # $$ \begin{aligned}
-# \bm{\hat{K}}_{\bm{\Lambda}}(z) & = c(z) \sum_i \cdot \frac{\tilde{C}_i B_i} {(g(z) - \Lambda_{i})} = c(z) \cdot k_{z, \bm{\Lambda}}(\bm{\tilde{C}}, \bm{B}) \\
+# \boldsymbol{\hat{K}}_{\boldsymbol{\Lambda}}(z) & = c(z) \sum_i \cdot \frac{\tilde{C}_i B_i} {(g(z) - \Lambda_{i})} = c(z) \cdot k_{z, \boldsymbol{\Lambda}}(\boldsymbol{\tilde{C}}, \boldsymbol{B}) \\
 #  \end{aligned}$$
 # where $c$ is a constant, and $g$ is a function of $z$.
 
@@ -608,10 +608,10 @@ def cauchy_dot(v, omega, lambd):
 # ## Step 3: Diagonal Plus Low-Rank
 
 # > Next let us relax the diagonal assumption. We  allow for
-# > a low-rank component with $\bm{p}, \bm{q} \in \mathbb{C}^{N\times 1}$
+# > a low-rank component with $\boldsymbol{p}, \boldsymbol{q} \in \mathbb{C}^{N\times 1}$
 
 # $$
-# \bm{A} = \bm{\Lambda} + \bm{p}  \bm{q}^*
+# \boldsymbol{A} = \boldsymbol{\Lambda} + \boldsymbol{p}  \boldsymbol{q}^*
 # $$
 
 # > The [Woodbury
@@ -620,14 +620,14 @@ def cauchy_dot(v, omega, lambd):
 # > inverse of the diagonal plus a rank-1 term.
 
 # $$ \begin{aligned}
-# (\bm{\Lambda} + \bm{p}  \bm{q}^*)^{-1} &= \bm{\Lambda}^{-1} - \bm{\Lambda}^{-1} \bm{p} (1 + \bm{q}^* \bm{p})^{-1} \bm{q}^* \bm{\Lambda}^{-1}
+# (\boldsymbol{\Lambda} + \boldsymbol{p}  \boldsymbol{q}^*)^{-1} &= \boldsymbol{\Lambda}^{-1} - \boldsymbol{\Lambda}^{-1} \boldsymbol{p} (1 + \boldsymbol{q}^* \boldsymbol{p})^{-1} \boldsymbol{q}^* \boldsymbol{\Lambda}^{-1}
 #  \end{aligned}
 # $$
 
 # > Substituting in our above terms and distributed, gives 4 weighted dot products.
 
 # $$ \begin{aligned}
-# \bm{\hat{K}}_{DPLR}(z) & = c(z) [k_{z, \Lambda}(\bm{\tilde{C}}, \bm{\bm{B}}) - k_{z, \Lambda}(\bm{\tilde{C}}, \bm{\bm{p}}) (1 - k_{z, \Lambda}(\bm{q^*}, \bm{\bm{p}}) )^{-1} k_{z, \Lambda}(\bm{q^*}, \bm{\bm{B}}) ]
+# \boldsymbol{\hat{K}}_{DPLR}(z) & = c(z) [k_{z, \Lambda}(\boldsymbol{\tilde{C}}, \boldsymbol{\boldsymbol{B}}) - k_{z, \Lambda}(\boldsymbol{\tilde{C}}, \boldsymbol{\boldsymbol{p}}) (1 - k_{z, \Lambda}(\boldsymbol{q^*}, \boldsymbol{\boldsymbol{p}}) )^{-1} k_{z, \Lambda}(\boldsymbol{q^*}, \boldsymbol{\boldsymbol{B}}) ]
 #  \end{aligned}$$
 
 
@@ -666,7 +666,7 @@ def randomSSSM(rng, N):
     return Lambda, p, q, B, C
 
 
-# > New we check that the DPLR method yields the same filter as computing $\bm{A}$ directly.
+# > New we check that the DPLR method yields the same filter as computing $\boldsymbol{A}$ directly.
 
 
 def test_gen_dplr():
@@ -688,13 +688,13 @@ def test_gen_dplr():
 # ## Turning HiPPO to DPLR
 
 # > Finally recall that we want to work with a HiPPO matrix for
-# > $\bm{A}$. This requires showing that the matrix is NPLR. The
+# > $\boldsymbol{A}$. This requires showing that the matrix is NPLR. The
 # > easiest way to show that it is normal is to show that it is
 # > skew-symmetric which implies that it has complex eigenvalues. The
-# > corresponding eigenvectors make up the unitary $\bm{V}$ matrix.
+# > corresponding eigenvectors make up the unitary $\boldsymbol{V}$ matrix.
 
 # $$
-#   \bm{A} = \bm{V} \bm{\Lambda} \bm{V}^* - \bm{p} \bm{q}^\top = \bm{V} \left( \bm{\Lambda} - \bm{V}^* \bm{p} (\bm{V}^*\bm{q})^* \right) \bm{V}^*
+#   \boldsymbol{A} = \boldsymbol{V} \boldsymbol{\Lambda} \boldsymbol{V}^* - \boldsymbol{p} \boldsymbol{q}^\top = \boldsymbol{V} \left( \boldsymbol{\Lambda} - \boldsymbol{V}^* \boldsymbol{p} (\boldsymbol{V}^*\boldsymbol{q})^* \right) \boldsymbol{V}^*
 # $$
 
 
@@ -733,7 +733,7 @@ def test_nplr():
 # ## The Model
 
 # > A full S4 Layer is roughly similar to the simple SSM layer
-# > above. The only difference is in the the computation of $\bm{K}$
+# > above. The only difference is in the the computation of $\boldsymbol{K}$
 # > which is now done through the structured simplification of the
 # > generating function.
 
