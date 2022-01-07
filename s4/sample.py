@@ -2,9 +2,9 @@ from functools import partial
 import jax
 import jax.numpy as np
 import matplotlib.pyplot as plt
-from flax.training import checkpoints, train_state
+from flax.training import checkpoints
 from .data import Datasets
-from .s4 import NaiveSSMInit, S4LayerInit
+from .s4 import S4LayerInit
 from .train import BatchSeqModel
 
 

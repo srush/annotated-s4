@@ -135,6 +135,9 @@ data/
 .DS_Store
 .idea/
 
+# Docker Setup
+docker-setup.sh
+
 # Artifacts
 *.html
 *.ipynb
