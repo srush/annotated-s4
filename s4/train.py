@@ -249,7 +249,7 @@ class SeqModel(nn.Module):
                     nn.LayerNorm(),
                     nn.Dense(self.d_model),
                     nn.Dense(self.d_model),
-                    # Dropout2D is critical... we want to drop entire channels --> so share mask over 0th (L) dim?
+                    # Dropout2D is critical... we want to drop entire channels --> so share mask over 0th (L) dim
                     nn.Dropout(
                         self.dropout,
                         broadcast_dims=[0],
@@ -262,11 +262,11 @@ class SeqModel(nn.Module):
         self.decoder = nn.Dense(self.d_output)
 
     def __call__(self, x):
-        # x - L x N
+        # x - L x H
         x = self.encoder(x)
         for l, (layer, norm, inp, out, dropout) in enumerate(self.layers):
             x2 = layer(inp(x))
-            z = dropout(out(nn.gelu(x2)))
+            z = out(dropout(nn.gelu(x2)))
             x = norm(z + x)
 
         # If classifying, mean pool of sequence-length dimension (axis 0)...
