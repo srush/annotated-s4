@@ -216,7 +216,7 @@ def runSSM(A, B, C, u):
 def example_mass(k, b, m):
     A = np.array([[0, 1], [-k / m, -b / m]])
     B = np.array([[0], [1.0 / m]])
-    C = np.array([[1., 9]])
+    C = np.array([[1.0, 9]])
     return A, B, C
 
 
