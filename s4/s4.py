@@ -18,9 +18,9 @@
 
 #  [image]()
 
-# > For me (srush) personally though, the paper is a refreshing departure from 
+# > For me (srush) personally though, the paper is a refreshing departure from
 # > Transformer, and brings a very different style to a problem-space that many of
-# > us thought we understood very well. Several of my colleagues have also noted 
+# > us thought we understood very well. Several of my colleagues have also noted
 # > privately (and on twitter!) how difficult the paper was to get intuition for.
 
 # > With this goal, this blog post is an Annotated Implementation of
@@ -53,14 +53,16 @@
 from functools import partial
 import jax
 import jax.numpy as np
-from flax import linen as nn
-from jax.numpy.linalg import eig, inv, matrix_power
-from jax.scipy.signal import convolve
 import matplotlib.pyplot as plt
 import seaborn
 from celluloid import Camera
+from flax import linen as nn
+from jax.numpy.linalg import eig, inv, matrix_power
+from jax.scipy.signal import convolve
+
 
 rng = jax.random.PRNGKey(1)
+
 
 def run_test(fn):
     if __name__ == "__main__":
@@ -70,6 +72,7 @@ def run_test(fn):
 def run_example(fn):
     if __name__ == "__main__":
         fn()
+
 
 seaborn.set_context("paper")
 
@@ -101,7 +104,7 @@ seaborn.set_context("paper")
 # For simplicity, we assume the input and output are one-dimensional, and the state representation
 # is $N$-dimensional. The first equation defines the change in $x(t)$ over time.
 
-# > Concretely, the parameters of the model are  $\mathbf{A} \in \mathbb{R}^{N \times N}, \mathbf{B} \in \mathbb{R}^{N \times 1}, \mathbf{C} \in \mathbb{R}^{1 \times N}, \mathbf{D}\in \mathbb{R}^{1 \times 1}$. 
+# > Concretely, the parameters of the model are  $\mathbf{A} \in \mathbb{R}^{N \times N}, \mathbf{B} \in \mathbb{R}^{N \times 1}, \mathbf{C} \in \mathbb{R}^{1 \times N}, \mathbf{D}\in \mathbb{R}^{1 \times 1}$.
 
 
 def randomSSM(rng, N):
@@ -120,13 +123,13 @@ def randomSSM(rng, N):
 # discretized by a **step size** $\Delta$ that represents the
 # resolution of the input.  Conceptually, the inputs $u_k$ can be
 # viewed as sampling an implicit underlying continuous signal $u(t)
-#$, where $u_k = u(k \Delta)$.
+# $, where $u_k = u(k \Delta)$.
 
 
 # To discretize the continuous-time SSM, we use
 # the [bilinear method](https://en.wikipedia.org/wiki/Bilinear_transform), which converts the
 # state matrix $\bm{A}$ into an approximation $\bm{\overline{A}}
-#$ .  The discrete SSM is
+# $ .  The discrete SSM is
 
 # $$
 # \begin{aligned}
@@ -164,23 +167,25 @@ def stepSSM(Ab, Bb, Cb):
         x_k = Ab @ x_k_1 + Bb @ u_k
         y_k = Cb @ x_k
         return x_k, y_k
+
     return step
+
+
 def scanSSM(step_fn, u, x0):
     "Map u to y under with a recurrent cell."
     return jax.lax.scan(step_fn, x0, u)[1]
 
 
-
 # > Let us put everything together so far to show how to run an SSM.
+
 
 def runSSM(A, B, C, u):
     L = u.shape[0]
     N = A.shape[0]
     # Discretize
     Ab, Bb, Cb = discretize(A, B, C, step=1.0 / L)
-    # Run recurrence 
-    return scanSSM(stepSSM(Ab, Bb, Cb), u[:, np.newaxis],
-                   np.zeros((N,)))
+    # Run recurrence
+    return scanSSM(stepSSM(Ab, Bb, Cb), u[:, np.newaxis], np.zeros((N,)))
 
 
 # ### Tangeant: A Mechanics Example
@@ -191,16 +196,16 @@ def runSSM(A, B, C, u):
 
 # In this example, we consider the forward position $y(t)$ of a mass attached to a wall with a spring.
 # Over time, varying force $u(t)$ is applied to this mass. The system is parameterized by mass ($m$),
-# spring constant ($b$), friction constant ($k$). We can relate these with the following differential equation. 
+# spring constant ($b$), friction constant ($k$). We can relate these with the following differential equation.
 
 # $$\begin{aligned}
 # my''(t) = u(t) - by'(t) - ky(t)
 # \end{aligned}
 # $$
 
-# Rewriting this in matrix form yields an SSM, 
+# Rewriting this in matrix form yields an SSM,
 
-# $$ 
+# $$
 # \begin{aligned}
 # \bm{A} &= \begin{bmatrix} 0 & 1 \\ -k/m & -b/m \end{bmatrix} & \\
 # \bm{B} &= \begin{bmatrix} 0  \\ 1/m \end{bmatrix} & \bm{C} &= \begin{bmatrix} 0 & 1  \end{bmatrix} \\
@@ -209,25 +214,24 @@ def runSSM(A, B, C, u):
 
 
 def example_mass(k, b, m):
-    A = np.array([[0, 1],
-                  [-k / m, -b / m]])
-    B = np.array([[0],
-                  [1. / m]]) 
+    A = np.array([[0, 1], [-k / m, -b / m]])
+    B = np.array([[0], [1.0 / m]])
     C = np.array([[0, 1]])
     return A, B, C
 
+
 # You should be able to convince yourself that the hidden state $x(t)$ in this model is 2D and
 # represents the velocity and position of the mass.
-# $\bm{B}$ adds velocity based on the force. 
+# $\bm{B}$ adds velocity based on the force.
 # $\bm{C}$ returns the current position.
 # The transition $\bm{A}$ updates the state.
 
 
-# Let's run this SSM through our code. 
+# Let's run this SSM through our code.
 
 
 def example_ssm():
-    # SSM with random forces 
+    # SSM with random forces
     L = 50
     t = np.arange(L)
     u = jax.random.uniform(rng, (L,))
@@ -312,11 +316,13 @@ pass
 
 # We call $\bm{\overline{K}}$ the **SSM convolution kernel** or filter.
 
+
 def K_conv(A, B, C, L):
     return np.array([(C @ matrix_power(A, l) @ B).reshape() for l in range(L)])
 
 
 # In other words, equation is a single (non-circular) convolution and can be computed very efficiently with FFTs, *provided* that $\bm{\overline{K}}$ is known.
+
 
 def nonCircularConvolution(u, K):
     return convolve(u, K, mode="full")[: u.shape[0]]
@@ -324,7 +330,8 @@ def nonCircularConvolution(u, K):
 
 # > We can convince ourselves that the two methods yield the same result by checking explicitly.
 
-def test_cnn_is_rnn(N=4, L=16, step=1./16):
+
+def test_cnn_is_rnn(N=4, L=16, step=1.0 / 16):
     ssm = randomSSM(rng, N)
     u = np.arange(L)
 
@@ -348,7 +355,7 @@ def test_cnn_is_rnn(N=4, L=16, step=1./16):
 # memorization.
 
 # HiPPO specifies a class of certain matrices $\bm{A} \in \mathbb{R}^{N \times N}$ that when incorporated, allow the state $x(t)$ to memorize the history of the input $u(t)$.
-# The most important matrix in this class is defined by the HiPPO matrix. 
+# The most important matrix in this class is defined by the HiPPO matrix.
 
 # $$
 # \begin{aligned}
@@ -367,15 +374,16 @@ def test_cnn_is_rnn(N=4, L=16, step=1./16):
 
 def make_HiPPO(N):
     def v(n, k):
-        if n > k: return np.sqrt(2 * n + 1) * np.sqrt(2 * k + 1),
-        elif n == k: return n +1
-        else: return 0
+        if n > k:
+            return np.sqrt(2 * n + 1) * np.sqrt(2 * k + 1)
+        elif n == k:
+            return n + 1
+        else:
+            return 0
 
-    # Do it slow so we don't mess it up :) 
-    mat = [[v(n, k) for k in range(1, N + 1)]
-           for n in range(1, N + 1)]
+    # Do it slow so we don't mess it up :)
+    mat = [[v(n, k) for k in range(1, N + 1)] for n in range(1, N + 1)]
     return np.array(mat)
-
 
 
 # Previous work found that simply modifying an SSM from a random matrix $\bm{A}$ to HiPPO improved its performance on the sequential MNIST benchmark from $50\%$ to $98\%$.
@@ -426,6 +434,8 @@ def cloneLayer(layer):
         variable_axes={"params": 1},
         split_rngs={"params": True},
     )
+
+
 def NaiveSSMInit(N):
     return partial(cloneLayer(NaiveSSMLayer), A=make_HiPPO(N), N=N)
 
@@ -438,10 +448,9 @@ def NaiveSSMInit(N):
 # # Part 2: Doing it Fast with S4
 
 
-
 # The fundamental bottleneck in computing the discrete-time SSM
 #  is that it involves repeated matrix multiplication by
-# $\bm{\overline{A}}$.  For example, computing 
+# $\bm{\overline{A}}$.  For example, computing
 # naively  involves $L$ successive multiplications
 # by $\bm{\overline{A}}$, requiring $O(N^2 L)$ operations and
 # $O(NL)$ space.
@@ -450,10 +459,10 @@ def NaiveSSMInit(N):
 # > The contribution of S4 is speeding this up by changing the way the
 # > operations above are computed. In particular this section is a
 # > lot of clever math that applies under a structured parameterization of the
-# > model. Specifically: 
+# > model. Specifically:
 
 # The S4 techniques apply to any matrix $\bm{A}$ that can be decomposed as *Normal Plus Low-Rank (NPLR)*.
-# $$ 
+# $$
 #   \bm{A} = \bm{V} \bm{\Lambda} \bm{V}^* - \bm{p} \bm{q}^\top = \bm{V} \left( \bm{\Lambda} - \bm{V}^* \bm{p} (\bm{V}^*\bm{q})^* \right) \bm{V}^*
 # $$
 # for unitary $\bm{V} \in \mathbb{C}^{N \times N}$, diagonal $\bm{\Lambda}$, and low-rank factorization $\bm{p}, \bm{q} \in \mathbb{R}^{N \times r}$.  An NPLR SSM is therefore unitarily equivalent to some Diagonal Plus Low Rank (DPLR) $(\bm{\Lambda} - \bm{p}\bm{q}^*, \bm{B}, \bm{C})$ for some diagonal $\bm{\Lambda}$ and vectors $\bm{p}, \bm{q}, \bm{B}, \bm{C} \in \mathbb{C}^{N \times 1}$.
@@ -467,12 +476,9 @@ def NaiveSSMInit(N):
 #     $\bm{\overline{K}}$ can then be found by applying an inverse FFT.  This generating function is closely related to the matrix resolvent, and now involves a matrix *inverse* instead of *power*.
 #  2. We show that the diagonal matrix case is equivalent to the computation of a **Cauchy kernel** $\frac{1}{\omega_j - \zeta_k}$.
 #  3. We show the low-rank term can now be corrected by applying the **Woodbury identity** which reduces $(\bm{\Lambda} + \bm{p}\bm{q}^*)^{-1}$ in terms of $\bm{\Lambda}^{-1}$, truly reducing to the diagonal case.
-# 
+#
 
 # Finally we note the all HiPPO matrices have this NPLR representation. We can therefore find extract a unitarily equivalent DPLR parameterization.
-
-
-
 
 
 # ## Step 1. SSM Generating Functions
@@ -488,12 +494,14 @@ def NaiveSSMInit(N):
 # \hat{\mathcal{K}}_L(z; \bm{\overline{A}}, \bm{\overline{B}}, \bm{\overline{C}}) \in \mathbb{C} := \sum_{i=0}^{L-1} \bm{\overline{C}} \bm{\overline{A}}^i \bm{\overline{B}} z^i
 # $$
 
+
 def K_gen_simple(Ab, Bb, Cb, L):
     K = K_conv(Ab, Bb, Cb, L)
+
     def gen(z):
         return np.sum(K * (z ** np.arange(L)))
-    return gen
 
+    return gen
 
 
 # Intuitively, the generating function essentially converts the SSM convolution filter from the time domain to frequency domain.
@@ -510,22 +518,24 @@ def convFromGen(gen, L):
     order = np.array([i if i == 0 else L - i for i in range(L)])
     return out[order].real
 
+
 # > We can check they return the same thing.
 
-def test_gen():
+
+def test_gen(L=16):
     ssm = randomSSM(rng, 4)
     # Convolutional filter
-    b = K_conv(*ssm, L=16)
+    b = K_conv(*ssm, L=L)
 
     # From truncated generating function.
-    a = convFromGen(K_gen_simple(*ssm, L=16), 16)
+    a = convFromGen(K_gen_simple(*ssm, L=L), L)
     assert np.isclose(a, b, rtol=1e-2, atol=1e-4).all()
 
 
 # Now we can take one more step to switch the power for an inverse.
 
 
-# $$ 
+# $$
 # \hat{\mathcal{K}}_L(z) = \sum_{i=0}^{L-1} \bm{\overline{C}} \bm{\overline{A}}^i \bm{\overline{B}} z^i = \bm{\overline{C}} (\bm{I} - \bm{\overline{A}}^L z^L) (\bm{I} - \bm{\overline{A}} z)^{-1} \bm{\overline{B}} = \bm{\tilde{C}}  (\bm{I} - \bm{\overline{A}} z)^{-1} \bm{\overline{B}}
 # $$
 
@@ -533,14 +543,16 @@ def test_gen():
 
 # We can compute the generating function now without building the convolution filter.
 
+
 def K_gen_inverse(Ab, Bb, Cb, L):
     I = np.eye(Ab.shape[0])
     Ab_L = matrix_power(Ab, L)
-    Ct = C @ (I - Ab_L)
+    Ct = Cb @ (I - Ab_L)
     return lambda z: (Ct @ inv(I - Ab * z) @ Bb).reshape()
 
 
-# > Check that it returns the same result. 
+# > Check that it returns the same result.
+
 
 def test_gen_inverse():
     ssm = randomSSM(rng, 4)
@@ -582,6 +594,7 @@ def test_gen_inverse():
 # > We have effectively replaced an  inverse with a weighted dot product.
 # > Let's make a small helper function to compute it for us.
 
+
 @partial(np.vectorize, signature="(c),(),(c)->()")
 def cauchy_dot(v, omega, lambd):
     return (v / (omega - lambd)).sum()
@@ -616,8 +629,6 @@ def cauchy_dot(v, omega, lambd):
 # $$ \begin{aligned}
 # \bm{\hat{K}}_{DPLR}(z) & = c(z) [k_{z, \Lambda}(\bm{\tilde{C}}, \bm{\bm{B}}) - k_{z, \Lambda}(\bm{\tilde{C}}, \bm{\bm{p}}) (1 - k_{z, \Lambda}(\bm{q^*}, \bm{\bm{p}}) )^{-1} k_{z, \Lambda}(\bm{q^*}, \bm{\bm{B}}) ]
 #  \end{aligned}$$
-
-
 
 
 def K_gen_DPLR(Lambda, p, q, B, Ct, step):
@@ -655,7 +666,8 @@ def randomSSSM(rng, N):
     return Lambda, p, q, B, C
 
 
-# > New we check that the DPLR method yields the same filter as computing $\bm{A}$ directly. 
+# > New we check that the DPLR method yields the same filter as computing $\bm{A}$ directly.
+
 
 def test_gen_dplr():
     L = 16
@@ -681,22 +693,20 @@ def test_gen_dplr():
 # > skew-symmetric which implies that it has complex eigenvalues. The
 # > corresponding eigenvectors make up the unitary $\bm{V}$ matrix.
 
-# $$ 
+# $$
 #   \bm{A} = \bm{V} \bm{\Lambda} \bm{V}^* - \bm{p} \bm{q}^\top = \bm{V} \left( \bm{\Lambda} - \bm{V}^* \bm{p} (\bm{V}^*\bm{q})^* \right) \bm{V}^*
 # $$
-
 
 
 def make_NPLR_HiPPO(N):
     # Make -HiPPO
     hippo = -make_HiPPO(N)
 
-
     # Add in a rank 1 term. Makes it normal
     p = 0.5 * np.sqrt(2 * np.arange(1, N + 1) + 1.0)
     q = 2 * p
     S = hippo + p[:, np.newaxis] * q[np.newaxis, :]
-    
+
     # Diagonalize to S to V^* \Lambda V
     Lambda, V = jax.jit(eig, backend="cpu")(S)
 
@@ -735,7 +745,7 @@ class S4Layer(nn.Module):
     q: np.DeviceArray
     Lambda: np.DeviceArray
 
-    # 
+    #
     N: int
     d_model: int
     l_max: int
@@ -746,7 +756,7 @@ class S4Layer(nn.Module):
         self.C = self.param("C", nn.initializers.lecun_normal(), (1, self.N))
         self.D = self.param("D", nn.initializers.ones, (1,))
         self.log_step = self.param("log_step", nn.initializers.ones, (1,))
-        
+
         # Recomputed each time.
         step = self.log_step * 1.0 / self.l_max
         I = np.eye(self.N)
@@ -758,6 +768,7 @@ class S4Layer(nn.Module):
     def __call__(self, u):
         return nonCircularConvolution(u, self.K) + self.D * u
 
+
 # > Repeat layer $H$ times.
 
 S4Layer = cloneLayer(S4Layer)
@@ -765,12 +776,12 @@ S4Layer = cloneLayer(S4Layer)
 
 # > To initialize the model we compute the DPLR unitary equivalent of HiPPO and pass it in.
 
+
 def S4LayerInit(N):
     # Factor hippo into a unitary transform of a DPLR
-    _, Lambda, p, q, V = make_DPLR_HiPPO(N)
+    _, Lambda, p, q, V = make_NPLR_HiPPO(N)
     Vc = V.conj().T
     p = Vc @ p
     q = Vc @ q.conj()
     A = np.diag(Lambda) - p[:, np.newaxis] @ q[:, np.newaxis].conj().T
     return partial(S4Layer, N=N, A=A, p=p, q=q, Lambda=Lambda)
-
