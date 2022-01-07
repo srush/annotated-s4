@@ -411,11 +411,11 @@ class NaiveSSMLayer(nn.Module):
         self.B = self.param("B", nn.initializers.lecun_normal(), (self.N, 1))
         self.C = self.param("C", nn.initializers.lecun_normal(), (1, self.N))
         self.D = self.param("D", nn.initializers.ones, (1,))
-        self.log_step = self.param("log_step", nn.initializers.ones, (1,))
+        self.log_step = self.param("log_step", nn.initializers.zeros, (1,))
 
         # Note for Torch users: `setup` is called each time the
         # parameters are updated. Similar to Torch parameterizations.
-        step = self.log_step * 1.0 / self.l_max
+        step = np.exp(self.log_step) * 1.0 / self.l_max
         ssm = discretize(self.A, self.B, self.C, step=step)
         self.K = K_conv(*ssm, self.l_max)
 
@@ -740,6 +740,13 @@ def test_nplr():
 # > generating function.
 
 
+def log_step_initializer(dt_min=0.001, dt_max=0.1):
+    def init(key, shape):
+        return jax.random.uniform(key, shape) * (
+            np.log(dt_max) - np.log(dt_min)
+        ) + np.log(dt_min)
+    return init
+
 class S4Layer(nn.Module):
     # Constants
     A: np.DeviceArray
@@ -753,18 +760,26 @@ class S4Layer(nn.Module):
     l_max: int
 
     def setup(self):
-        self.step = 1.0 / self.l_max
+        # self.step = 1.0 / self.l_max
         self.B = self.param("B", nn.initializers.lecun_normal(), (self.N, 1))
-        self.C = self.param("C", nn.initializers.lecun_normal(), (1, self.N))
+        # self.C = self.param("C", nn.initializers.lecun_normal(), (1, self.N))
         self.D = self.param("D", nn.initializers.ones, (1,))
-        self.log_step = self.param("log_step", nn.initializers.ones, (1,))
+        # self.Lambda2 = self.param("Lambda2", start(self.Lambda))
+        # self.p2 = self.param("p2", start(self.p), (self.N))
+        # self.q2 = self.param("q2", start(self.q), (self.N))
+        # self.Lambda2 = self.param("Lambda2", nn.initializers.zeros, (self.N), jax.numpy.complex64)
+        # self.p2 = self.param("p2", nn.initializers.zeros, (self.N), jax.numpy.complex64)
+        # self.q2 = self.param("q2", nn.initializers.zeros, (self.N), jax.numpy.complex64)
+        self.log_step = self.param("log_step", log_step_initializer(), (1,))
 
         # Recomputed each time.
-        step = self.log_step * 1.0 / self.l_max
+        step = np.exp(self.log_step)
         I = np.eye(self.N)
-        Abar, _, Cbar = discretize(self.A, self.B, self.C, step)
-        self.Ct = (I - matrix_power(Abar, self.l_max)).conj().T @ Cbar.ravel()
-        K_gen = K_gen_DPLR(self.Lambda, self.p, self.q, self.B, self.Ct, self.step)
+        # Abar, _, Cbar = discretize(self.A, self.B, self.C, step)
+        # self.Ct = (I - matrix_power(Abar, self.l_max)).conj().T @ Cbar.ravel()
+        self.Ct = self.param("Ct", nn.initializers.lecun_normal(dtype=jax.numpy.complex64), (1, self.N))
+
+        K_gen = K_gen_DPLR(self.Lambda, self.p , self.q, self.B, self.Ct, step[0])
         self.K = convFromGen(K_gen, self.l_max)
 
     def __call__(self, u):
