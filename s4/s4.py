@@ -159,8 +159,7 @@ def runSSM(ssm, u):
 # \end{aligned}
 # $$
 
-# Can be computed with the following SSM. In general we can turn any Nth-order differential equation with a [single
-# first order *matrix* differential equation.](https://lpsa.swarthmore.edu/Representations/SysRepSS.html).
+# Can be computed with the following SSM.
 
 
 def example_mass(k, b, m):
@@ -208,7 +207,11 @@ def example_ssm():
 
 run_example(example_ssm)
 
-# ![]('./line.gif')
+pass
+# anim = example_ssm()
+# anim.save('line.gif', dpi=80, writer='imagemagick')
+
+# ![]('line.gif')
 
 
 # ## Convolution
@@ -249,23 +252,12 @@ def K_conv(A, B, C, L):
     return np.array([(C @ matrix_power(A, l) @ B).reshape() for l in range(L)])
 
 
-# We can then compute $y$ by "full" convolution with this $K$. Note: full convolution will include all possible
-# overlaps. The first term $y_0 = \mathbf{K}_0 u_0$ and subsequently $y_l = \sum_{t=0}^l \mathbf{K}_t u_{l-t}$.
-#
-# We throw out terms where $l >= L$. Note that if $L$ is long this convolution should be computed using an Fast Fourier
-# Transform (FFT). Depending on your application you can write the simplified convolution and let JAX figure out how to
-# compute the convolution for us. However, we note degraded performance as $L$ increases in size, so we default to the
-# FFT expression of the convolution.
+# We can then compute $y$ by "full" convolution with this $K$. Note:
+# full convolution willinclude all include all possible overlaps. The
+# first term $y_0 = \mathbf{K}_0 u_0$ and subsequently $y_l =
+# \sum_{t=0}^l \mathbf{K}_t u_{l-t}$. We throw out terms where $l >= L$.
 
 
-# ```python
-# # Letting JAX figure this out...
-# # from jax.scipy.signal import convolve
-# # def nonCircularConvolution(u, K):
-# #     return convolve(u, K, mode="full")[: u.shape[0]]
-# ```
-
-# Convolution using a Fast Fourier Transform
 def nonCircularConvolution(u, K):
     ud = np.fft.rfft(np.pad(u, (0, K.shape[0])))
     Kd = np.fft.rfft(np.pad(K, (0, u.shape[0])))
@@ -273,9 +265,16 @@ def nonCircularConvolution(u, K):
     return np.fft.irfft(out)[: u.shape[0]]
 
 
-# We can see that both approaches – the recurrence and the convolution - compute the same value.
+# Finally, note that if $L$ is long this convolution should be
+# computed using an FFT. In the original implementation this was done
+# manually. Here though we are going to rely on JAX's backend to decide
+# how to compute this convolution for us.
 
-# Check that convolution and recurrence return the same thing.
+# We can see that both approaches compute the same value.
+
+# Check they return the same thing.
+
+
 def test_cnn_rnn():
     ssm = randomSSM(jax.random.PRNGKey(0), 4)
     u = np.arange(16)
@@ -291,13 +290,10 @@ def test_cnn_rnn():
     assert np.isclose(rec.ravel(), conv.ravel(), rtol=1e-2, atol=1e-4).all()
 
 
-test_cnn_rnn()
-
-
 # ## HiPPO
 
 
-# For this model to work, initialization is really important. **TODO :: HiPPO Magic **
+# For this model to work, initialization is really important.
 
 # ...
 
@@ -330,7 +326,7 @@ def make_HiPPO(N):
 class NaiveSSMLayer(nn.Module):
     A: np.DeviceArray
     N: int
-    # Max Length L
+    # Max length L
     l_max: int
     # Ignored
     d_model: int
@@ -347,7 +343,7 @@ class NaiveSSMLayer(nn.Module):
 
 
 # In practice though we don't just want to run one SSM, but ideally we
-# would learn dozens of SSMs. We do this by copying the network structure
+# would learn hundreds of SSM. We do this by copying the network structure
 # $H$ different times.
 
 NaiveSSMLayer = nn.vmap(
@@ -412,16 +408,14 @@ def convFromGen(gen, L):
     # Roots of Unity
     r = np.exp((2j * np.pi / L) * np.arange(L))
     atRoots = jax.vmap(gen)(r)
-
     # Inverse FFT
     out = np.fft.ifft(atRoots, L).reshape(L)
-
     # Get the order right.
     order = np.array([i if i == 0 else L - i for i in range(L)])
     return out[order].real
 
 
-# Check that our original (slow) convolution and our generating-function induced convolution return the same values.
+# Check they return the same thing.
 
 
 def test_gen():
@@ -430,9 +424,6 @@ def test_gen():
 
     a = convFromGen(K_gen_simple(*ssm, L=16), 16)
     assert np.isclose(a, b, rtol=1e-2, atol=1e-4).all()
-
-
-test_gen()
 
 
 # What was the point of that? Well working with the generating
@@ -446,7 +437,7 @@ test_gen()
 # \mathbf{\hat{K}}(z) = \mathbf{\bar{C}} ( I - \mathbf{A}^L z^L) (I - \mathbf{A} z)^{-1} \mathbf{\bar{B}}
 #  \end{aligned}$$
 
-# Furthermore when applied at the roots of unity for $L$ the $z^L$ term goes away, as it reduces to 1.
+# Furthermore when applied at the roots of unity for $L$ the $z^L$ term goes away.
 
 
 def K_gen_inverse(A, B, C, L):
@@ -456,9 +447,6 @@ def K_gen_inverse(A, B, C, L):
     return lambda z: (C2 @ inv(I - A * z) @ B).reshape()
 
 
-# We can verify that this reduction is equivalent to the original convolution.
-
-
 def test_gen_inverse():
     ssm = randomSSM(jax.random.PRNGKey(0), 4)
     b = K_conv(*ssm, L=16)
@@ -466,8 +454,6 @@ def test_gen_inverse():
     a = convFromGen(K_gen_inverse(*ssm, L=16), 16)
     assert np.isclose(a, b, rtol=1e-2, atol=1e-4).all()
 
-
-test_gen_inverse()
 
 # ## Step 2: Diagonal Plus Low Rank
 
@@ -507,9 +493,10 @@ def cauchy_dot(v, omega, lambd):
 
 # $$A = \Lambda + p  q^*$$
 
-# The [Woodbury identity](https://en.wikipedia.org/wiki/Woodbury_matrix_identity)
-# says that the inverse of a diagonal plus low-rank (DPLR) matrix is equal to the inverse of the diagonal plus a
-# low-rank term.
+# The [Woodbury
+# identity](https://en.wikipedia.org/wiki/Woodbury_matrix_identity)
+# says that the inverse of a diagonal plus low-rank is equal to the
+# inverse of the diagonal plus a low-rank term.
 
 # $$ \begin{aligned}
 # (\Lambda + p  q^*)^{-1} &= \Lambda^{-1} - \Lambda^{-1} p (1 + q^* p)^{-1} q^* \Lambda^{-1}
@@ -547,7 +534,7 @@ def K_gen_DPLR(Lambda, p, q, B, Ct, step):
     return gen
 
 
-# Now we can check whether this worked. First we generate a random Dynamic plus Low-Rank (DPLR) matrix A.
+# Now we can check whether this worked. First we generate a random DPLR A
 
 
 def randomSSSM(rng, N):
@@ -560,14 +547,14 @@ def randomSSSM(rng, N):
     return Lambda, p, q, B, C
 
 
-# Now we check that the DPLR method yields the same filter.
+# New we check that the DPLR method yields the same filter.
 
 
 def test_gen_dplr():
     L = 16
     I = np.eye(4)
 
-    # Create a DPLR A matrix and discretize
+    # Create a DPLR A matrix and discritize
     Lambda, p, q, B, C = randomSSSM(jax.random.PRNGKey(0), 4)
     A = np.diag(Lambda) - p[:, np.newaxis] * q[np.newaxis, :]
     Ab, Bb, Cb = discretize(A, B, C, 1.0 / L)
@@ -579,20 +566,14 @@ def test_gen_dplr():
     assert np.isclose(a, b, rtol=1e-2, atol=1e-4).all()
 
 
-test_gen_dplr()
-
-
 # ## Step 3: Turning HiPPO to DPLR
 
 # This method allows us to compute the generating function for a SSM with A in DPLR form.
 # However we are not interested in any A. We want the A matrix to follow the HiPPO formulation.
 
-# It turns out that the HiPPO matrix above is not DPLR. However the paper shows that it is *normal plus low-rank* (NPLR).
-# They also show that NPLR matrices are [*unitarily equivalent*](https://en.wikipedia.org/wiki/Specht%27s_theorem) to
-# a DPLR matrix.
-#
-# For our purposes this means that there is some DPLR matrix that is just as good as HiPPO. The paper shows how to
-# compute it.
+# It turns out that the HiPPO matrix above is not DPLR. However the paper shows that it is normal plus low-rank.
+# They also show that NPLR matrices are *unitarily* equivalent to a DPLR matrix. For our purposes this
+# means that there is some DPLR matrix that is just as good as HiPPO. The paper shows how to compute it.
 
 
 # This function computes all the terms for HiPPO $A$ in equation (6).
@@ -601,15 +582,13 @@ test_gen_dplr()
 
 # Make DPLR HiPPO
 def make_DPLR_HiPPO(N):
-    # Make HiPPO
+    # Make HiPPo
     p = np.sqrt(2 * np.arange(1, N + 1) + 1.0)
     q = p
     pq = p[:, np.newaxis] * q[np.newaxis, :]
     hippo = -np.tril(pq, k=-1) - np.diag(np.arange(1, N + 1) + 1)
-
     # Add in a rank 1 term. Makes it skew-symmetric
     S = hippo + (0.5 * pq + 0.5 * np.eye(N))
-
     # Diagonalize to S to V^* \Lambda V
     diag, v = eig_cpu(S)
     diag -= 0.5
@@ -619,7 +598,7 @@ def make_DPLR_HiPPO(N):
 # Let's check just to make sure that the identity holds.
 
 
-def test_decomposition():
+def test_decomp():
     N = 8
     A2, Lambda, p, q, V = make_DPLR_HiPPO(N)
     p, q = p[:, np.newaxis], q[:, np.newaxis]
@@ -629,9 +608,6 @@ def test_decomposition():
     A4 = V @ Lambda @ Vc - (p @ q.T)
     assert np.allclose(A2, A3, atol=1e-2, rtol=1e-2)
     assert np.allclose(A2, A4, atol=1e-2, rtol=1e-2)
-
-
-test_decomposition()
 
 
 # # Part 3: Putting S4 to the Test
@@ -685,7 +661,7 @@ S4Layer = nn.vmap(
 
 
 def S4LayerInit(N):
-    # Factor HiPPO into a unitary transform of a DPLR
+    # Factor hippo into a unitary transform of a DPLR
     _, Lambda, p, q, V = make_DPLR_HiPPO(N)
     Vc = V.conj().T
     p = Vc @ p
@@ -694,4 +670,4 @@ def S4LayerInit(N):
     return partial(S4Layer, N=N, A=A, p=p, q=q, Lambda=Lambda)
 
 
-# ## MNIST, CIFAR, & Path-X
+# ## Path-X
