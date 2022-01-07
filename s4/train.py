@@ -33,17 +33,77 @@ def compute_accuracy(logits, label):
 
 
 # As we're using Flax, we also write a utility function to return a default TrainState object.
-# This function initializes model parameters, as well as our optimizer.
+# This function initializes model parameters, as well as our optimizer. Note that for S4 models,
+# we use a custom learning rate for parameters of the S4 kernel (lr = 0.001, no weight decay).
+def map_nested_fn(fn):
+    """Recursively apply `fn to the key-value pairs of a nested dict / pytree."""
+
+    def map_fn(nested_dict):
+        return {
+            k: (map_fn(v) if hasattr(v, "keys") else fn(k, v))
+            for k, v in nested_dict.items()
+        }
+
+    return map_fn
 
 
-def create_train_state(model, rng, in_dim=1, bsz=128, seq_len=784, lr=1e-3):
-    model = model(training=True)
+def create_train_state(
+    model_name,
+    model_cls,
+    rng,
+    in_dim=1,
+    bsz=128,
+    seq_len=784,
+    lr=1e-3,
+    lr_schedule=False,
+    total_steps=-1,
+):
+    model = model_cls(training=True)
     init_rng, dropout_rng = jax.random.split(rng, num=2)
     params = model.init(
         {"params": init_rng, "dropout": dropout_rng},
         np.ones((bsz, seq_len - 1, in_dim)),
-    )["params"]
-    tx = optax.adamw(lr)
+    )[
+        "params"
+    ].unfreeze()  # Note: Added immediate `unfreeze()` to play well w/ Optax. See below!
+
+    # Implement LR Schedule (No change for first 30% of training, then decay w/ cubic polynomial to 0 for last 70%)
+    if lr_schedule:
+        lr = optax.polynomial_schedule(
+            init_value=lr,
+            end_value=0.0,
+            power=3,
+            transition_begin=int(0.3 * total_steps),
+            transition_steps=int(0.7 * total_steps),
+        )
+
+    # S4 uses a Fixed LR = 1e-3 with NO weight decay for the S4 Matrices, higher LR elsewhere
+    if "s4" in model_name:
+        # Note for Debugging... this is all undocumented and so weird. The following links are helpful...
+        #
+        #   > Flax "Recommended" interplay w/ Optax (this bridge needs ironing):
+        #       https://github.com/google/flax/blob/main/docs/flip/1009-optimizer-api.md#multi-optimizer
+        #
+        #   > But... masking doesn't work like the above example suggests!
+        #       Root Explanation: https://github.com/deepmind/optax/issues/159
+        #       Fix: https://github.com/deepmind/optax/discussions/167
+        #
+        #   > Also... Flax FrozenDict doesn't play well with rest of Jax + Optax...
+        #       https://github.com/deepmind/optax/issues/160#issuecomment-896460796
+        #
+        #   > Solution: Use Optax.multi_transform!
+        s4_fn = map_nested_fn(lambda k, _: "s4" if k in ["B", "C"] else "regular")
+        tx = optax.multi_transform(
+            {
+                "s4": optax.adam(learning_rate=1e-3),
+                "regular": optax.adamw(learning_rate=lr, weight_decay=0.01),
+            },
+            s4_fn,
+        )
+
+    else:
+        tx = optax.adamw(learning_rate=lr, weight_decay=0.01)
+
     return train_state.TrainState.create(apply_fn=model.apply, params=params, tx=tx)
 
 
@@ -189,7 +249,12 @@ class SeqModel(nn.Module):
                     nn.LayerNorm(),
                     nn.Dense(self.d_model),
                     nn.Dense(self.d_model),
-                    nn.Dropout(self.dropout, deterministic=not self.training),
+                    # Dropout2D is critical... we want to drop entire channels --> so share mask over 0th (L) dim?
+                    nn.Dropout(
+                        self.dropout,
+                        broadcast_dims=[0],
+                        deterministic=not self.training,
+                    ),
                 )
                 for _ in range(self.n_layers)
             ]
@@ -239,6 +304,8 @@ def example_train(
     epochs=10,
     ssm_n=64,
     lr=1e-3,
+    lr_schedule=False,
+    suffix=None,
 ):
     # Set randomness...
     print("[*] Setting Randomness...")
@@ -257,10 +324,7 @@ def example_train(
 
     # Create dataset...
     trainloader, testloader, n_classes, seq_len, in_dim = create_dataset_fn(bsz=bsz)
-    print(
-        f"[*] Starting `{model}` Training on `{dataset}` =>> Initializing Model + Train"
-        " State..."
-    )
+    print(f"[*] Starting `{model}` Training on `{dataset}` =>> Initializing...")
 
     model_cls = partial(
         BatchSeqModel,
@@ -272,7 +336,15 @@ def example_train(
         classification=classification,
     )
     state = create_train_state(
-        model_cls, rng, in_dim=in_dim, bsz=bsz, seq_len=seq_len, lr=lr
+        model,
+        model_cls,
+        rng,
+        in_dim=in_dim,
+        bsz=bsz,
+        seq_len=seq_len,
+        lr=lr,
+        lr_schedule=lr_schedule,
+        total_steps=len(trainloader) * epochs,
     )
 
     # Loop over epochs
@@ -295,8 +367,11 @@ def example_train(
         )
 
         # Save a checkpoint each epoch & handle best (test loss... not "copacetic" but ehh)
+        run_id = f"checkpoints/{dataset}/{model}-d_model={d_model}" + (
+            f"-{suffix}" if suffix is not None else ""
+        )
         ckpt_path = checkpoints.save_checkpoint(
-            f"checkpoints/{dataset}/{model}-d_model={d_model}",
+            run_id,
             state,
             epoch,
             keep=epochs,
@@ -305,16 +380,9 @@ def example_train(
             not classification and test_loss < best_loss
         ):
             # Create new "best-{step}.ckpt and remove old one
-            shutil.copy(
-                ckpt_path,
-                f"checkpoints/{dataset}/{model}-d_model={d_model}/best_{epoch}",
-            )
-            if os.path.exists(
-                f"checkpoints/{dataset}/{model}-d_model={d_model}/best_{best_epoch}"
-            ):
-                os.remove(
-                    f"checkpoints/{dataset}/{model}-d_model={d_model}/best_{best_epoch}"
-                )
+            shutil.copy(ckpt_path, f"{run_id}/best_{epoch}")
+            if os.path.exists(f"{run_id}/best_{best_epoch}"):
+                os.remove(f"{run_id}/best_{best_epoch}")
 
             best_loss, best_acc, best_epoch = test_loss, test_acc, epoch
 
@@ -333,6 +401,7 @@ if __name__ == "__main__":
     parser.add_argument("--model", type=str, choices=Models.keys(), required=True)
     parser.add_argument("--epochs", type=int, default=10)
     parser.add_argument("--bsz", type=int, default=128)
+    parser.add_argument("--suffix", type=str, default=None)
 
     # Model Parameters
     parser.add_argument("--d_model", type=int, default=128)
@@ -342,6 +411,7 @@ if __name__ == "__main__":
 
     # Optimization Parameters
     parser.add_argument("--lr", type=float, default=1e-3)
+    parser.add_argument("--lr_schedule", default=False, action="store_true")
 
     args = parser.parse_args()
 
@@ -353,4 +423,6 @@ if __name__ == "__main__":
         bsz=args.bsz,
         ssm_n=args.ssm_n,
         lr=args.lr,
+        lr_schedule=args.lr_schedule,
+        suffix=args.suffix,
     )

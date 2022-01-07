@@ -21,17 +21,47 @@ python -m s4.train --dataset mnist-classification --model s4 --epochs 10 --bsz 1
 #### CIFAR-10 Classification
 
 ```bash
+## Adding a Cubic Decay Schedule for last 70% of training
+
+# Default arguments (100 epochs for CIFAR)
+python -m s4.train --dataset cifar-classification --model s4 --epochs 100 --bsz 128 --d_model 128 --ssm_n 64 --lr 1e-2 --lr_schedule
+
+# S4 replication from central repository
+python -m s4.train --dataset cifar-classification --model s4 --epochs 100 --bsz 64 --d_model 512 --ssm_n 64 --lr 1e-2 --lr_schedule
+
+## After Fixing S4-Custom Optimization & Dropout2D (all implemented inline now... can add flags if desired)
+
+# Default arguments (100 epochs for CIFAR)
+python -m s4.train --dataset cifar-classification --model s4 --epochs 100 --bsz 128 --d_model 128 --ssm_n 64 --lr 1e-2
+
+# S4 replication from central repository
+python -m s4.train --dataset cifar-classification --model s4 --epochs 100 --bsz 64 --d_model 512 --ssm_n 64 --lr 1e-2
+
+## Before Fixing S4-Custom Optimization...
+
 # Default arguments (100 epochs for CIFAR)
 python -m s4.train --dataset cifar-classification --model s4 --epochs 100 --bsz 128 --d_model 128 --ssm_n 64
 
-# S4 replication (close enough to params in original repo's example.py -- no LR schedule though!)
+# S4 replication from central repository
 python -m s4.train --dataset cifar-classification --model s4 --epochs 100 --bsz 64 --d_model 512 --ssm_n 64
 ```
 
-(Default Arguments): Gets "best" 65.51% accuracy @ 46s/epoch on a TitanRTX
+Adding a Schedule:
+- (LR 1e-2 w/ Replication Args -- "big" model): 71.55% (still running, 39 epochs) @ 3m16s on a TitanRTX
+- (LR 1e-2 w/ Default Args -- not "bigger" model): 71.92% @ 36s/epoch on a TitanRTX
 
-(S4 Arguments): Gets "best" 66.44% accuracy @ 3m11s on a TitanRTX
-    - Possible reasons for failure to meet replication: LR Schedule (Decay on Plateau), Custom LR per Parameter.
+After Fixing Dropout2D (w/ Optimization in Place):
+- (LR 1e-2 w/ Replication Args -- "big" model): 70.68% (still running, 47 epochs) @ 3m17s on a TitanRTX
+- (LR 1e-2 w/ Default Args -- not "bigger" model): 68.20% @ 36s/epoch on a TitanRTX
+
+After Fixing Optimization, Before Fixing Dropout2D:
+- (LR 1e-2 w/ Default Args -- not "bigger" model): 67.14% @ 36s/epoch on a TitanRTX 
+
+Before Fixing S4 Optimization -- AdamW w/ LR 1e-3 for ALL Parameters:
+
+- (Default Arguments): Gets "best" 63.51% accuracy @ 46s/epoch on a TitanRTX
+- (S4 Arguments): Gets "best" 66.44% accuracy @ 3m11s on a TitanRTX
+    + Possible reasons for failure to meet replication: LR Schedule (Decay on Plateau), Custom LR per Parameter.
 
 ## Quickstart (Development)
 
