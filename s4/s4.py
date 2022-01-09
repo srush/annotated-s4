@@ -10,7 +10,7 @@
 # > The recent Structured State Space for Sequence Modeling (S4)
 # > architecture has been applied to several difficult sequence modeling
 # > tasks, showing a remarkable capacity for reasoning over long-term
-# > dependencies. The work is part of a line of serveral projects utilizing
+# > dependencies. The work is part of a line of several projects utilizing
 # > state space models to model long-term sequences.
 
 # > There are a lot of reasons to be excited by this work. Most notably
@@ -18,7 +18,7 @@
 
 #  [image]()
 
-# > For me (srush) personally though, the paper is a refreshing departure from
+# > For us personally, the paper is a refreshing departure from
 # > Transformer, and brings a very different style to a problem-space that many of
 # > us thought we understood very well. Several of my colleagues have also noted
 # > privately (and on twitter!) how difficult the paper was to get intuition for.
@@ -35,7 +35,7 @@
 # > nature of JAX plays extremely nicely with the mathematical
 # > descriptions.
 
-# / authors
+# / Sasha Rush + Sidd Karamcheti
 
 
 # # Table of Contents
@@ -188,7 +188,7 @@ def runSSM(A, B, C, u):
     return scanSSM(stepSSM(Ab, Bb, Cb), u[:, np.newaxis], np.zeros((N,)))
 
 
-# ### Tangeant: A Mechanics Example
+# ### Tangent: A Mechanics Example
 
 # To gain some intuition and to test our SSM implementation, we pause
 # from the paper to implement a [classic example from mechanics](https://en.wikipedia.org/wiki/State-space_representation#Moving_object_example).
@@ -324,8 +324,15 @@ def K_conv(A, B, C, L):
 # In other words, equation is a single (non-circular) convolution and can be computed very efficiently with FFTs, *provided* that $\boldsymbol{\overline{K}}$ is known.
 
 
-def nonCircularConvolution(u, K):
-    return convolve(u, K, mode="full")[: u.shape[0]]
+def nonCircularConvolution(u, K, nofft=False):
+    if nofft:
+        return convolve(u, K, mode="full")[: u.shape[0]]
+    else:
+        assert K.shape[0] == u.shape[0]
+        ud = np.fft.rfft(np.pad(u, (0, K.shape[0])))
+        Kd = np.fft.rfft(np.pad(K, (0, u.shape[0])))
+        out = ud * Kd
+        return np.fft.irfft(out)[: u.shape[0]]
 
 
 # > We can convince ourselves that the two methods yield the same result by checking explicitly.
@@ -409,11 +416,11 @@ class NaiveSSMLayer(nn.Module):
         self.B = self.param("B", nn.initializers.lecun_normal(), (self.N, 1))
         self.C = self.param("C", nn.initializers.lecun_normal(), (1, self.N))
         self.D = self.param("D", nn.initializers.ones, (1,))
-        self.log_step = self.param("log_step", nn.initializers.ones, (1,))
+        self.log_step = self.param("log_step", nn.initializers.zeros, (1,))
 
         # Note for Torch users: `setup` is called each time the
         # parameters are updated. Similar to Torch parameterizations.
-        step = self.log_step * 1.0 / self.l_max
+        step = np.exp(self.log_step) * 1.0 / self.l_max
         ssm = discretize(self.A, self.B, self.C, step=step)
         self.K = K_conv(*ssm, self.l_max)
 
@@ -485,7 +492,7 @@ def NaiveSSMInit(N):
 
 # To address the problem of computing powers of $\boldsymbol{\overline{A}}$, we introduce another technique.
 # Instead of computing the SSM convolution filter $\boldsymbol{\overline{K}}$ directly,
-# we introduce a [generating function]() on its coefficients and compute evaluations of it.
+# we introduce a [generating function](https://math.stackexchange.com/questions/3213142/root-of-unity-filter) on its coefficients and compute evaluations of it.
 
 # The *truncated SSM generating function* at node $z$ with truncation $L$ is
 
@@ -738,6 +745,15 @@ def test_nplr():
 # > generating function.
 
 
+def log_step_initializer(dt_min=0.001, dt_max=0.1):
+    def init(key, shape):
+        return jax.random.uniform(key, shape) * (
+            np.log(dt_max) - np.log(dt_min)
+        ) + np.log(dt_min)
+
+    return init
+
+
 class S4Layer(nn.Module):
     # Constants
     A: np.DeviceArray
@@ -751,18 +767,28 @@ class S4Layer(nn.Module):
     l_max: int
 
     def setup(self):
-        self.step = 1.0 / self.l_max
+        # self.step = 1.0 / self.l_max
         self.B = self.param("B", nn.initializers.lecun_normal(), (self.N, 1))
-        self.C = self.param("C", nn.initializers.lecun_normal(), (1, self.N))
+        # self.C = self.param("C", nn.initializers.lecun_normal(), (1, self.N))
         self.D = self.param("D", nn.initializers.ones, (1,))
-        self.log_step = self.param("log_step", nn.initializers.ones, (1,))
+        # self.Lambda2 = self.param("Lambda2", start(self.Lambda))
+        # self.p2 = self.param("p2", start(self.p), (self.N))
+        # self.q2 = self.param("q2", start(self.q), (self.N))
+        # self.Lambda2 = self.param("Lambda2", nn.initializers.zeros, (self.N), jax.numpy.complex64)
+        # self.p2 = self.param("p2", nn.initializers.zeros, (self.N), jax.numpy.complex64)
+        # self.q2 = self.param("q2", nn.initializers.zeros, (self.N), jax.numpy.complex64)
+        self.log_step = self.param("log_step", log_step_initializer(), (1,))
 
         # Recomputed each time.
-        step = self.log_step * 1.0 / self.l_max
-        I = np.eye(self.N)
-        Abar, _, Cbar = discretize(self.A, self.B, self.C, step)
-        self.Ct = (I - matrix_power(Abar, self.l_max)).conj().T @ Cbar.ravel()
-        K_gen = K_gen_DPLR(self.Lambda, self.p, self.q, self.B, self.Ct, self.step)
+        step = np.exp(self.log_step)
+        # I = np.eye(self.N)
+        # Abar, _, Cbar = discretize(self.A, self.B, self.C, step)
+        # self.Ct = (I - matrix_power(Abar, self.l_max)).conj().T @ Cbar.ravel()
+        self.Ct = self.param(
+            "Ct", nn.initializers.lecun_normal(dtype=jax.numpy.complex64), (1, self.N)
+        )
+
+        K_gen = K_gen_DPLR(self.Lambda, self.p, self.q, self.B, self.Ct, step[0])
         self.K = convFromGen(K_gen, self.l_max)
 
     def __call__(self, u):
