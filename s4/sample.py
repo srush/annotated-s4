@@ -1,8 +1,8 @@
 from functools import partial
 import jax
 import jax.numpy as np
-import numpy as onp
 import matplotlib.pyplot as plt
+import numpy as onp
 from flax.training import checkpoints
 from .data import Datasets
 from .s4 import S4LayerInit
@@ -15,10 +15,11 @@ if __name__ == "__main__":
     model = partial(
         BatchSeqModel, layer=model, d_output=256, d_model=256, n_layers=4, l_max=783
     )
-    
 
     rng = jax.random.PRNGKey(0)
-    state = checkpoints.restore_checkpoint("checkpoints/mnist/s4-d_model=256/best_187", None)
+    state = checkpoints.restore_checkpoint(
+        "checkpoints/mnist/s4-d_model=256/best_187", None
+    )
     _, testloader, _, _, _ = Datasets["mnist"](bsz=128)
     print(validate(state["params"], model, testloader, classification=False))
     model = model(training=False)
@@ -53,7 +54,7 @@ if __name__ == "__main__":
         # cur = (cur, rng)
         # for j in range(start, start + 10):
         #     cur = loop(j, cur)
-        for i in range(start+3, 784):
+        for i in range(start + 3, 784):
             cur = jax.ops.index_update(cur, (0, i, 0), 0)
 
         out = jax.lax.fori_loop(start, 783, jax.jit(loop), (cur, rng))[0]
@@ -65,5 +66,6 @@ if __name__ == "__main__":
         final[:, :, 1] = image.reshape(28, 28)
         final.reshape(28 * 28, 3)[:start, 2] = image.reshape(28 * 28)[:start]
         plt.imshow(final / 256.0)
-        plt.savefig("im%d.png"%(j))
-        if j > 100: break
+        plt.savefig("im%d.png" % (j))
+        if j > 100:
+            break

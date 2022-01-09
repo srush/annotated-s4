@@ -92,7 +92,9 @@ def create_train_state(
         #       https://github.com/deepmind/optax/issues/160#issuecomment-896460796
         #
         #   > Solution: Use Optax.multi_transform!
-        s4_fn = map_nested_fn(lambda k, _: "s4" if k in ["B", "C", "Ct", "D", "log_step"] else "regular")
+        s4_fn = map_nested_fn(
+            lambda k, _: "s4" if k in ["B", "C", "Ct", "D", "log_step"] else "regular"
+        )
         tx = optax.multi_transform(
             {
                 "s4": optax.adam(learning_rate=1e-3),

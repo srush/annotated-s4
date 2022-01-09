@@ -324,13 +324,15 @@ def K_conv(A, B, C, L):
 # In other words, equation is a single (non-circular) convolution and can be computed very efficiently with FFTs, *provided* that $\boldsymbol{\overline{K}}$ is known.
 
 
-def nonCircularConvolution(u, K):
-    # return convolve(u, K, mode="full")[: u.shape[0]]
-    assert K.shape[0] == u.shape[0]
-    ud = np.fft.rfft(np.pad(u, (0, K.shape[0])))
-    Kd = np.fft.rfft(np.pad(K, (0, u.shape[0])))
-    out = ud * Kd
-    return np.fft.irfft(out)[: u.shape[0]]
+def nonCircularConvolution(u, K, nofft=False):
+    if nofft:
+        return convolve(u, K, mode="full")[: u.shape[0]]
+    else:
+        assert K.shape[0] == u.shape[0]
+        ud = np.fft.rfft(np.pad(u, (0, K.shape[0])))
+        Kd = np.fft.rfft(np.pad(K, (0, u.shape[0])))
+        out = ud * Kd
+        return np.fft.irfft(out)[: u.shape[0]]
 
 
 # > We can convince ourselves that the two methods yield the same result by checking explicitly.
@@ -748,7 +750,9 @@ def log_step_initializer(dt_min=0.001, dt_max=0.1):
         return jax.random.uniform(key, shape) * (
             np.log(dt_max) - np.log(dt_min)
         ) + np.log(dt_min)
+
     return init
+
 
 class S4Layer(nn.Module):
     # Constants
@@ -780,9 +784,11 @@ class S4Layer(nn.Module):
         I = np.eye(self.N)
         # Abar, _, Cbar = discretize(self.A, self.B, self.C, step)
         # self.Ct = (I - matrix_power(Abar, self.l_max)).conj().T @ Cbar.ravel()
-        self.Ct = self.param("Ct", nn.initializers.lecun_normal(dtype=jax.numpy.complex64), (1, self.N))
+        self.Ct = self.param(
+            "Ct", nn.initializers.lecun_normal(dtype=jax.numpy.complex64), (1, self.N)
+        )
 
-        K_gen = K_gen_DPLR(self.Lambda, self.p , self.q, self.B, self.Ct, step[0])
+        K_gen = K_gen_DPLR(self.Lambda, self.p, self.q, self.B, self.Ct, step[0])
         self.K = convFromGen(K_gen, self.l_max)
 
     def __call__(self, u):
