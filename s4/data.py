@@ -1,9 +1,10 @@
+import os
 import jax
 import numpy as np
 import torch
 import torchvision
 import torchvision.transforms as transforms
-from torch.utils.data import TensorDataset
+from torch.utils.data import TensorDataset, random_split
 from tqdm import tqdm
 
 
@@ -15,8 +16,6 @@ from tqdm import tqdm
 #  this is the simplest "majority rule" experiment => gets 100% test accuracy.
 #
 #  @Note: RNN & S4 *should* fit this perfectly... but needs to be verified.
-
-
 def create_sin_x_dataset(n_examples=1024, bsz=128):
     print("[*] Generating Toy Dataset: sin(x)...")
 
@@ -46,8 +45,6 @@ def create_sin_x_dataset(n_examples=1024, bsz=128):
 #
 # In this dataset, `a` controls amplitude and `b` controls phase and are sampled uniformly at random in prespecified
 # intervals.
-
-
 def create_sin_ax_b_dataset(n_examples=20000, bsz=128):
     print("[*] Generating sin(ax + b) Dataset...")
 
@@ -100,8 +97,6 @@ def create_sin_ax_b_dataset(n_examples=20000, bsz=128):
 # **Task**: Predict next pixel value given history, in an autoregressive fashion (784 pixels x 256 values).
 #
 # While we train on full sequences, generations should probably condition on first 10-25% of image.
-
-
 def create_mnist_dataset(bsz=128):
     print("[*] Generating MNIST Sequence Modeling Dataset...")
 
@@ -123,6 +118,76 @@ def create_mnist_dataset(bsz=128):
     )
 
     # Return data loaders, with the provided batch size
+    trainloader = torch.utils.data.DataLoader(train, batch_size=bsz, shuffle=True)
+    testloader = torch.utils.data.DataLoader(test, batch_size=bsz, shuffle=False)
+
+    return trainloader, testloader, N_CLASSES, SEQ_LENGTH, IN_DIM
+
+
+# ### QuickDraw Drawing Generation
+# **Task**: Given dataset of <50M Google QuickDraw Sketches as 28 x 28 grayscale values, predict next pixel in an
+# autoregressive fashion.
+#
+# Similar to MNIST Sequence modeling, generations should probably condition on first 10-25% of image. Future work
+# should look at modeling drawings at the *stroke* level, present a more natural "interactive" completion aspect for
+# folks to play around with!
+def create_quickdraw_dataset(bsz=128):
+    print("[*] Generating QuickDraw Sequence Modeling Dataset...")
+
+    # Constants
+    SEQ_LENGTH, N_CLASSES, IN_DIM = 784, 256, 1
+
+    if not os.path.exists("data/quickdraw/npy"):
+        # Create Dataset
+        os.makedirs("data/quickdraw/npy")
+
+        # Note - requires downloading from Google Cloud Bucket; dependency google-cloud-storage installed!
+        from google.cloud import storage
+
+        # Download all of the .npy "simplified" drawings...
+        print(
+            "\tDownloading Simplified Drawings from Google Cloud (will take a while)..."
+        )
+        client = storage.Client.create_anonymous_client()
+        bucket = client.get_bucket("quickdraw_dataset")
+        blobs = bucket.list_blobs(prefix="full/numpy_bitmap")
+        for b in tqdm(list(blobs)):
+            b.download_to_filename(
+                f"data/quickdraw/npy/{b.name.split('/')[-1].lower()}"
+            )
+
+    # Iterate through Dataset, build full set
+    if os.path.exists("data/quickdraw/data.npz"):
+        print("\tLoading Full Dataset from npz file (may take a bit)...")
+        npz = np.load("data/quickdraw/data.npz")
+        data, labels = npz["data"], npz["labels"]
+    else:
+        print("\tTensorizing Dataset (will also take a while)...")
+        data, labels = [], []
+        for i, c_name in enumerate(tqdm(os.listdir("data/quickdraw/npy"))):
+            class_data = np.load(f"data/quickdraw/npy/{c_name}")
+            data.append(class_data)
+            labels.append(np.ones(len(class_data)) * i)
+
+        # Create "full" dataset & labels
+        data, labels = np.concatenate(data, axis=0), np.concatenate(labels, axis=0)
+
+        # Save Dataset
+        np.savez("data/quickdraw/data.npz", data=data, labels=labels)
+
+    # Generate train/test splits... test should be a fraction of 0.001 of total set (assuming in 10s of millions)
+    print("\tGenerating Train/Test Splits...")
+    data, labels, n_test = (
+        torch.Tensor(data),
+        torch.Tensor(labels),
+        int(0.001 * len(data)),
+    )
+    dataset = TensorDataset(data.unsqueeze(-1), labels)
+    train, test = random_split(
+        dataset, [len(data) - n_test, n_test], torch.Generator().manual_seed(3)
+    )
+
+    # Return data loaders with the provided batch size
     trainloader = torch.utils.data.DataLoader(train, batch_size=bsz, shuffle=True)
     testloader = torch.utils.data.DataLoader(test, batch_size=bsz, shuffle=False)
 
@@ -188,6 +253,7 @@ def create_cifar_classification_dataset(bsz=128):
 
 Datasets = {
     "mnist": create_mnist_dataset,
+    "quickdraw": create_quickdraw_dataset,
     "sin": create_sin_x_dataset,
     "sin_noise": create_sin_ax_b_dataset,
     "mnist-classification": create_mnist_classification_dataset,

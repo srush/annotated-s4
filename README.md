@@ -9,6 +9,13 @@
 python -m s4.train --dataset mnist --model s4 --epochs 100 --bsz 128 --d_model 128 --ssm_n 64
 ```
 
+#### QuickDraw Sequence Modeling
+
+```bash
+# Default arguments
+python -m s4.train --dataset quickdraw --model s4 --epochs 10 --bsz 128 --d_model 128 --ssm_n 64
+```
+
 #### MNIST Classification
 
 ```bash
@@ -101,7 +108,7 @@ pip install flax
 pip install torch torchvision torchaudio
 
 # Defaults
-pip install black celluloid flake8 isort ipython matplotlib pre-commit seaborn tensorflow tqdm
+pip install black celluloid flake8 google-cloud-storage isort ipython matplotlib pre-commit seaborn tensorflow tqdm
 
 # Set up pre-commit
 pre-commit install
@@ -119,7 +126,7 @@ pip install flax
 pip install torch==1.10.1+cpu torchvision==0.11.2+cpu torchaudio==0.10.1+cpu -f https://download.pytorch.org/whl/cpu/torch_stable.html
 
 # Defaults
-pip install black celluloid flake8 isort ipython matplotlib pre-commit seaborn tensorflow tqdm
+pip install black celluloid flake8 google-cloud-storage isort ipython matplotlib pre-commit seaborn tensorflow tqdm
 
 # Set up pre-commit
 pre-commit install
