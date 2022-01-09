@@ -781,7 +781,7 @@ class S4Layer(nn.Module):
 
         # Recomputed each time.
         step = np.exp(self.log_step)
-        I = np.eye(self.N)
+        # I = np.eye(self.N)
         # Abar, _, Cbar = discretize(self.A, self.B, self.C, step)
         # self.Ct = (I - matrix_power(Abar, self.l_max)).conj().T @ Cbar.ravel()
         self.Ct = self.param(
