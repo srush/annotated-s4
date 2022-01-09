@@ -92,7 +92,9 @@ def create_train_state(
         #       https://github.com/deepmind/optax/issues/160#issuecomment-896460796
         #
         #   > Solution: Use Optax.multi_transform!
-        s4_fn = map_nested_fn(lambda k, _: "s4" if k in ["B", "C"] else "regular")
+        s4_fn = map_nested_fn(
+            lambda k, _: "s4" if k in ["B", "C", "Ct", "D", "log_step"] else "regular"
+        )
         tx = optax.multi_transform(
             {
                 "s4": optax.adam(learning_rate=1e-3),
@@ -255,6 +257,11 @@ class SeqModel(nn.Module):
                         broadcast_dims=[0],
                         deterministic=not self.training,
                     ),
+                    nn.Dropout(
+                        self.dropout,
+                        broadcast_dims=[0],
+                        deterministic=not self.training,
+                    ),
                 )
                 for _ in range(self.n_layers)
             ]
@@ -264,9 +271,9 @@ class SeqModel(nn.Module):
     def __call__(self, x):
         # x - L x H
         x = self.encoder(x)
-        for l, (layer, norm, inp, out, dropout) in enumerate(self.layers):
+        for l, (layer, norm, inp, out, dropout1, dropout2) in enumerate(self.layers):
             x2 = layer(inp(x))
-            z = out(dropout(nn.gelu(x2)))
+            z = dropout1(out(dropout2(nn.gelu(x2))))
             x = norm(z + x)
 
         # If classifying, mean pool of sequence-length dimension (axis 0)...
@@ -274,7 +281,7 @@ class SeqModel(nn.Module):
             x = np.mean(x, axis=0)
 
         x = self.decoder(x)
-        return nn.log_softmax(x)
+        return nn.log_softmax(x, axis=-1)
 
 
 BatchSeqModel = nn.vmap(
@@ -332,7 +339,7 @@ def example_train(
         d_model=d_model,
         d_output=n_classes,
         n_layers=4,
-        l_max=seq_len,
+        l_max=seq_len if classification else seq_len - 1,
         classification=classification,
     )
     state = create_train_state(
