@@ -10,7 +10,7 @@
 # > The recent Structured State Space for Sequence Modeling (S4)
 # > architecture has been applied to several difficult sequence modeling
 # > tasks, showing a remarkable capacity for reasoning over long-term
-# > dependencies. The work is part of a line of serveral projects utilizing
+# > dependencies. The work is part of a line of several projects utilizing
 # > state space models to model long-term sequences.
 
 # > There are a lot of reasons to be excited by this work. Most notably
@@ -18,7 +18,7 @@
 
 #  [image]()
 
-# > For me (srush) personally though, the paper is a refreshing departure from
+# > For us personally, the paper is a refreshing departure from
 # > Transformer, and brings a very different style to a problem-space that many of
 # > us thought we understood very well. Several of my colleagues have also noted
 # > privately (and on twitter!) how difficult the paper was to get intuition for.
@@ -35,7 +35,7 @@
 # > nature of JAX plays extremely nicely with the mathematical
 # > descriptions.
 
-# / authors
+# / Sasha Rush + Sidd Karamcheti
 
 
 # # Table of Contents
@@ -188,7 +188,7 @@ def runSSM(A, B, C, u):
     return scanSSM(stepSSM(Ab, Bb, Cb), u[:, np.newaxis], np.zeros((N,)))
 
 
-# ### Tangeant: A Mechanics Example
+# ### Tangent: A Mechanics Example
 
 # To gain some intuition and to test our SSM implementation, we pause
 # from the paper to implement a [classic example from mechanics](https://en.wikipedia.org/wiki/State-space_representation#Moving_object_example).
@@ -492,7 +492,7 @@ def NaiveSSMInit(N):
 
 # To address the problem of computing powers of $\boldsymbol{\overline{A}}$, we introduce another technique.
 # Instead of computing the SSM convolution filter $\boldsymbol{\overline{K}}$ directly,
-# we introduce a [generating function]() on its coefficients and compute evaluations of it.
+# we introduce a [generating function](https://math.stackexchange.com/questions/3213142/root-of-unity-filter) on its coefficients and compute evaluations of it.
 
 # The *truncated SSM generating function* at node $z$ with truncation $L$ is
 
