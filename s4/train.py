@@ -337,7 +337,7 @@ def example_train(
         d_model=d_model,
         d_output=n_classes,
         n_layers=4,
-        l_max=seq_len,
+        l_max=seq_len if classification else seq_len - 1,
         classification=classification,
     )
     state = create_train_state(

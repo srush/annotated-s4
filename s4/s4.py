@@ -58,6 +58,7 @@ import seaborn
 from celluloid import Camera
 from flax import linen as nn
 from jax.numpy.linalg import eig, inv, matrix_power
+from jax.scipy.signal import convolve
 
 
 rng = jax.random.PRNGKey(1)
@@ -324,6 +325,8 @@ def K_conv(A, B, C, L):
 
 
 def nonCircularConvolution(u, K):
+    # return convolve(u, K, mode="full")[: u.shape[0]]
+    assert K.shape[0] == u.shape[0]
     ud = np.fft.rfft(np.pad(u, (0, K.shape[0])))
     Kd = np.fft.rfft(np.pad(K, (0, u.shape[0])))
     out = ud * Kd
