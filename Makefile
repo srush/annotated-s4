@@ -32,5 +32,11 @@ html: s4/s4.py
 	jupytext --to notebook s4/s4.py -o s4.ipynb
 	jupyter nbconvert --to html s4.ipynb
 
+s4/s4.md: s4/s4.py
+	jupytext --to markdown s4/s4.py
+
+blog: s4/s4.md
+	pandoc s4/s4.md  --katex=/usr/local/lib/node_modules/katex/dist/ --output=docs/index.html --to=html5 --css=docs/tufte.css --highlight-style=haddock --self-contained
+
 clean: s4.ipynb
 	rm -f s4.ipynb
