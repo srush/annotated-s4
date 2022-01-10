@@ -542,6 +542,7 @@ def log_step_initializer(dt_min=0.001, dt_max=0.1):
         return jax.random.uniform(key, shape) * (
             np.log(dt_max) - np.log(dt_min)
         ) + np.log(dt_min)
+
     return init
 
 
