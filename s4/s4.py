@@ -8,6 +8,7 @@
 
 # <img src="images/hero.png" width="100%"/>
 
+# <center><h3> <a href="https://github.com/srush/annotated-s4">Full Library</a> </h3></center>
 # > The [Structured State Space for Sequence
 # > Modeling](https://arxiv.org/abs/2111.00396) (S4) architecture has
 # > been applied to highly long-range sequence modeling tasks across vision,
@@ -42,7 +43,6 @@
 
 # # Part 0: Setup and Discussion
 
-# > [Full project codebase](https://github.com/srush/s4).
 # >
 # > Note that this project uses [JAX](https://github.com/google/jax/)
 # > with the [Flax](https://github.com/google/flax) NN library.
@@ -978,18 +978,19 @@ def S4LayerInit(N):
 # > A more interesting problem is linear generation of MNIST. Here we
 # > simply feed in a sequence of pixels into the model and have it
 # > predict the next one like language modeling. With a little
-# > tweaking we were able to get the model to an NLL of 0.61 on this
-# > task with 6 layers (~500k parameters).
+# > tweaking we were able to get the model to an NLL of 0.52 on this
+# > task with size 512 and 6 layers (~2m parameters).
 
 
-#     =>> Epoch 84 Metrics ===
-#          Train Loss: 0.64605 -- Test Loss: 0.61970 -- Test Accuracy: 0.8635
-#          Best Test Loss: 0.61627 -- Best Test Accuracy: 0.8645 at Epoch 82
+#        =>> Epoch 100 Metrics ===
+#                Train Loss: 0.53814 -- Test Loss: 0.52482 -- Test Accuracy: 0.8830
+#                Best Test Loss: 0.52117 -- Best Test Accuracy: 0.8842 at Epoch 91
+
 
 # > Because every sequence modeling area has its own freaking metric,
 # > it turns out that the pixel prediction folks use *[bits per
 # > dimension](https://paperswithcode.com/sota/image-generation-on-mnist)* which is
-# > NLL in base 2 for MNIST. A score of 0.61 is 0.88 BPD which is near PixelCNN.
+# > NLL in base 2 for MNIST. A score of 0.52 is 0.76 BPD which is near PixelCNN++.
 # > So not state-of-the-art, but good for a blog post.
 
 # > We can sample from the model using the CNN implementation. Ideally we would use the

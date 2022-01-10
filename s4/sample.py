@@ -13,12 +13,12 @@ if __name__ == "__main__":
 
     model = S4LayerInit(N=64)
     model = partial(
-        BatchSeqModel, layer=model, d_output=256, d_model=256, n_layers=6, l_max=783
+        BatchSeqModel, layer=model, d_output=256, d_model=512, n_layers=6, l_max=783
     )
 
     rng = jax.random.PRNGKey(0)
     state = checkpoints.restore_checkpoint(
-        "checkpoints/mnist/s4-d_model=256/best_84", None
+        "checkpoints/mnist/s4-d_model=512/best_90", None
     )
     _, testloader, _, _, _ = Datasets["mnist"](bsz=1)
     # print(validate(state["params"], model, testloader, classification=False))
