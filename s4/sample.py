@@ -6,7 +6,7 @@ import numpy as onp
 from flax.training import checkpoints
 from .data import Datasets
 from .s4 import S4LayerInit
-from .train import BatchSeqModel, validate
+from .train import BatchSeqModel
 
 
 if __name__ == "__main__":
