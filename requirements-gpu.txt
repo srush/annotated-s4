@@ -8,6 +8,7 @@ jupytext==1.13.4
 matplotlib==3.5.1
 black
 flake8
+google-cloud-storage
 ipython
 isort
 pre-commit

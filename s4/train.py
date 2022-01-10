@@ -92,7 +92,9 @@ def create_train_state(
         #       https://github.com/deepmind/optax/issues/160#issuecomment-896460796
         #
         #   > Solution: Use Optax.multi_transform!
-        s4_fn = map_nested_fn(lambda k, _: "s4" if k in ["B", "C"] else "regular")
+        s4_fn = map_nested_fn(
+            lambda k, _: "s4" if k in ["B", "C", "Ct", "D", "log_step"] else "regular"
+        )
         tx = optax.multi_transform(
             {
                 "s4": optax.adam(learning_rate=1e-3),
@@ -228,6 +230,36 @@ class LSTMRecurrentModel(nn.Module):
         return self.LSTM(self.init_h, xs)[1]
 
 
+class SeqInternal(nn.Module):
+    layer: nn.Module
+    d_model: int
+    l_max: int
+    dropout: float = 0.2
+    training: bool = True
+
+    def setup(self):
+        self.seq = self.layer(d_model=self.d_model, l_max=self.l_max)
+        self.norm = nn.LayerNorm()
+        self.out = nn.Dense(self.d_model)
+
+        # Dropout2D is critical... we want to drop entire channels --> so share mask over 0th (L) dim
+        self.drop1 = nn.Dropout(
+            self.dropout,
+            broadcast_dims=[0],
+            deterministic=not self.training,
+        )
+        self.drop2 = nn.Dropout(
+            self.dropout,
+            broadcast_dims=[0],
+            deterministic=not self.training,
+        )
+
+    def __call__(self, x, blank):
+        x2 = self.seq(x)
+        z = self.drop1(self.out(self.drop2(nn.gelu(x2))))
+        return self.norm(z + x), None
+
+
 # General Skeleton for residual Sequence model with  --> takes an sequence layer
 class SeqModel(nn.Module):
     layer: nn.Module
@@ -242,39 +274,44 @@ class SeqModel(nn.Module):
 
     def setup(self):
         self.encoder = nn.Dense(self.d_model)
-        self.layers = tuple(
-            [
-                (
-                    self.layer(d_model=self.d_model, l_max=self.l_max),
-                    nn.LayerNorm(),
-                    nn.Dense(self.d_model),
-                    nn.Dense(self.d_model),
-                    # Dropout2D is critical... we want to drop entire channels --> so share mask over 0th (L) dim?
-                    nn.Dropout(
-                        self.dropout,
-                        broadcast_dims=[0],
-                        deterministic=not self.training,
-                    ),
-                )
-                for _ in range(self.n_layers)
-            ]
-        )
         self.decoder = nn.Dense(self.d_output)
+        # SeqInternalStack = nn.scan(nn.remat(SeqInternal),
+        #                            split_rngs={"params" : True, "dropout": True},
+        #                            variable_axes={"params": 0},
+        #                            length=self.n_layers,
+        #                            in_axes=nn.broadcast
+        # )
+        # self.layers = SeqInternalStack(layer=self.layer,
+        #                                dropout=self.dropout,
+        #                                training=self.training,
+        #                                d_model=self.d_model,
+        #                                l_max=self.l_max)
+
+        self.layers = [
+            SeqInternal(
+                layer=self.layer,
+                dropout=self.dropout,
+                training=self.training,
+                d_model=self.d_model,
+                l_max=self.l_max,
+            )
+            for _ in range(self.n_layers)
+        ]
 
     def __call__(self, x):
-        # x - L x N
+        # x - L x H
         x = self.encoder(x)
-        for l, (layer, norm, inp, out, dropout) in enumerate(self.layers):
-            x2 = layer(inp(x))
-            z = dropout(out(nn.gelu(x2)))
-            x = norm(z + x)
+
+        for layer in self.layers:
+            x = layer(x, None)[0]
+            # x = layer(x, np.zeros(self.n_layers))[0]
 
         # If classifying, mean pool of sequence-length dimension (axis 0)...
         if self.classification:
             x = np.mean(x, axis=0)
 
         x = self.decoder(x)
-        return nn.log_softmax(x)
+        return nn.log_softmax(x, axis=-1)
 
 
 BatchSeqModel = nn.vmap(
@@ -282,7 +319,7 @@ BatchSeqModel = nn.vmap(
     in_axes=0,
     out_axes=0,
     variable_axes={"params": None, "dropout": None},
-    split_rngs={"params": False, "dropout": False},
+    split_rngs={"params": False, "dropout": True},
 )
 
 # ## Sanity Checks
@@ -305,6 +342,8 @@ def example_train(
     ssm_n=64,
     lr=1e-3,
     lr_schedule=False,
+    n_layers=4,
+    p_dropout=0.2,
     suffix=None,
 ):
     # Set randomness...
@@ -331,8 +370,9 @@ def example_train(
         layer=model_cls,
         d_model=d_model,
         d_output=n_classes,
-        n_layers=4,
-        l_max=seq_len,
+        dropout=p_dropout,
+        n_layers=n_layers,
+        l_max=seq_len if classification else seq_len - 1,
         classification=classification,
     )
     state = create_train_state(
@@ -405,6 +445,8 @@ if __name__ == "__main__":
 
     # Model Parameters
     parser.add_argument("--d_model", type=int, default=128)
+    parser.add_argument("--n_layers", type=int, default=4)
+    parser.add_argument("--p_dropout", type=float, default=0.2)
 
     # S4 Specific Parameters
     parser.add_argument("--ssm_n", type=int, default=64)
@@ -424,5 +466,7 @@ if __name__ == "__main__":
         ssm_n=args.ssm_n,
         lr=args.lr,
         lr_schedule=args.lr_schedule,
+        n_layers=args.n_layers,
+        p_dropout=args.p_dropout,
         suffix=args.suffix,
     )
