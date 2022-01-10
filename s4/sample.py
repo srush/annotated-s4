@@ -13,18 +13,19 @@ if __name__ == "__main__":
 
     model = S4LayerInit(N=64)
     model = partial(
-        BatchSeqModel, layer=model, d_output=256, d_model=256, n_layers=4, l_max=783
+        BatchSeqModel, layer=model, d_output=256, d_model=256, n_layers=6, l_max=783
     )
 
     rng = jax.random.PRNGKey(0)
     state = checkpoints.restore_checkpoint(
-        "checkpoints/mnist/s4-d_model=256/best_187", None
+        "checkpoints/mnist/s4-d_model=256/best_84", None
     )
-    _, testloader, _, _, _ = Datasets["mnist"](bsz=128)
-    print(validate(state["params"], model, testloader, classification=False))
+    _, testloader, _, _, _ = Datasets["mnist"](bsz=1)
+    # print(validate(state["params"], model, testloader, classification=False))
     model = model(training=False)
     it = iter(testloader)
     for j, im in enumerate(it):
+        print(j)
         image = np.array(im[0].numpy())
         # cur = np.zeros((1, 783, 1))
         cur = image
@@ -44,7 +45,7 @@ if __name__ == "__main__":
 
             # sample with temperature
 
-            p = jax.random.categorical(rng, out[0, i] * 1.1)
+            p = jax.random.categorical(rng, out[0, i] * 1.02)
             # * 1.1) * np.arange(256)).sum(-1).round().astype(int)
             cur = jax.ops.index_update(cur, (0, i + 1, 0), p)
             return cur, rng
@@ -56,16 +57,28 @@ if __name__ == "__main__":
         #     cur = loop(j, cur)
         for i in range(start + 3, 784):
             cur = jax.ops.index_update(cur, (0, i, 0), 0)
-
+        print("start")
         out = jax.lax.fori_loop(start, 783, jax.jit(loop), (cur, rng))[0]
+        print("end")
         out = out.reshape(28, 28)
         # print(out)
         # print(image.reshape(28, 28))
         final = onp.zeros((28, 28, 3))
         final[:, :, 0] = out
-        final[:, :, 1] = image.reshape(28, 28)
+        final.reshape(28 * 28, 3)[:start, 1] = image.reshape(28 * 28)[:start]
         final.reshape(28 * 28, 3)[:start, 2] = image.reshape(28 * 28)[:start]
-        plt.imshow(final / 256.0)
-        plt.savefig("im%d.png" % (j))
+
+        
+        final2 = onp.zeros((28, 28, 3))
+        final2[:, :, 1] = image.reshape(28, 28)
+        final2.reshape(28 * 28, 3)[:start, 0] = image.reshape(28 * 28)[:start]
+        final2.reshape(28 * 28, 3)[:start, 2] = image.reshape(28 * 28)[:start]
+
+        fig, (ax1, ax2) = plt.subplots(ncols=2)
+        ax1.imshow(final / 256.0)
+        ax2.imshow(final2 / 256.0)
+        fig.savefig("im%d.png" % (j))
+
+
         if j > 100:
             break
