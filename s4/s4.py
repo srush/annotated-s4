@@ -103,13 +103,13 @@ rng = jax.random.PRNGKey(1)
 
 class SeqInternal(nn.Module):
     layer: nn.Module
-    d_model: int
     l_max: int
     dropout: float
+    d_model: int
     training: bool = True
 
     def setup(self):
-        self.seq = self.layer(d_model=self.d_model, l_max=self.l_max)
+        self.seq = self.layer(l_max=self.l_max)
         self.norm = nn.LayerNorm()
         self.out = nn.Dense(self.d_model)
         self.drop = nn.Dropout(
@@ -121,7 +121,7 @@ class SeqInternal(nn.Module):
     def __call__(self, x, blank):
         x2 = self.seq(x)
         z = self.drop(self.out(self.drop(nn.gelu(x2))))
-        return self.norm(z + x), None
+        return self.norm(z + x)
 
 
 # > The full NN model is a stack of these blocks used for tasks like
@@ -144,9 +144,9 @@ class SeqModel(nn.Module):
         self.layers = [
             SeqInternal(
                 layer=self.layer,
+                d_model=self.d_model,
                 dropout=self.dropout,
                 training=self.training,
-                d_model=self.d_model,
                 l_max=self.l_max,
             )
             for _ in range(self.n_layers)
@@ -155,12 +155,22 @@ class SeqModel(nn.Module):
     def __call__(self, x):
         x = self.encoder(x)
         for layer in self.layers:
-            x = layer(x, None)[0]
+            x = layer(x, None)
         if self.classification:
             x = np.mean(x, axis=0)
         x = self.decoder(x)
         return nn.log_softmax(x, axis=-1)
 
+
+# > Make batched model.
+
+BatchSeqModel = nn.vmap(
+    SeqModel,
+    in_axes=0,
+    out_axes=0,
+    variable_axes={"params": None, "dropout": None},
+    split_rngs={"params": False, "dropout": True},
+)
 
 # > The full focus of the work is on the sequential layer.
 # > That layer will be made up of state-space models. We'll
@@ -362,7 +372,7 @@ def example_ssm():
     anim.save("line.gif", dpi=80, writer="imagemagick")
 
 
-run_example(example_ssm)
+# run_example(example_ssm)
 
 # <img src="line.gif" width="100%">
 
@@ -916,7 +926,6 @@ class S4Layer(nn.Module):
     Lambda: np.DeviceArray
 
     N: int
-    d_model: int  # Ignore
     l_max: int
 
     def setup(self):
@@ -977,8 +986,43 @@ def S4LayerInit(N):
 # > it turns out that the pixel predicting people use *[bits per
 # > dimension](https://paperswithcode.com/sota/image-generation-on-mnist)* which is
 # > NLL in base 2 for MNist. A score of 0.61 is 0.88 BPD which is near PixelCNN.
-# > So not state-of-the-art, but good for a blog post. More importantly here are
-# > some neat prefix-samples. For this we gave the first 300 pixels. S4 on the left, true on the
+# > So not state-of-the-art, but good for a blog post.
+
+# > We can sample from the model using the CNN implementation. Ideally we would use the
+# > RNN, but that would require a bit more plumbing.
+
+
+def sample_mnist():
+    import matplotlib.pyplot as plt
+    from flax.training import checkpoints
+
+    model = S4LayerInit(N=64)
+    model = partial(
+        BatchSeqModel, layer=model, d_output=256, d_model=256, n_layers=6, l_max=783
+    )
+    rng = jax.random.PRNGKey(0)
+    state = checkpoints.restore_checkpoint("models/best_84", None)
+    model = model(training=False)
+    start = np.zeros((1, 784, 1))
+
+    def loop(i, cur):
+        cur, rng = cur
+        r, rng = jax.random.split(rng)
+        out = model.apply({"params": state["params"]}, cur[:, :-1])
+        p = jax.random.categorical(rng, out[0, i])
+        cur = jax.ops.index_update(cur, (0, i + 1, 0), p)
+        return cur, rng
+
+    out = jax.lax.fori_loop(0, 783, jax.jit(loop), (start, rng))[0]
+    plt.imshow(out.reshape(28, 28))
+    plt.savefig("sample.png")
+
+
+# run_example(sample_mnist)
+
+# <img src="images/sample.png" width="100%">
+
+# > We can also do prefix-samples. For this we gave the first 300 pixels. S4 on the left, true on the
 # > right.
 
 
@@ -990,6 +1034,7 @@ def S4LayerInit(N):
 # <img src="images/im17.png" width="100%">
 # <img src="images/im18.png" width="100%">
 # <img src="images/im19.png" width="100%">
+
 
 # # Conclusion
 
