@@ -1,10 +1,10 @@
 # <center><h1> The Annotated S4 </h1></center>
 #
-# 
-# 
+#
+#
 # <h3><a href="https://arxiv.org/abs/2111.00396">Efficiently Modeling Long Sequences with Structured State Spaces</a></h3>
 # By Albert Gu, Karan Goel, Christopher Ré
-# 
+#
 
 # <img src="images/hero.png" width="100%"/>
 
@@ -31,7 +31,7 @@
 # > intuition for.  With this goal, this blog post is an literate
 # > implementation of the S4 paper in the style of [annotated transformer](https://nlp.seas.harvard.edu/2018/04/03/attention.html).  The text is mainly taken directly
 # > from the paper, with some small modifications for clarity.
-# > The line of the left indicates our comments or tangents throughout. 
+# > The line of the left indicates our comments or tangents throughout.
 # >
 # > / [Sasha Rush](http://rush-nlp.com/) + [Sidd Karamcheti](https://www.siddkaramcheti.com/)
 
@@ -45,14 +45,14 @@
 # # Part 0: Setup and Discussion
 
 # > [Full project codebase](https://github.com/srush/s4).
-# > 
+# >
 # > Note that this project utilizes [JAX](https://github.com/google/jax/)
 # > with the [Flax](https://github.com/google/flax) NN library.
 # > While we both mainly use Torch, the functional nature of JAX is a
 # > good fit for some of the complexities of S4. We make heavy use of
 # > [vmap](https://jax.readthedocs.io/en/latest/jax.html#jax.vmap),
 # > [scan](https://jax.readthedocs.io/en/latest/_autosummary/jax.lax.scan.html),
-# > and their [NN cousins](https://flax.readthedocs.io/en/latest/flax.linen.html#module-flax.linen.transforms). 
+# > and their [NN cousins](https://flax.readthedocs.io/en/latest/flax.linen.html#module-flax.linen.transforms).
 
 from functools import partial
 import jax
@@ -60,9 +60,12 @@ import jax.numpy as np
 from flax import linen as nn
 from jax.numpy.linalg import eig, inv, matrix_power
 from jax.scipy.signal import convolve
+
+
 def run_example(fn):
     if __name__ == "__main__":
         fn()
+
 
 # > Note as well that JAX [randomness](https://jax.readthedocs.io/en/latest/notebooks/Common_Gotchas_in_JAX.html#random-numbers) is often tricky for first time users. We ignore some
 # > of these issues when possible.
@@ -93,9 +96,10 @@ rng = jax.random.PRNGKey(1)
 # > long-range sequences. In particular, we will be able to do neat things
 # > like classify images from a string of pixels, or generate the next pixel
 # > from an autoregressive model.
-# > 
+# >
 # > However, before we get to the new part, let's start with the familar part.
 # > The underlying NN block is a standard residual block similar to a Transformer.
+
 
 class SeqInternal(nn.Module):
     layer: nn.Module
@@ -103,6 +107,7 @@ class SeqInternal(nn.Module):
     l_max: int
     dropout: float
     training: bool = True
+
     def setup(self):
         self.seq = self.layer(d_model=self.d_model, l_max=self.l_max)
         self.norm = nn.LayerNorm()
@@ -112,15 +117,17 @@ class SeqInternal(nn.Module):
             broadcast_dims=[0],
             deterministic=not self.training,
         )
-        
+
     def __call__(self, x, blank):
         x2 = self.seq(x)
         z = self.drop(self.out(self.drop(nn.gelu(x2))))
         return self.norm(z + x), None
 
+
 # > The full NN model is a stack of these blocks used for tasks like
 # > sequence prediction or autoregressive next step prediction.
-    
+
+
 class SeqModel(nn.Module):
     layer: nn.Module
     d_output: int
@@ -133,14 +140,18 @@ class SeqModel(nn.Module):
 
     def setup(self):
         self.encoder = nn.Dense(self.d_model)
-        self.decoder = nn.Dense(self.d_output)        
-        self.layers = [SeqInternal(layer=self.layer,
-                                   dropout=self.dropout,
-                                   training=self.training,
-                                   d_model=self.d_model,
-                                   l_max=self.l_max)
-                       for _ in range(self.n_layers)]
-        
+        self.decoder = nn.Dense(self.d_output)
+        self.layers = [
+            SeqInternal(
+                layer=self.layer,
+                dropout=self.dropout,
+                training=self.training,
+                d_model=self.d_model,
+                l_max=self.l_max,
+            )
+            for _ in range(self.n_layers)
+        ]
+
     def __call__(self, x):
         x = self.encoder(x)
         for layer in self.layers:
@@ -150,10 +161,11 @@ class SeqModel(nn.Module):
         x = self.decoder(x)
         return nn.log_softmax(x, axis=-1)
 
+
 # > The full focus of the work is on the sequential layer.
 # > That layer will be made up of state-space models. We'll
 # > let the authors tell you about them.
-    
+
 
 # # Part 1: State Space Models
 
@@ -186,6 +198,7 @@ class SeqModel(nn.Module):
 
 # > Concretely, the parameters of the model are  $\mathbf{A} \in \mathbb{R}^{N \times N}, \mathbf{B} \in \mathbb{R}^{N \times 1}, \mathbf{C} \in \mathbb{R}^{1 \times N}, \mathbf{D}\in \mathbb{R}^{1 \times 1}$.
 # > Ignoring $D$ for now, we can generate one randomly.
+
 
 def randomSSM(rng, N):
     "Generate a random SSM of size N"
@@ -250,13 +263,17 @@ def stepSSM(Ab, Bb, Cb):
         x_k = Ab @ x_k_1 + Bb @ u_k
         y_k = Cb @ x_k
         return x_k, y_k
+
     return step
+
+
 def scanSSM(step_fn, u, x0):
     return jax.lax.scan(step_fn, x0, u)[1]
 
 
 # > Putting everything together we can now run the SSM
 # > by discretization and iteration.
+
 
 def runSSM(A, B, C, u):
     L = u.shape[0]
@@ -297,11 +314,12 @@ def example_mass(k, b, m):
     C = np.array([[1.0, 0]])
     return A, B, C
 
+
 # > Looking at the $\boldsymbol{C}$ you should be able to convince yourself that the
 # > first dimension of the hidden state is the position (since that becomes $y(t)$).
 # > The second dimension is the velocity, as it is impacted by $u(t)$ through
 # > $\boldsymbol{B}$. The transition $\boldsymbol{A}$ relates these terms.
-# > 
+# >
 # > Let's run this SSM through our code.
 
 
@@ -318,6 +336,7 @@ def example_ssm():
     import matplotlib.pyplot as plt
     import seaborn
     from celluloid import Camera
+
     seaborn.set_context("paper")
     fig, (ax1, ax2, ax3) = plt.subplots(3)
     camera = Camera(fig)
@@ -341,6 +360,8 @@ def example_ssm():
         camera.snap()
     anim = camera.animate()
     anim.save("line.gif", dpi=80, writer="imagemagick")
+
+
 run_example(example_ssm)
 
 # <img src="line.gif" width="100%">
@@ -380,7 +401,7 @@ run_example(example_ssm)
 # \begin{aligned}
 #     y_k &= \boldsymbol{\overline{C}} \boldsymbol{\overline{A}}^k \boldsymbol{\overline{B}} u_0 + \boldsymbol{\overline{C}} \boldsymbol{\overline{A}}^{k-1} \boldsymbol{\overline{B}} u_1 + \dots + \boldsymbol{\overline{C}} \boldsymbol{\overline{A}} \boldsymbol{\overline{B}} u_{k-1} + \boldsymbol{\overline{C}}\boldsymbol{\overline{B}} u_k
 #     \\
-#     y &= \boldsymbol{\overline{K}} \ast u 
+#     y &= \boldsymbol{\overline{K}} \ast u
 # \end{aligned}
 # $$
 
@@ -394,6 +415,7 @@ run_example(example_ssm)
 
 # > Note this is a *giant* filter. It is the size of the entire sequence.
 
+
 def K_conv(A, B, C, L):
     K = [(C @ matrix_power(A, l) @ B).reshape() for l in range(L)]
     return np.array(K)
@@ -403,7 +425,8 @@ def K_conv(A, B, C, L):
 
 # > We can compute this either with a standard direct convolution or with
 # > a padded (non-circular) FFT. As the length gets longer the second method
-# > will be more efficient. 
+# > will be more efficient.
+
 
 def nonCircularConvolution(u, K, nofft=False):
     if nofft:
@@ -438,7 +461,7 @@ def test_cnn_is_rnn(N=4, L=16, step=1.0 / 16):
 # ## Addressing Long-Range Dependencies with HiPPO
 
 # <img src="images/hippo.png" width="100%"/>
-# 
+#
 # [Prior work](https://arxiv.org/abs/2008.07669) found that the basic SSM actually performs very poorly in
 # practice.  Intuitively, one explanation is that linear first-order
 # ODEs solve to an exponential function, and thus may suffer from
@@ -467,9 +490,10 @@ def test_cnn_is_rnn(N=4, L=16, step=1.0 / 16):
 
 # > This matrix is going to be really important, but it is
 # > a bit magic. For our purposes we only need to know that:
-# > 
+# >
 # > 1) We only need to calculate it once.
 # > 2) It has very simple structure (which we exploit in part 2).
+
 
 def make_HiPPO(N):
     def v(n, k):
@@ -495,12 +519,13 @@ def make_HiPPO(N):
 # > are going to be learning the parameters $B$ and $C$, as well as a
 # > step size $\Delta$ and a scalar $D$ paramter.  The HiPPO matrix is
 # > used for the transition $A$.
-# > 
+# >
 # > Note that most of the work here is done in setup to compute the filter.
 # > actual call to the network is just a (huge) convolution.
 # > Torch users should also note that `setup` is called each time the
 # > parameters are updated, this is similar to the new
 # > [Torch parameterizations](https://pytorch.org/tutorials/intermediate/parametrizations.html).
+
 
 def log_step_initializer(dt_min=0.001, dt_max=0.1):
     def init(key, shape):
@@ -510,11 +535,12 @@ def log_step_initializer(dt_min=0.001, dt_max=0.1):
 
     return init
 
+
 class NaiveSSMLayer(nn.Module):
-    A: np.DeviceArray # HiPPO
+    A: np.DeviceArray  # HiPPO
     N: int
     l_max: int
-    d_model: int # Ignored
+    d_model: int  # Ignored
 
     def setup(self):
         # SSM parameters
@@ -525,7 +551,7 @@ class NaiveSSMLayer(nn.Module):
         # Step parameter
         self.log_step = self.param("log_step", log_step_initializer(), (1,))
 
-        step = np.exp(self.log_step) 
+        step = np.exp(self.log_step)
         ssm = discretize(self.A, self.B, self.C, step=step)
         self.K = K_conv(*ssm, self.l_max)
 
@@ -539,6 +565,7 @@ class NaiveSSMLayer(nn.Module):
 
 # > Here we use [Flax vmap](https://flax.readthedocs.io/en/latest/_autosummary/flax.linen.vmap.html) method for defining $H$ copies with different parameters.
 
+
 def cloneLayer(layer):
     return nn.vmap(
         layer,
@@ -548,7 +575,9 @@ def cloneLayer(layer):
         split_rngs={"params": True},
     )
 
+
 # > We then initialize with the HiPPO matrix. And then pass in into the stack of modules above.
+
 
 def NaiveSSMInit(N):
     return partial(cloneLayer(NaiveSSMLayer), A=make_HiPPO(N), N=N)
@@ -566,7 +595,7 @@ def NaiveSSMInit(N):
 # > the details are really neat. If not skip to Part 3 for some cool applications
 # > like MNist completion.
 
-# <img src="im15.png" width="100%">
+# <img src="images/im15.png" width="100%">
 
 # [Skip Button](#part-3-s4-in-practice)
 
@@ -582,7 +611,7 @@ def NaiveSSMInit(N):
 # > The contribution of S4 is speeding things up by changing the way
 # > the operations above are computed. In particular there is lot of
 # > clever math that applies under a structured parameterization of
-# > the model. 
+# > the model.
 #
 # > We are going to skip a log of the details and note the key idea.
 # > We want our SSM to be DPLR -> Diagonal Plus Low-Rank in complex
@@ -605,8 +634,6 @@ def NaiveSSMInit(N):
 # > this super long kernel every time we update the weights.
 
 
-
-
 # ## Step 1. SSM Generating Functions
 
 # To address the problem of computing powers of $\boldsymbol{\overline{A}}$, we introduce another technique.
@@ -626,6 +653,7 @@ def K_gen_simple(Ab, Bb, Cb, L):
 
     def gen(z):
         return np.sum(K * (z ** np.arange(L)))
+
     return gen
 
 
@@ -686,8 +714,9 @@ def test_gen_inverse():
     a = convFromGen(K_gen_inverse(*ssm, L=16), 16)
     assert np.isclose(a, b, rtol=1e-2, atol=1e-4).all()
 
+
 # > In summary, Step 1 allows us to replace the matrix power with an
-# > inverse by utilizing a truncated generating function. 
+# > inverse by utilizing a truncated generating function.
 # > However this inverse still needs to be calculated $L$
 # > times (for each of the roots of unity).
 
@@ -748,7 +777,7 @@ def cauchy_dot(v, omega, lambd):
 # > The [Woodbury
 # > identity](https://en.wikipedia.org/wiki/Woodbury_matrix_identity)
 # > tells us that the inverse of a diagonal plus rank-1 term is equal to the
-# > inverse of the diagonal plus a rank-1 term. Or in math :) 
+# > inverse of the diagonal plus a rank-1 term. Or in math :)
 
 # $$ \begin{aligned}
 # (\boldsymbol{\Lambda} + \boldsymbol{p}  \boldsymbol{q}^*)^{-1} &= \boldsymbol{\Lambda}^{-1} - \boldsymbol{\Lambda}^{-1} \boldsymbol{p} (1 + \boldsymbol{q}^* \boldsymbol{p})^{-1} \boldsymbol{q}^* \boldsymbol{\Lambda}^{-1}
@@ -757,14 +786,15 @@ def cauchy_dot(v, omega, lambd):
 
 # > There is a bunch of algebra. But it mostly consists of substituting this in for A,
 # > applying the woodbury identity and distributing terms. We end up with 4 terms that
-# > all look like step 2 above. 
+# > all look like step 2 above.
 
 # $$ \begin{aligned}
 # \boldsymbol{\hat{K}}_{DPLR}(z) & = c(z) [k_{z, \Lambda}(\boldsymbol{\tilde{C}}, \boldsymbol{\boldsymbol{B}}) - k_{z, \Lambda}(\boldsymbol{\tilde{C}}, \boldsymbol{\boldsymbol{p}}) (1 - k_{z, \Lambda}(\boldsymbol{q^*}, \boldsymbol{\boldsymbol{p}}) )^{-1} k_{z, \Lambda}(\boldsymbol{q^*}, \boldsymbol{\boldsymbol{B}}) ]
 #  \end{aligned}$$
 
 
-# > The code consists of collecting up the terms and applying 4 weighted dot products. 
+# > The code consists of collecting up the terms and applying 4 weighted dot products.
+
 
 def K_gen_DPLR(Lambda, p, q, B, Ct, step):
     aterm = (Ct.conj().ravel(), q.conj().ravel())
@@ -788,6 +818,7 @@ def K_gen_DPLR(Lambda, p, q, B, Ct, step):
 
 # > Now we can check whether this worked. First we generate a random Diagonal Plus Low Rank matrix.
 
+
 def randomDPLR(rng, N):
     l_r, p_r, q_r, b_r, c_r = jax.random.split(rng, 5)
     Lambda = jax.random.uniform(l_r, (N,))
@@ -801,7 +832,7 @@ def randomDPLR(rng, N):
 # > New we check that the DPLR method yields the same filter as computing $\boldsymbol{A}$ directly.
 
 
-def test_gen_dplr(L = 16, N=4):
+def test_gen_dplr(L=16, N=4):
     I = np.eye(4)
     # Create a DPLR A matrix and discretize
     Lambda, p, q, B, C = randomDPLR(rng, N)
@@ -820,11 +851,11 @@ def test_gen_dplr(L = 16, N=4):
 # > This approach applies to DPLR matrices, but remember we would like it to also apply to the HiPPO matrix.
 # > While not DPLR the HiPPO matrix does have special structure, [Normal](https://en.wikipedia.org/wiki/Normal_matrix) Plus Low-Rank (NPLR).
 
-# The S4 techniques can apply to any matrix $\boldsymbol{A}$ that can be decomposed as *Normal Plus Low-Rank (NPLR)*. 
+# The S4 techniques can apply to any matrix $\boldsymbol{A}$ that can be decomposed as *Normal Plus Low-Rank (NPLR)*.
 # $$
 #   \boldsymbol{A} = \boldsymbol{V} \boldsymbol{\Lambda} \boldsymbol{V}^* - \boldsymbol{p} \boldsymbol{q}^\top = \boldsymbol{V} \left( \boldsymbol{\Lambda} - \boldsymbol{V}^* \boldsymbol{p} (\boldsymbol{V}^*\boldsymbol{q})^* \right) \boldsymbol{V}^*
 # $$
-# for [unitary](https://en.wikipedia.org/wiki/Unitary_matrix) $\boldsymbol{V} \in \mathbb{C}^{N \times N}$, diagonal $\boldsymbol{\Lambda}$, and low-rank factorization $\boldsymbol{p}, \boldsymbol{q} \in \mathbb{R}^{N \times r}$.  An NPLR SSM is therefore [unitarily](https://en.wikipedia.org/wiki/Unitary_matrix) equivalent to some DPLR matrix. 
+# for [unitary](https://en.wikipedia.org/wiki/Unitary_matrix) $\boldsymbol{V} \in \mathbb{C}^{N \times N}$, diagonal $\boldsymbol{\Lambda}$, and low-rank factorization $\boldsymbol{p}, \boldsymbol{q} \in \mathbb{R}^{N \times r}$.  An NPLR SSM is therefore [unitarily](https://en.wikipedia.org/wiki/Unitary_matrix) equivalent to some DPLR matrix.
 
 
 # > Finally recall that we actually need to work with a HiPPO matrix
@@ -885,7 +916,7 @@ class S4Layer(nn.Module):
     Lambda: np.DeviceArray
 
     N: int
-    d_model: int # Ignore
+    d_model: int  # Ignore
     l_max: int
 
     def setup(self):
@@ -902,9 +933,12 @@ class S4Layer(nn.Module):
 
     def __call__(self, u):
         return nonCircularConvolution(u, self.K) + self.D * u
+
+
 S4Layer = cloneLayer(S4Layer)
 
 # > To initialize the model we compute the DPLR unitary equivalent of HiPPO and pass it in.
+
 
 def S4LayerInit(N):
     _, Lambda, p, q, V = make_NPLR_HiPPO(N)
@@ -914,17 +948,18 @@ def S4LayerInit(N):
     A = np.diag(Lambda) - p[:, np.newaxis] @ q[:, np.newaxis].conj().T
     return partial(S4Layer, N=N, A=A, p=p, q=q, Lambda=Lambda)
 
+
 # ## MNist Experiments
 
 
 # > The first experiments we ran were on MNist classification. While
 # > not in theory a hard problem, treating MNist like linear sequence
 # > classification is a bit strange. However in practice, the model
-# > with $H=256$ and four layers seems to get up near 99% right away. 
+# > with $H=256$ and four layers seems to get up near 99% right away.
 
 #     =>> Epoch 9 Metrics ===
 #          Train Loss: 0.06640 -- Test Loss: 0.04091 -- Test Accuracy: 0.9878
-#          Best Test Loss: 0.04091 -- Best Test Accuracy: 0.9878 at Epoch 9  
+#          Best Test Loss: 0.04091 -- Best Test Accuracy: 0.9878 at Epoch 9
 
 
 # > A more interesting problem is linear generation of MNist. Here we
@@ -934,9 +969,9 @@ def S4LayerInit(N):
 # > task with 6 layers (~500k parameters).
 
 
-#     =>> Epoch 84 Metrics ===   
+#     =>> Epoch 84 Metrics ===
 #          Train Loss: 0.64605 -- Test Loss: 0.61970 -- Test Accuracy: 0.8635
-#          Best Test Loss: 0.61627 -- Best Test Accuracy: 0.8645 at Epoch 82    
+#          Best Test Loss: 0.61627 -- Best Test Accuracy: 0.8645 at Epoch 82
 
 # > Because every language modeling area has its own freaking metric,
 # > it turns out that the pixel predicting people use *[bits per
@@ -947,14 +982,14 @@ def S4LayerInit(N):
 # > right.
 
 
-# <img src="im12.png" width="100%">
-# <img src="im13.png" width="100%">
-# <img src="im14.png" width="100%">
-# <img src="im15.png" width="100%">
-# <img src="im16.png" width="100%">
-# <img src="im17.png" width="100%">
-# <img src="im18.png" width="100%">
-# <img src="im19.png" width="100%">
+# <img src="images/im12.png" width="100%">
+# <img src="images/im13.png" width="100%">
+# <img src="images/im14.png" width="100%">
+# <img src="images/im15.png" width="100%">
+# <img src="images/im16.png" width="100%">
+# <img src="images/im17.png" width="100%">
+# <img src="images/im18.png" width="100%">
+# <img src="images/im19.png" width="100%">
 
 # # Conclusion
 
@@ -964,7 +999,7 @@ def S4LayerInit(N):
 # > models have all sorts of future applications from sound modeling to
 # > genomic sequences to trajectories (not to mention our area of
 # > NLP). Another is some surprise that linear models can be so effective
-# > here, while also opening up a range of efficient techniques. 
+# > here, while also opening up a range of efficient techniques.
 # > Finally from a practical level, the transformations in JAX
 # > make it really nice to implement complex models like this
 # > in very concise mathematical way (~200 LoC).
@@ -973,4 +1008,3 @@ def S4LayerInit(N):
 # > putting this together, and pointing you again to their
 # > [paper](https://arxiv.org/abs/2111.00396) and
 # > [codebase](https://github.com/HazyResearch/state-spaces).
-

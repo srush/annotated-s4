@@ -68,7 +68,6 @@ if __name__ == "__main__":
         final.reshape(28 * 28, 3)[:start, 1] = image.reshape(28 * 28)[:start]
         final.reshape(28 * 28, 3)[:start, 2] = image.reshape(28 * 28)[:start]
 
-        
         final2 = onp.zeros((28, 28, 3))
         final2[:, :, 1] = image.reshape(28, 28)
         final2.reshape(28 * 28, 3)[:start, 0] = image.reshape(28 * 28)[:start]
@@ -78,7 +77,6 @@ if __name__ == "__main__":
         ax1.imshow(final / 256.0)
         ax2.imshow(final2 / 256.0)
         fig.savefig("im%d.png" % (j))
-
 
         if j > 100:
             break

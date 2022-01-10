@@ -236,11 +236,12 @@ class SeqInternal(nn.Module):
     l_max: int
     dropout: float = 0.2
     training: bool = True
+
     def setup(self):
         self.seq = self.layer(d_model=self.d_model, l_max=self.l_max)
         self.norm = nn.LayerNorm()
         self.out = nn.Dense(self.d_model)
-        
+
         # Dropout2D is critical... we want to drop entire channels --> so share mask over 0th (L) dim
         self.drop1 = nn.Dropout(
             self.dropout,
@@ -252,13 +253,13 @@ class SeqInternal(nn.Module):
             broadcast_dims=[0],
             deterministic=not self.training,
         )
-        
+
     def __call__(self, x, blank):
         x2 = self.seq(x)
         z = self.drop1(self.out(self.drop2(nn.gelu(x2))))
         return self.norm(z + x), None
 
-    
+
 # General Skeleton for residual Sequence model with  --> takes an sequence layer
 class SeqModel(nn.Module):
     layer: nn.Module
@@ -285,13 +286,18 @@ class SeqModel(nn.Module):
         #                                training=self.training,
         #                                d_model=self.d_model,
         #                                l_max=self.l_max)
-        
-        self.layers = [SeqInternal(layer=self.layer,
-                                   dropout=self.dropout,
-                                   training=self.training,
-                                   d_model=self.d_model,
-                                   l_max=self.l_max) for _ in range(self.n_layers)]
-        
+
+        self.layers = [
+            SeqInternal(
+                layer=self.layer,
+                dropout=self.dropout,
+                training=self.training,
+                d_model=self.d_model,
+                l_max=self.l_max,
+            )
+            for _ in range(self.n_layers)
+        ]
+
     def __call__(self, x):
         # x - L x H
         x = self.encoder(x)
@@ -299,7 +305,7 @@ class SeqModel(nn.Module):
         for layer in self.layers:
             x = layer(x, None)[0]
             # x = layer(x, np.zeros(self.n_layers))[0]
-        
+
         # If classifying, mean pool of sequence-length dimension (axis 0)...
         if self.classification:
             x = np.mean(x, axis=0)
@@ -337,7 +343,7 @@ def example_train(
     lr=1e-3,
     lr_schedule=False,
     n_layers=4,
-    p_dropout=0.2,        
+    p_dropout=0.2,
     suffix=None,
 ):
     # Set randomness...
