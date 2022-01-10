@@ -238,7 +238,7 @@ class SeqInternal(nn.Module):
     training: bool = True
 
     def setup(self):
-        self.seq = self.layer(d_model=self.d_model, l_max=self.l_max)
+        self.seq = self.layer(l_max=self.l_max)
         self.norm = nn.LayerNorm()
         self.out = nn.Dense(self.d_model)
 
