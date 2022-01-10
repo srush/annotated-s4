@@ -10,30 +10,28 @@
 
 # > The [Structured State Space for Sequence
 # > Modeling](https://arxiv.org/abs/2111.00396) (S4) architecture has
-# > been applied to highly long-range sequence modeling tasks, showing
-# > a capacity to capture dependencies over tens of thousands of
-# > steps. Most notably are the excellent results on the challenging
-# > [Long Range
-# > Arena](https://github.com/google-research/long-range-arena)
-# > benchmark.
+# > been applied to highly long-range sequence modeling tasks across vision,
+# > language, and audio, showing a capacity to capture dependencies over tens
+# > of thousands of steps. Most notably are the excellent results on the challenging
+# > [Long Range Arena](https://github.com/google-research/long-range-arena) benchmark.
 
 # <img src="images/table.png" width="100%"/>
 
 # > For us, the paper is a refreshing departure from Transformers, and
 # > takes a very different approach to a problem-space we thought we
-# > understood. The result is a culmination of several resesarch projects utilizing
+# > understood. The result is a culmination of several research projects using
 # > state space models to model long-term sequences. As such, it
 # > departs in interesting ways from the mainstream models.
 # >
-# > Several of my colleagues have also noted
+# > Several of my (`srush`) colleagues and my peers (`siddk`) have also noted
 # > privately (and on [twitter](https://twitter.com/sleepinyourhat/status/1468037897446121483)!)
-# > how difficult the paper was to get
-# > intuition for.  With this goal, this blog post is an literate
-# > implementation of the S4 paper in the style of [annotated transformer](https://nlp.seas.harvard.edu/2018/04/03/attention.html).  The text is mainly taken directly
-# > from the paper, with some small modifications for clarity.
-# > The line of the left indicates our comments or tangents throughout.
+# > how difficult the paper was to get intuition for.  With this goal, this blog post is
+# > a literate implementation of the S4 paper in the style of
+# > [the annotated transformer](https://nlp.seas.harvard.edu/2018/04/03/attention.html).
+# > The text is mainly taken directly from the original S4 paper, with some small modifications
+# > for clarity. The line of the left indicates our comments or tangents throughout.
 # >
-# > / [Sasha Rush](http://rush-nlp.com/) + [Sidd Karamcheti](https://www.siddkaramcheti.com/)
+# > / [Sasha Rush](http://rush-nlp.com/) & [Sidd Karamcheti](https://www.siddkaramcheti.com/)
 
 # # Table of Contents
 
@@ -46,13 +44,16 @@
 
 # > [Full project codebase](https://github.com/srush/s4).
 # >
-# > Note that this project utilizes [JAX](https://github.com/google/jax/)
+# > Note that this project uses [JAX](https://github.com/google/jax/)
 # > with the [Flax](https://github.com/google/flax) NN library.
 # > While we both mainly use Torch, the functional nature of JAX is a
 # > good fit for some of the complexities of S4. We make heavy use of
 # > [vmap](https://jax.readthedocs.io/en/latest/jax.html#jax.vmap),
 # > [scan](https://jax.readthedocs.io/en/latest/_autosummary/jax.lax.scan.html),
-# > and their [NN cousins](https://flax.readthedocs.io/en/latest/flax.linen.html#module-flax.linen.transforms).
+# > their [NN cousins](https://flax.readthedocs.io/en/latest/flax.linen.html#module-flax.linen.transforms),
+# > and most importantly
+# > [jax.jit](https://jax.readthedocs.io/en/latest/notebooks/thinking_in_jax.html#jit-mechanics-tracing-and-static-variables)
+# > to compile fast and efficient S4 layers.
 
 from functools import partial
 import jax
@@ -67,12 +68,13 @@ def run_example(fn):
         fn()
 
 
-# > Note as well that JAX [randomness](https://jax.readthedocs.io/en/latest/notebooks/Common_Gotchas_in_JAX.html#random-numbers) is often tricky for first time users. We ignore some
-# > of these issues when possible.
+# > Note as well that JAX
+# > [randomness](https://jax.readthedocs.io/en/latest/notebooks/Common_Gotchas_in_JAX.html#random-numbers)
+# > is often tricky for first time users. We ignore some of these issues when possible.
 
 rng = jax.random.PRNGKey(1)
 
-# > Okay, let's get started. Our goal is going to be efficient
+# > Okay, let's get started. Our goal is going to be the efficient
 # > modeling of long sequences.
 
 # A central goal of sequence modeling is designing a single
@@ -92,13 +94,13 @@ rng = jax.random.PRNGKey(1)
 # computed much more efficiently than prior approaches while
 # preserving their theoretical strengths.
 
-# > So the final model that we are going to build will let us model extremely
+# > The final model that we are going to build will let us model extremely
 # > long-range sequences. In particular, we will be able to do neat things
 # > like classify images from a string of pixels, or generate the next pixel
 # > from an autoregressive model.
 # >
-# > However, before we get to the new part, let's start with the familar part.
-# > The underlying NN block is a standard residual block similar to a Transformer.
+# > However, before we get to the new, let's start with the familiar.
+# > The underlying S4 NN block is a standard residual block similar to a Transformer.
 
 
 class SeqInternal(nn.Module):
@@ -125,7 +127,8 @@ class SeqInternal(nn.Module):
 
 
 # > The full NN model is a stack of these blocks used for tasks like
-# > sequence prediction or autoregressive next step prediction.
+# > sequence prediction or autoregressive next step prediction – again, just
+# > like a Transformer or RNN.
 
 
 class SeqModel(nn.Module):
@@ -207,11 +210,11 @@ BatchSeqModel = nn.vmap(
 # is $N$-dimensional. The first equation defines the change in $x(t)$ over time.
 
 # > Concretely, the parameters of the model are  $\mathbf{A} \in \mathbb{R}^{N \times N}, \mathbf{B} \in \mathbb{R}^{N \times 1}, \mathbf{C} \in \mathbb{R}^{1 \times N}, \mathbf{D}\in \mathbb{R}^{1 \times 1}$.
-# > Ignoring $D$ for now, we can generate one randomly.
+# > Ignoring $D$ for now, we can generate an example SSM randomly.
 
 
 def randomSSM(rng, N):
-    "Generate a random SSM of size N"
+    """Generate a random SSM of size N"""
     a_r, b_r, c_r = jax.random.split(rng, 3)
     A = jax.random.uniform(a_r, (N, N))
     B = jax.random.uniform(b_r, (N, 1))
@@ -225,13 +228,13 @@ def randomSSM(rng, N):
 # instead of continuous function $u(t)$, the SSM must be
 # discretized by a **step size** $\Delta$ that represents the
 # resolution of the input.  Conceptually, the inputs $u_k$ can be
-# viewed as sampling an implicit underlying continuous signal $u(t)$
-# , where $u_k = u(k \Delta)$.
+# viewed as sampling an implicit underlying continuous signal $u(t)$,
+# where $u_k = u(k \Delta)$.
 
 
 # To discretize the continuous-time SSM, we use
 # the [bilinear method](https://en.wikipedia.org/wiki/Bilinear_transform), which converts the
-# state matrix $\boldsymbol{A}$ into an approximation $\boldsymbol{\overline{A}}$.  The discrete SSM is
+# state matrix $\boldsymbol{A}$ into an approximation $\boldsymbol{\overline{A}}$.  The discrete SSM is:
 
 # $$
 # \begin{aligned}
@@ -251,21 +254,20 @@ def discretize(A, B, C, step):
 
 
 # This equation is now a *sequence-to-sequence* map $u_k \mapsto y_k$ instead of function-to-function.
-# Moreover the state equation is now a recurrence in $x_k$,
-# allowing the discrete SSM to be computed like an RNN.
+# Moreover the state equation is now a recurrence in $x_k$, allowing the discrete SSM to be computed like an RNN.
 # Concretely, $x_k \in \mathbb{R}^N$ can be viewed as a *hidden state* with transition matrix $\boldsymbol{\overline{A}}$.
 
 # $$
 # \begin{aligned}
 #   x_{k} &= \boldsymbol{\overline{A}} x_{k-1} + \boldsymbol{\overline{B}} u_k\\
 #   y_k &= \boldsymbol{\overline{C}} x_k \\
-#    \\
 # \end{aligned}
 # $$
 
-# > This is implemented with a
+# > We can implement this with a
 # > [scan](https://jax.readthedocs.io/en/latest/_autosummary/jax.lax.scan.html)
-# > in JAX and does look superficially like an RNN.
+# > in JAX; do to this usage, this "step" function does look superficially like that of
+# > an RNN.
 
 
 def stepSSM(Ab, Bb, Cb):
@@ -281,16 +283,16 @@ def scanSSM(step_fn, u, x0):
     return jax.lax.scan(step_fn, x0, u)[1]
 
 
-# > Putting everything together we can now run the SSM
-# > by discretization and iteration.
+# > Putting everything together, we can run the SSM
+# > by first discretizing, then iterating step by step.
 
 
 def runSSM(A, B, C, u):
     L = u.shape[0]
     N = A.shape[0]
-    # Discretize
     Ab, Bb, Cb = discretize(A, B, C, step=1.0 / L)
-    # Run recurrence
+
+    # Run Recurrence
     return scanSSM(stepSSM(Ab, Bb, Cb), u[:, np.newaxis], np.zeros((N,)))
 
 
@@ -325,7 +327,7 @@ def example_mass(k, b, m):
     return A, B, C
 
 
-# > Looking at the $\boldsymbol{C}$ you should be able to convince yourself that the
+# > Looking at the $\boldsymbol{C}$ we should be able to convince ourselves that the
 # > first dimension of the hidden state is the position (since that becomes $y(t)$).
 # > The second dimension is the velocity, as it is impacted by $u(t)$ through
 # > $\boldsymbol{B}$. The transition $\boldsymbol{A}$ relates these terms.
@@ -342,7 +344,7 @@ def example_ssm():
     ssm = example_mass(k=20, b=2, m=1)
     y = runSSM(*ssm, u)
 
-    # Setup plots
+    # Plotting
     import matplotlib.pyplot as plt
     import seaborn
     from celluloid import Camera
@@ -376,20 +378,18 @@ def example_ssm():
 
 # <img src="line.gif" width="100%">
 
-# > Pretty neat. And that it is just 1 SSM, with 2 hidden
-# > states over 100 steps. What if we had 100s over thousands
-# > of steps?
+# > Pretty neat. And that it was just *1 SSM, with 2 hidden states over 100 steps*.
+# > What if we had 100s over thousands of steps?
 
 # ## Training SSMs: The Convolutional Representation
 
 # The recurrent SSM is not practical for training on modern hardware
-# due to its sequentiality.  Instead, there is a well-known connection
+# due to its sequential nature.  Instead, there is a well-known connection
 # between linear time-invariant (LTI) SSMs and
-# continuous convolutions.  Correspondingly, it can actually be
+# continuous convolutions.  Correspondingly, the recurrent SSM can actually be
 # written as a [discrete convolution](https://en.wikipedia.org/wiki/Convolution#Discrete_convolution).
 
-# For simplicity let the initial state be $x_{-1} = 0$.
-# Then unrolling  explicitly yields
+# For simplicity let the initial state be $x_{-1} = 0$. Then unrolling  explicitly yields:
 
 # $$
 # \begin{aligned}
@@ -423,7 +423,7 @@ def example_ssm():
 
 # We call $\boldsymbol{\overline{K}}$ the **SSM convolution kernel** or filter.
 
-# > Note this is a *giant* filter. It is the size of the entire sequence.
+# > Note this is a *giant* filter. It is the size of the entire sequence!
 
 
 def K_conv(A, B, C, L):
@@ -433,9 +433,8 @@ def K_conv(A, B, C, L):
 
 # In other words, this equation is a single (non-circular) convolution and can be computed very efficiently with FFTs, *provided* that $\boldsymbol{\overline{K}}$ is known.
 
-# > We can compute this either with a standard direct convolution or with
-# > a padded (non-circular) FFT. As the length gets longer the second method
-# > will be more efficient.
+# > We can compute this either with a standard direct convolution or with a padded (non-circular) FFT.
+# > As the length gets longer the second method will be more efficient.
 
 
 def nonCircularConvolution(u, K, nofft=False):
@@ -473,14 +472,13 @@ def test_cnn_is_rnn(N=4, L=16, step=1.0 / 16):
 # <img src="images/hippo.png" width="100%"/>
 #
 # [Prior work](https://arxiv.org/abs/2008.07669) found that the basic SSM actually performs very poorly in
-# practice.  Intuitively, one explanation is that linear first-order
-# ODEs solve to an exponential function, and thus may suffer from
-# gradients scaling exponentially in the sequence length (i.e., the
-# vanishing/exploding gradients problem).  To address this problem,
-# previous work developed the HiPPO theory of continuous-time
-# memorization.
+# practice.  Intuitively, one explanation is that linear first-order ODEs solve to an exponential function,
+# and thus may suffer from gradients scaling exponentially in the sequence length (i.e., the
+# vanishing/exploding gradients problem).  To address this problem, previous work developed the HiPPO theory of
+# continuous-time memorization.
 
-# HiPPO specifies a class of certain matrices $\boldsymbol{A} \in \mathbb{R}^{N \times N}$ that when incorporated, allow the state $x(t)$ to memorize the history of the input $u(t)$.
+# HiPPO specifies a class of certain matrices $\boldsymbol{A} \in \mathbb{R}^{N \times N}$ that when incorporated,
+# allow the state $x(t)$ to memorize the history of the input $u(t)$.
 # The most important matrix in this class is defined by the HiPPO matrix.
 
 # $$
@@ -519,7 +517,8 @@ def make_HiPPO(N):
     return np.array(mat)
 
 
-# Previous work found that simply modifying an SSM from a random matrix $\boldsymbol{A}$ to HiPPO improved its performance on the sequential MNIST benchmark from $50\%$ to $98\%$.
+# Previous work found that simply modifying an SSM from a random matrix $\boldsymbol{A}$ to HiPPO
+# improved its performance on the sequential MNIST classification benchmark from $50\%$ to $98\%$.
 
 # ### Tangent: A First SSM Network.
 
@@ -527,13 +526,14 @@ def make_HiPPO(N):
 # > As defined above, the discrete SSM defines a map from $\mathbb{R}^L
 # > \to \mathbb{R}^L$, i.e. a 1-D sequence map. We assume that we
 # > are going to be learning the parameters $B$ and $C$, as well as a
-# > step size $\Delta$ and a scalar $D$ paramter.  The HiPPO matrix is
+# > step size $\Delta$ and a scalar $D$ parameter. The HiPPO matrix is
 # > used for the transition $A$.
 # >
 # > Note that most of the work here is done in setup to compute the filter.
-# > actual call to the network is just a (huge) convolution.
-# > Torch users should also note that `setup` is called each time the
-# > parameters are updated, this is similar to the new
+# > The actual call to the network is just a (huge) convolution.
+# >
+# > Note for Torch users: `setup` is called each time the parameters are updated.
+# > This is similar to the new
 # > [Torch parameterizations](https://pytorch.org/tutorials/intermediate/parametrizations.html).
 
 
@@ -570,10 +570,10 @@ class NaiveSSMLayer(nn.Module):
 
 
 # Typically, DNNs operate on feature maps of size $H$ instead of $1$.
-# We handle multiple features by simply defining $H$ independent copies of itself.
+# We handle multiple features by simply defining $H$ independent copies of the SSM.
 
-
-# > Here we use [Flax vmap](https://flax.readthedocs.io/en/latest/_autosummary/flax.linen.vmap.html) method for defining $H$ copies with different parameters.
+# > Here we use the [Flax vmap](https://flax.readthedocs.io/en/latest/_autosummary/flax.linen.vmap.html)
+# > method for defining $H$ copies with different parameters.
 
 
 def cloneLayer(layer):
@@ -586,24 +586,26 @@ def cloneLayer(layer):
     )
 
 
-# > We then initialize with the HiPPO matrix. And then pass in into the stack of modules above.
+# > We then initialize with the HiPPO matrix. And then pass it into the stack of modules above.
 
 
 def NaiveSSMInit(N):
     return partial(cloneLayer(NaiveSSMLayer), A=make_HiPPO(N), N=N)
 
 
-# Overall, this defines a sequence-to-sequence map of shape (batch size, sequence length, hidden dimension), exactly the same as related sequence models such as Transformers, RNNs, and CNNs.
+# Overall, this defines a sequence-to-sequence map of shape (batch size, sequence length, hidden dimension),
+# exactly the same as related sequence models such as Transformers, RNNs, and CNNs.
 
 # > Full code for this is defined in
 # > [training.py](https://github.com/srush/s4/blob/main/s4/train.py). While
-# > we now have our main model, it is not fast enough to actually use.
+# > we now have our main model, it is not fast enough to actually use. The next
+# > section is all about making this SSM Layer faster – a lot faster!
 
 # > Warning: The next section is a lot of math, that doesn't have too
 # > much intuition. It all boils down to: we can compute the filter
 # > for Part 1 with a HiPPO-like matrix really fast. If you are interested,
 # > the details are really neat. If not skip to Part 3 for some cool applications
-# > like MNist completion.
+# > like MNIST completion.
 
 # <img src="images/im15.png" width="100%">
 
@@ -625,15 +627,15 @@ def NaiveSSMInit(N):
 #
 # > We are going to skip a log of the details and note the key idea.
 # > We want our SSM to be DPLR -> Diagonal Plus Low-Rank in complex
-# > space. If it has this structure we can make it fast.
+# > space. If it has this structure we can make it fast!
 
-# Goal: SSM is  Diagonal Plus Low Rank (DPLR) $(\boldsymbol{\Lambda} - \boldsymbol{p}\boldsymbol{q}^*, \boldsymbol{B}, \boldsymbol{C})$ for some diagonal $\boldsymbol{\Lambda}$ and vectors $\boldsymbol{p}, \boldsymbol{q}, \boldsymbol{B}, \boldsymbol{C} \in \mathbb{C}^{N \times 1}$.
+# **Goal:** SSM is  Diagonal Plus Low Rank (DPLR) $(\boldsymbol{\Lambda} - \boldsymbol{p}\boldsymbol{q}^*, \boldsymbol{B}, \boldsymbol{C})$ for some diagonal $\boldsymbol{\Lambda}$ and vectors $\boldsymbol{p}, \boldsymbol{q}, \boldsymbol{B}, \boldsymbol{C} \in \mathbb{C}^{N \times 1}$.
 #
 #
 # Under this DPLR assumption, we can overcome this speed bottleneck by
 # simultaneously applying three new techniques.
 #
-#  1.  Instead of computing $\boldsymbol{\overline{K}}$ directly,
+#  1. Instead of computing $\boldsymbol{\overline{K}}$ directly,
 #     we compute its spectrum by evaluating its **[truncated generating function](https://en.wikipedia.org/wiki/Generating_function)**  at the roots of unity.
 #     $\boldsymbol{\overline{K}}$ can then be found by applying an inverse FFT.  This generating function is closely related to the matrix resolvent, and now involves a matrix *inverse* instead of *power*.
 #  2. We show that the diagonal matrix case is equivalent to the computation of a **[Cauchy kernel](https://en.wikipedia.org/wiki/Cauchy_matrix)** $\frac{1}{\omega_j - \zeta_k}$.
@@ -641,14 +643,15 @@ def NaiveSSMInit(N):
 
 # > Note: All of this is just to compute the kernel. Once we have it,
 # > we are just going to apply a convolution. However we need to recompute
-# > this super long kernel every time we update the weights.
+# > this super long kernel every time we update the weights – hence the need to make this
+# > process relatively fast.
 
 
 # ## Step 1. SSM Generating Functions
 
 # To address the problem of computing powers of $\boldsymbol{\overline{A}}$, we introduce another technique.
 # Instead of computing the SSM convolution filter $\boldsymbol{\overline{K}}$ directly,
-# we introduce a [generating function](https://math.stackexchange.com/questions/3213142/root-of-unity-filter) on its coefficients and compute evaluations of it.
+# we introduce a generating function on its coefficients and compute evaluations of it.
 
 # The *truncated SSM generating function* at node $z$ with truncation $L$ is
 
@@ -667,8 +670,12 @@ def K_gen_simple(Ab, Bb, Cb, L):
     return gen
 
 
-# Intuitively, the generating function essentially converts the SSM convolution filter from the time domain to frequency domain.
-# Importantly, it preserves the same information, and the desired SSM convolution filter can be recovered from evaluations of its generating function at the roots of unity $\Omega = \{ \exp(2\pi \frac{k}{L} : k \in [L] \}$ stably in $O(L \log L)$ operations by applying a [fast fourier transform]().
+# Intuitively, the generating function essentially converts the SSM convolution filter from the time domain to
+# frequency domain. Importantly, it preserves the same information, and the desired SSM convolution filter
+# can be  recovered from evaluations of its
+# [generating function at the roots of unity](https://math.stackexchange.com/questions/3213142/root-of-unity-filter )
+# $\Omega = \{ \exp(2\pi \frac{k}{L} : k \in [L] \}$ stably in $O(L \log L)$ operations by applying a
+# [Fast Fourier Transform](https://en.wikipedia.org/wiki/Fast_Fourier_transform).
 
 
 def convFromGen(gen, L):
@@ -702,7 +709,8 @@ def test_gen(L=16):
 # \hat{\mathcal{K}}_L(z) = \sum_{i=0}^{L-1} \boldsymbol{\overline{C}} \boldsymbol{\overline{A}}^i \boldsymbol{\overline{B}} z^i = \boldsymbol{\overline{C}} (\boldsymbol{I} - \boldsymbol{\overline{A}}^L z^L) (\boldsymbol{I} - \boldsymbol{\overline{A}} z)^{-1} \boldsymbol{\overline{B}} = \boldsymbol{\tilde{C}}  (\boldsymbol{I} - \boldsymbol{\overline{A}} z)^{-1} \boldsymbol{\overline{B}}
 # $$
 
-# > For all $z \in \Omega_L$, we have $z^L = 1$ so that term is removed. We then pull this constant term into a new $\boldsymbol{\tilde{C}}$.
+# > For all $z \in \Omega_L$, we have $z^L = 1$ so that term is removed. We then pull this constant
+# > term into a new $\boldsymbol{\tilde{C}}$.
 
 # We can compute the generating function now without building the convolution filter.
 
@@ -735,7 +743,7 @@ def test_gen_inverse():
 # > The next step to assume special *structure* on the matrix
 # > $\boldsymbol{A}$ to avoid the inverse.  To begin let us first
 # > convert the equation above to use the original SSM matrices. With
-# > some algebra you can expand the discretization and show,
+# > some algebra you can expand the discretization and show:
 
 # $$
 # \begin{aligned}
@@ -746,8 +754,8 @@ def test_gen_inverse():
 # $$
 
 
-# > Now imagine $A=\boldsymbol{\Lambda}$ for a diagonal $\boldsymbol{\Lambda}$. Substituting in the discretization formula the authors
-# > show that the generating function can be written in the following manner,
+# > Now imagine $A=\boldsymbol{\Lambda}$ for a diagonal $\boldsymbol{\Lambda}$. Substituting in the discretization
+# > formula the authors show that the generating function can be written in the following manner:
 
 # $$ \begin{aligned}
 # \boldsymbol{\hat{K}}_{\boldsymbol{\Lambda}}(z) & = c(z) \sum_i \cdot \frac{\tilde{C}_i B_i} {(g(z) - \Lambda_{i})} = c(z) \cdot k_{z, \boldsymbol{\Lambda}}(\boldsymbol{\tilde{C}}, \boldsymbol{B}) \\
@@ -767,35 +775,32 @@ def cauchy_dot(v, omega, lambd):
 
 
 # > While not important for our implementation, it is worth noting
-# > that this is a [Cauchy
-# > kernel](https://en.wikipedia.org/wiki/Cauchy_matrix) and is the
-# > subject of many [fast
-# > implementations](https://en.wikipedia.org/wiki/Fast_multipole_method). On
-# > GPU though, it is efficient enough just to compute it directly.
+# > that this is a [Cauchy kernel](https://en.wikipedia.org/wiki/Cauchy_matrix)
+# > and is the subject of many [fast implementations](https://en.wikipedia.org/wiki/Fast_multipole_method).
+# > On GPU though, it is efficient enough just to compute it directly.
 
 
 # ## Step 3: Diagonal Plus Low-Rank
 
 # > The final step is to relax the diagonal assumption. In addition to
-# > the diagonal term we allow a a low-rank component with
-# > $\boldsymbol{p}, \boldsymbol{q} \in \mathbb{C}^{N\times 1}$.
+# > the diagonal term we allow a low-rank component with
+# > $\boldsymbol{p}, \boldsymbol{q} \in \mathbb{C}^{N\times 1}$ such that:
 
 # $$
 # \boldsymbol{A} = \boldsymbol{\Lambda} + \boldsymbol{p}  \boldsymbol{q}^*
 # $$
 
-# > The [Woodbury
-# > identity](https://en.wikipedia.org/wiki/Woodbury_matrix_identity)
+# > The [Woodbury identity](https://en.wikipedia.org/wiki/Woodbury_matrix_identity)
 # > tells us that the inverse of a diagonal plus rank-1 term is equal to the
-# > inverse of the diagonal plus a rank-1 term. Or in math :)
+# > inverse of the diagonal plus a rank-1 term. Or in math 🙂:
 
 # $$ \begin{aligned}
 # (\boldsymbol{\Lambda} + \boldsymbol{p}  \boldsymbol{q}^*)^{-1} &= \boldsymbol{\Lambda}^{-1} - \boldsymbol{\Lambda}^{-1} \boldsymbol{p} (1 + \boldsymbol{q}^* \boldsymbol{p})^{-1} \boldsymbol{q}^* \boldsymbol{\Lambda}^{-1}
 #  \end{aligned}
 # $$
 
-# > There is a bunch of algebra. But it mostly consists of substituting this in for A,
-# > applying the woodbury identity and distributing terms. We end up with 4 terms that
+# > There is a bunch of algebra. But it mostly consists of substituting this component in for A,
+# > applying the Woodbury identity and distributing terms. We end up with 4 terms that
 # > all look like step 2 above.
 
 # $$ \begin{aligned}
@@ -826,7 +831,7 @@ def K_gen_DPLR(Lambda, p, q, B, Ct, step):
     return gen
 
 
-# > Now we can check whether this worked. First we generate a random Diagonal Plus Low Rank matrix.
+# > Now we can check whether this worked. First, let's generate a random Diagonal Plus Low Rank matrix:
 
 
 def randomDPLR(rng, N):
@@ -839,7 +844,7 @@ def randomDPLR(rng, N):
     return Lambda, p, q, B, C
 
 
-# > New we check that the DPLR method yields the same filter as computing $\boldsymbol{A}$ directly.
+# > We can check that the DPLR method yields the same filter as computing $\boldsymbol{A}$ directly:
 
 
 def test_gen_dplr(L=16, N=4):
@@ -859,7 +864,8 @@ def test_gen_dplr(L=16, N=4):
 # ## Turning HiPPO to DPLR
 
 # > This approach applies to DPLR matrices, but remember we would like it to also apply to the HiPPO matrix.
-# > While not DPLR the HiPPO matrix does have special structure, [Normal](https://en.wikipedia.org/wiki/Normal_matrix) Plus Low-Rank (NPLR).
+# > While not DPLR in it's current form, the HiPPO matrix *does have special structure*. It's
+# > [Normal](https://en.wikipedia.org/wiki/Normal_matrix) Plus Low-Rank (NPLR)!
 
 # The S4 techniques can apply to any matrix $\boldsymbol{A}$ that can be decomposed as *Normal Plus Low-Rank (NPLR)*.
 # $$
@@ -868,12 +874,10 @@ def test_gen_dplr(L=16, N=4):
 # for [unitary](https://en.wikipedia.org/wiki/Unitary_matrix) $\boldsymbol{V} \in \mathbb{C}^{N \times N}$, diagonal $\boldsymbol{\Lambda}$, and low-rank factorization $\boldsymbol{p}, \boldsymbol{q} \in \mathbb{R}^{N \times r}$.  An NPLR SSM is therefore [unitarily](https://en.wikipedia.org/wiki/Unitary_matrix) equivalent to some DPLR matrix.
 
 
-# > Finally recall that we actually need to work with a HiPPO matrix
-# > for $\boldsymbol{A}$. This requires showing that the matrix is
-# > NPLR and performing this decomposition to find
-# > $\boldsymbol{\Lambda}$. The appendix show does this by showing a
-# > decomposition to a
-# > [skew-symmetric](https://en.wikipedia.org/wiki/Skew-symmetric_matrix)
+# > For S4, we need to work with a HiPPO matrix for $\boldsymbol{A}$. This requires showing that
+# > the matrix is NPLR and performing this decomposition to find
+# > $\boldsymbol{\Lambda}$. The appendix of the paper does this by showing a
+# > decomposition to a [skew-symmetric](https://en.wikipedia.org/wiki/Skew-symmetric_matrix)
 # > (normal) + low-rank term.
 #
 # $$
@@ -946,7 +950,7 @@ class S4Layer(nn.Module):
 
 S4Layer = cloneLayer(S4Layer)
 
-# > To initialize the model we compute the DPLR unitary equivalent of HiPPO and pass it in.
+# > We initialize the model by computing the DPLR unitary equivalent of HiPPO and passing it in:
 
 
 def S4LayerInit(N):
@@ -958,11 +962,11 @@ def S4LayerInit(N):
     return partial(S4Layer, N=N, A=A, p=p, q=q, Lambda=Lambda)
 
 
-# ## MNist Experiments
+# ## MNIST Experiments
 
 
-# > The first experiments we ran were on MNist classification. While
-# > not in theory a hard problem, treating MNist like linear sequence
+# > The first experiments we ran were on MNIST classification. While
+# > not in theory a hard problem, treating MNIST like linear sequence
 # > classification is a bit strange. However in practice, the model
 # > with $H=256$ and four layers seems to get up near 99% right away.
 
@@ -971,7 +975,7 @@ def S4LayerInit(N):
 #          Best Test Loss: 0.04091 -- Best Test Accuracy: 0.9878 at Epoch 9
 
 
-# > A more interesting problem is linear generation of MNist. Here we
+# > A more interesting problem is linear generation of MNIST. Here we
 # > simply feed in a sequence of pixels into the model and have it
 # > predict the next one like language modeling. With a little
 # > tweaking we were able to get the model to an NLL of 0.61 on this
@@ -982,10 +986,10 @@ def S4LayerInit(N):
 #          Train Loss: 0.64605 -- Test Loss: 0.61970 -- Test Accuracy: 0.8635
 #          Best Test Loss: 0.61627 -- Best Test Accuracy: 0.8645 at Epoch 82
 
-# > Because every language modeling area has its own freaking metric,
-# > it turns out that the pixel predicting people use *[bits per
+# > Because every sequence modeling area has its own freaking metric,
+# > it turns out that the pixel prediction folks use *[bits per
 # > dimension](https://paperswithcode.com/sota/image-generation-on-mnist)* which is
-# > NLL in base 2 for MNist. A score of 0.61 is 0.88 BPD which is near PixelCNN.
+# > NLL in base 2 for MNIST. A score of 0.61 is 0.88 BPD which is near PixelCNN.
 # > So not state-of-the-art, but good for a blog post.
 
 # > We can sample from the model using the CNN implementation. Ideally we would use the
@@ -1041,15 +1045,16 @@ def sample_mnist():
 
 # > Putting together this post inspired lots of thoughts about future
 # > work in this area. One obvious conclusion is that long-range
-# > models have all sorts of future applications from sound modeling to
-# > genomic sequences to trajectories (not to mention our area of
+# > models have all sorts of future applications from acoustic modeling to
+# > genomic sequences to trajectories (not to mention our shared area of
 # > NLP). Another is some surprise that linear models can be so effective
 # > here, while also opening up a range of efficient techniques.
 # > Finally from a practical level, the transformations in JAX
 # > make it really nice to implement complex models like this
-# > in very concise mathematical way (~200 LoC).
+# > in very concise mathematical way (~200 LoC), with similar efficiency and performance!
 
-# > We will end by thanking the authors who were super helpful in
+# > We will end by thanking the authors [Albert Gu](http://web.stanford.edu/~albertgu/) and
+# > [Karan Goel](https://krandiash.github.io/), who were super helpful in
 # > putting this together, and pointing you again to their
 # > [paper](https://arxiv.org/abs/2111.00396) and
 # > [codebase](https://github.com/HazyResearch/state-spaces).
