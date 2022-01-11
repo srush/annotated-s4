@@ -62,11 +62,6 @@ from jax.scipy.signal import convolve
 rng = jax.random.PRNGKey(1)
 
 
-def run_example(fn):
-    if __name__ == "__main__":
-        fn()
-
-
 # # Part 1: State Space Models
 
 # Okay, let's get started. Our goal is going to be the efficient
@@ -269,7 +264,7 @@ def example_ssm():
     anim.save("line.gif", dpi=80, writer="imagemagick")
 
 
-run_example(example_ssm)
+# example_ssm()
 
 # <img src="line.gif" width="100%">
 
@@ -397,8 +392,10 @@ def test_cnn_is_rnn(N=4, L=16, step=1.0 / 16):
 
 # This matrix is going to be really important, but it is a bit
 # magic. For our purposes we mainly need to know that: we only need to
-# calculate it once and a simple structure (which we will exploit in part
-# 2).
+# calculate it once and a simple structure (which we will exploit in
+# part 2). Without going understanding the ODE math, the main takeaway
+# is that this matrix aims to remember the past history in the state a
+# timescale invariant manner.
 
 
 def make_HiPPO(N):
@@ -973,7 +970,7 @@ def sample_mnist():
     plt.savefig("sample.png")
 
 
-# run_example(sample_mnist)
+# sample_mnist()
 
 # <img src="images/sample.png" width="100%">
 
