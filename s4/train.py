@@ -8,7 +8,7 @@ from flax import linen as nn
 from flax.training import checkpoints, train_state
 from tqdm import tqdm
 from .data import Datasets
-from .s4 import NaiveSSMInit, S4LayerInit
+from .s4 import BatchSeqModel, S4LayerInit, SSMInit
 
 
 # ## Baseline Models
@@ -230,105 +230,13 @@ class LSTMRecurrentModel(nn.Module):
         return self.LSTM(self.init_h, xs)[1]
 
 
-class SeqInternal(nn.Module):
-    layer: nn.Module
-    d_model: int
-    l_max: int
-    dropout: float = 0.2
-    training: bool = True
-
-    def setup(self):
-        self.seq = self.layer(l_max=self.l_max)
-        self.norm = nn.LayerNorm()
-        self.out = nn.Dense(self.d_model)
-
-        # Dropout2D is critical... we want to drop entire channels --> so share mask over 0th (L) dim
-        self.drop1 = nn.Dropout(
-            self.dropout,
-            broadcast_dims=[0],
-            deterministic=not self.training,
-        )
-        self.drop2 = nn.Dropout(
-            self.dropout,
-            broadcast_dims=[0],
-            deterministic=not self.training,
-        )
-
-    def __call__(self, x, blank):
-        x2 = self.seq(x)
-        z = self.drop1(self.out(self.drop2(nn.gelu(x2))))
-        return self.norm(z + x), None
-
-
-# General Skeleton for residual Sequence model with  --> takes an sequence layer
-class SeqModel(nn.Module):
-    layer: nn.Module
-    d_output: int
-    d_model: int
-    l_max: int
-    n_layers: int
-    dropout: float = 0.2
-    training: bool = True
-    sampling: bool = False
-    classification: bool = False
-
-    def setup(self):
-        self.encoder = nn.Dense(self.d_model)
-        self.decoder = nn.Dense(self.d_output)
-        # SeqInternalStack = nn.scan(nn.remat(SeqInternal),
-        #                            split_rngs={"params" : True, "dropout": True},
-        #                            variable_axes={"params": 0},
-        #                            length=self.n_layers,
-        #                            in_axes=nn.broadcast
-        # )
-        # self.layers = SeqInternalStack(layer=self.layer,
-        #                                dropout=self.dropout,
-        #                                training=self.training,
-        #                                d_model=self.d_model,
-        #                                l_max=self.l_max)
-
-        self.layers = [
-            SeqInternal(
-                layer=self.layer,
-                dropout=self.dropout,
-                training=self.training,
-                d_model=self.d_model,
-                l_max=self.l_max,
-            )
-            for _ in range(self.n_layers)
-        ]
-
-    def __call__(self, x):
-        # x - L x H
-        x = self.encoder(x)
-
-        for layer in self.layers:
-            x = layer(x, None)[0]
-            # x = layer(x, np.zeros(self.n_layers))[0]
-
-        # If classifying, mean pool of sequence-length dimension (axis 0)...
-        if self.classification:
-            x = np.mean(x, axis=0)
-
-        x = self.decoder(x)
-        return nn.log_softmax(x, axis=-1)
-
-
-BatchSeqModel = nn.vmap(
-    SeqModel,
-    in_axes=0,
-    out_axes=0,
-    variable_axes={"params": None, "dropout": None},
-    split_rngs={"params": False, "dropout": True},
-)
-
 # ## Sanity Checks
 # Here we provide examples for training & evaluation our baseline models on the various datasets.
 
 Models = {
     "ff": FeedForwardModel,
     "lstm": LSTMRecurrentModel,
-    "ssm-naive": NaiveSSMInit,
+    "ssm-naive": SSMInit,
     "s4": S4LayerInit,
 }
 

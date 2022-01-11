@@ -477,9 +477,9 @@ y &amp;= \boldsymbol{\overline{K}} \ast u
 </span> We call <span class="math inline">\boldsymbol{\overline{K}}</span> the <strong>SSM convolution kernel</strong> or filter.</p>
 </blockquote>
 <p>Note this is a <em>giant</em> filter. It is the size of the entire sequence!</p>
-<div class="sourceCode" id="cb10"><pre class="sourceCode python"><code class="sourceCode python"><a class="sourceLine" id="cb10-1" title="1"><span class="kw">def</span> K_conv(A, B, C, L):</a>
-<a class="sourceLine" id="cb10-2" title="2">    K <span class="op">=</span> [(C <span class="op">@</span> matrix_power(A, l) <span class="op">@</span> B).reshape() <span class="cf">for</span> l <span class="kw">in</span> <span class="bu">range</span>(L)]</a>
-<a class="sourceLine" id="cb10-3" title="3">    <span class="cf">return</span> np.array(K)</a></code></pre></div>
+<div class="sourceCode" id="cb10"><pre class="sourceCode python"><code class="sourceCode python"><a class="sourceLine" id="cb10-1" title="1"><span class="kw">def</span> K_conv(Ab, Bb, Cb, L):</a>
+<a class="sourceLine" id="cb10-2" title="2">    <span class="cf">return</span> np.array([(Cb <span class="op">@</span> matrix_power(Ab, l) <span class="op">@</span> Bb).reshape() <span class="cf">for</span> l <span class="kw">in</span> <span class="bu">range</span>(L)])</a></code></pre></div>
+<p>Note this approach is really naive, see <a href="https://phys.au.dk/~fedorov/Numeric/now/Book/krylov.pdf">Krylov methods and power iterations</a> for a better approach. However we are going to replace it with S4 in Part 2.</p>
 <p>We can compute this either with a standard direct convolution or with a padded (non-circular) FFT. As the length gets longer the second method will be more efficient.</p>
 <div class="sourceCode" id="cb11"><pre class="sourceCode python"><code class="sourceCode python"><a class="sourceLine" id="cb11-1" title="1"><span class="kw">def</span> non_circular_convolution(u, K, nofft<span class="op">=</span><span class="va">False</span>):</a>
 <a class="sourceLine" id="cb11-2" title="2">    <span class="cf">if</span> nofft:</a>
@@ -553,23 +553,22 @@ n+1 &amp; \text{if } n = k \\
 <a class="sourceLine" id="cb15-2" title="2">    A: np.DeviceArray  <span class="co"># HiPPO</span></a>
 <a class="sourceLine" id="cb15-3" title="3">    N: <span class="bu">int</span></a>
 <a class="sourceLine" id="cb15-4" title="4">    l_max: <span class="bu">int</span></a>
-<a class="sourceLine" id="cb15-5" title="5">    d_model: <span class="bu">int</span>  <span class="co"># Ignored</span></a>
-<a class="sourceLine" id="cb15-6" title="6"></a>
-<a class="sourceLine" id="cb15-7" title="7">    <span class="kw">def</span> setup(<span class="va">self</span>):</a>
-<a class="sourceLine" id="cb15-8" title="8">        <span class="co"># SSM parameters</span></a>
-<a class="sourceLine" id="cb15-9" title="9">        <span class="va">self</span>.B <span class="op">=</span> <span class="va">self</span>.param(<span class="st">&quot;B&quot;</span>, nn.initializers.lecun_normal(), (<span class="va">self</span>.N, <span class="dv">1</span>))</a>
-<a class="sourceLine" id="cb15-10" title="10">        <span class="va">self</span>.C <span class="op">=</span> <span class="va">self</span>.param(<span class="st">&quot;C&quot;</span>, nn.initializers.lecun_normal(), (<span class="dv">1</span>, <span class="va">self</span>.N))</a>
-<a class="sourceLine" id="cb15-11" title="11">        <span class="va">self</span>.D <span class="op">=</span> <span class="va">self</span>.param(<span class="st">&quot;D&quot;</span>, nn.initializers.ones, (<span class="dv">1</span>,))</a>
-<a class="sourceLine" id="cb15-12" title="12"></a>
-<a class="sourceLine" id="cb15-13" title="13">        <span class="co"># Step parameter</span></a>
-<a class="sourceLine" id="cb15-14" title="14">        <span class="va">self</span>.log_step <span class="op">=</span> <span class="va">self</span>.param(<span class="st">&quot;log_step&quot;</span>, log_step_initializer(), (<span class="dv">1</span>,))</a>
-<a class="sourceLine" id="cb15-15" title="15"></a>
-<a class="sourceLine" id="cb15-16" title="16">        step <span class="op">=</span> np.exp(<span class="va">self</span>.log_step)</a>
-<a class="sourceLine" id="cb15-17" title="17">        ssm <span class="op">=</span> discretize(<span class="va">self</span>.A, <span class="va">self</span>.B, <span class="va">self</span>.C, step<span class="op">=</span>step)</a>
-<a class="sourceLine" id="cb15-18" title="18">        <span class="va">self</span>.K <span class="op">=</span> K_conv(<span class="op">*</span>ssm, <span class="va">self</span>.l_max)</a>
-<a class="sourceLine" id="cb15-19" title="19"></a>
-<a class="sourceLine" id="cb15-20" title="20">    <span class="kw">def</span> <span class="fu">__call__</span>(<span class="va">self</span>, u):</a>
-<a class="sourceLine" id="cb15-21" title="21">        <span class="cf">return</span> non_circular_convolution(u, <span class="va">self</span>.K) <span class="op">+</span> <span class="va">self</span>.D <span class="op">*</span> u</a></code></pre></div>
+<a class="sourceLine" id="cb15-5" title="5"></a>
+<a class="sourceLine" id="cb15-6" title="6">    <span class="kw">def</span> setup(<span class="va">self</span>):</a>
+<a class="sourceLine" id="cb15-7" title="7">        <span class="co"># SSM parameters</span></a>
+<a class="sourceLine" id="cb15-8" title="8">        <span class="va">self</span>.B <span class="op">=</span> <span class="va">self</span>.param(<span class="st">&quot;B&quot;</span>, nn.initializers.lecun_normal(), (<span class="va">self</span>.N, <span class="dv">1</span>))</a>
+<a class="sourceLine" id="cb15-9" title="9">        <span class="va">self</span>.C <span class="op">=</span> <span class="va">self</span>.param(<span class="st">&quot;C&quot;</span>, nn.initializers.lecun_normal(), (<span class="dv">1</span>, <span class="va">self</span>.N))</a>
+<a class="sourceLine" id="cb15-10" title="10">        <span class="va">self</span>.D <span class="op">=</span> <span class="va">self</span>.param(<span class="st">&quot;D&quot;</span>, nn.initializers.ones, (<span class="dv">1</span>,))</a>
+<a class="sourceLine" id="cb15-11" title="11"></a>
+<a class="sourceLine" id="cb15-12" title="12">        <span class="co"># Step parameter</span></a>
+<a class="sourceLine" id="cb15-13" title="13">        <span class="va">self</span>.log_step <span class="op">=</span> <span class="va">self</span>.param(<span class="st">&quot;log_step&quot;</span>, log_step_initializer(), (<span class="dv">1</span>,))</a>
+<a class="sourceLine" id="cb15-14" title="14"></a>
+<a class="sourceLine" id="cb15-15" title="15">        step <span class="op">=</span> np.exp(<span class="va">self</span>.log_step)</a>
+<a class="sourceLine" id="cb15-16" title="16">        ssm <span class="op">=</span> discretize(<span class="va">self</span>.A, <span class="va">self</span>.B, <span class="va">self</span>.C, step<span class="op">=</span>step)</a>
+<a class="sourceLine" id="cb15-17" title="17">        <span class="va">self</span>.K <span class="op">=</span> K_conv(<span class="op">*</span>ssm, <span class="va">self</span>.l_max)</a>
+<a class="sourceLine" id="cb15-18" title="18"></a>
+<a class="sourceLine" id="cb15-19" title="19">    <span class="kw">def</span> <span class="fu">__call__</span>(<span class="va">self</span>, u):</a>
+<a class="sourceLine" id="cb15-20" title="20">        <span class="cf">return</span> non_circular_convolution(u, <span class="va">self</span>.K) <span class="op">+</span> <span class="va">self</span>.D <span class="op">*</span> u</a></code></pre></div>
 <p>Since our SSMs operate on scalars, we make <span class="math inline">H</span> different copies with different parameters. Here we use the <a href="https://flax.readthedocs.io/en/latest/_autosummary/flax.linen.vmap.html">Flax vmap</a> method for defining these <span class="math inline">H</span> copies.</p>
 <div class="sourceCode" id="cb16"><pre class="sourceCode python"><code class="sourceCode python"><a class="sourceLine" id="cb16-1" title="1"><span class="kw">def</span> cloneLayer(layer):</a>
 <a class="sourceLine" id="cb16-2" title="2">    <span class="cf">return</span> nn.vmap(</a>
@@ -653,8 +652,16 @@ n+1 &amp; \text{if } n = k \\
 </blockquote>
 <p>Specifically recall this function here:</p>
 <div class="sourceCode" id="cb21"><pre class="sourceCode python"><code class="sourceCode python"><a class="sourceLine" id="cb21-1" title="1"><span class="kw">def</span> K_conv_(A, B, C, L):</a>
-<a class="sourceLine" id="cb21-2" title="2">    K <span class="op">=</span> [(C <span class="op">@</span> matrix_power(A, l) <span class="op">@</span> B).reshape() <span class="cf">for</span> l <span class="kw">in</span> <span class="bu">range</span>(L)]</a>
-<a class="sourceLine" id="cb21-3" title="3">    <span class="cf">return</span> np.array(K)</a></code></pre></div>
+<a class="sourceLine" id="cb21-2" title="2">    <span class="kw">def</span> power(carry, _):</a>
+<a class="sourceLine" id="cb21-3" title="3">        As, i <span class="op">=</span> carry</a>
+<a class="sourceLine" id="cb21-4" title="4">        <span class="cf">if</span> i <span class="op">==</span> <span class="dv">0</span>:</a>
+<a class="sourceLine" id="cb21-5" title="5">            <span class="cf">return</span> (As, <span class="dv">1</span>), As</a>
+<a class="sourceLine" id="cb21-6" title="6">        <span class="cf">else</span>:</a>
+<a class="sourceLine" id="cb21-7" title="7">            n <span class="op">=</span> carry <span class="op">@</span> A</a>
+<a class="sourceLine" id="cb21-8" title="8">            <span class="cf">return</span> (n, i <span class="op">+</span> <span class="dv">1</span>), n</a>
+<a class="sourceLine" id="cb21-9" title="9"></a>
+<a class="sourceLine" id="cb21-10" title="10">    _, As <span class="op">=</span> jax.scan(power, (np.eyes(A.shape[<span class="dv">0</span>]), <span class="dv">0</span>), np.zeros(L))</a>
+<a class="sourceLine" id="cb21-11" title="11">    <span class="cf">return</span> (C <span class="op">@</span> As <span class="op">@</span> B).reshape(L)</a></code></pre></div>
 <p>The contribution of S4 is a method for speeding up this function. To do this we are going to focus on the case where the SSM has special structure. Specifically, Diagonal Plus Low-Rank (DPLR) in complex space.</p>
 <!-- #region -->
 <p><strong>DPLR:</strong> SSM is <span class="math inline">(\boldsymbol{\Lambda} - \boldsymbol{p}\boldsymbol{q}^*, \boldsymbol{B}, \boldsymbol{C})</span> for some diagonal <span class="math inline">\boldsymbol{\Lambda}</span> and vectors <span class="math inline">\boldsymbol{p}, \boldsymbol{q}, \boldsymbol{B}, \boldsymbol{C} \in \mathbb{C}^{N \times 1}</span>.</p>
@@ -817,7 +824,7 @@ n+1 &amp; \text{if } n = k \\
 <li><code>conv_from_gen</code> -&gt; Convert generating function to filter</li>
 <li><code>non_circular_convolution</code> -&gt; Run convolution</li>
 </ol>
-<p>A full S4 Layer is very similar to the simple SSM layer above. The only difference is in the the computation of <span class="math inline">\boldsymbol{K}</span>. Additionally instead of learning <span class="math inline">\boldsymbol{C}</span>, we learn <span class="math inline">\boldsymbol{\tilde{C}}</span> so we avoid computing powers of <span class="math inline">\boldsymbol{A}</span>.</p>
+<p>A full S4 Layer is very similar to the simple SSM layer above. The only difference is in the the computation of <span class="math inline">\boldsymbol{K}</span>. Additionally instead of learning <span class="math inline">\boldsymbol{C}</span>, we learn <span class="math inline">\boldsymbol{\tilde{C}}</span> so we avoid computing powers of <span class="math inline">\boldsymbol{A}</span>. Note as well that in the paper they learn <span class="math inline">\Lambda, p, q</span>. However we leave them fixed for simplicity.</p>
 <div class="sourceCode" id="cb32"><pre class="sourceCode python"><code class="sourceCode python"><a class="sourceLine" id="cb32-1" title="1"><span class="kw">class</span> S4Layer(nn.Module):</a>
 <a class="sourceLine" id="cb32-2" title="2">    A: np.DeviceArray</a>
 <a class="sourceLine" id="cb32-3" title="3">    p: np.DeviceArray</a>
