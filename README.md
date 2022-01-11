@@ -14,6 +14,9 @@ python -m s4.train --dataset mnist --model s4 --epochs 100 --bsz 128 --d_model 1
 ```bash
 # Default arguments
 python -m s4.train --dataset quickdraw --model s4 --epochs 10 --bsz 128 --d_model 128 --ssm_n 64
+
+# "Run in a day" variant
+python -m s4.train --dataset quickdraw --model s4 --epochs 1 --bsz 512 --d_model 256 --ssm_n 64 --p_dropout 0.05
 ```
 
 #### MNIST Classification
