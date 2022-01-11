@@ -58,6 +58,7 @@ from flax import linen as nn
 from jax.numpy.linalg import eig, inv, matrix_power
 from jax.scipy.signal import convolve
 
+
 rng = jax.random.PRNGKey(1)
 
 
