@@ -341,7 +341,7 @@ y(t) &amp;= \boldsymbol{C}x(t) + \boldsymbol{D}u(t)
 </span> Our goal is to simply use the SSM as a black-box representation in a deep sequence model, where <span class="math inline">\boldsymbol{A}, \boldsymbol{B}, \boldsymbol{C}, \boldsymbol{D}</span> are parameters learned by gradient descent. For the remainder, we will omit the parameter <span class="math inline">\boldsymbol{D}</span> for exposition (or equivalently, assume <span class="math inline">\boldsymbol{D} = 0</span> because the term <span class="math inline">\boldsymbol{D}u</span> can be viewed as a skip connection and is easy to compute).</p>
 <p>An SSM maps a input <span class="math inline">u(t)</span> to a state representation vector <span class="math inline">x(t)</span> and an output <span class="math inline">y(t)</span>. For simplicity, we assume the input and output are one-dimensional, and the state representation is <span class="math inline">N</span>-dimensional. The first equation defines the change in <span class="math inline">x(t)</span> over time.</p>
 </blockquote>
-<p>Our SSMs will be defined by three matrices – <span class="math inline">\boldsymbol{A}, \boldsymbol{B}, \boldsymbol{C}</span> – which we will learn. For now, we begin with a function a random SSM, to define sizes:</p>
+<p>Our SSMs will be defined by three matrices – <span class="math inline">\boldsymbol{A}, \boldsymbol{B}, \boldsymbol{C}</span> – which we will learn. For now, we begin with a function a random SSM, to define sizes,</p>
 <div class="sourceCode" id="cb3"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> random_SSM(rng, N):</span>
 <span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a>    a_r, b_r, c_r <span class="op">=</span> jax.random.split(rng, <span class="dv">3</span>)</span>
 <span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a>    A <span class="op">=</span> jax.random.uniform(a_r, (N, N))</span>
@@ -373,7 +373,7 @@ y_k &amp;= \boldsymbol{\overline{C}} x_k \\
 \end{aligned}
 </span></p>
 </blockquote>
-<p>As the paper says, this “step” function does look superficially like that of an RNN. We can implement this with a <a href="https://jax.readthedocs.io/en/latest/_autosummary/jax.lax.scan.html">scan</a> in JAX:</p>
+<p>As the paper says, this “step” function does look superficially like that of an RNN. We can implement this with a <a href="https://jax.readthedocs.io/en/latest/_autosummary/jax.lax.scan.html">scan</a> in JAX,</p>
 <div class="sourceCode" id="cb5"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> scan_SSM(Ab, Bb, Cb, u, x0):</span>
 <span id="cb5-2"><a href="#cb5-2" aria-hidden="true" tabindex="-1"></a>    <span class="kw">def</span> step(x_k_1, u_k):</span>
 <span id="cb5-3"><a href="#cb5-3" aria-hidden="true" tabindex="-1"></a>        x_k <span class="op">=</span> Ab <span class="op">@</span> x_k_1 <span class="op">+</span> Bb <span class="op">@</span> u_k</span>
@@ -381,7 +381,7 @@ y_k &amp;= \boldsymbol{\overline{C}} x_k \\
 <span id="cb5-5"><a href="#cb5-5" aria-hidden="true" tabindex="-1"></a>        <span class="cf">return</span> x_k, y_k</span>
 <span id="cb5-6"><a href="#cb5-6" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb5-7"><a href="#cb5-7" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> jax.lax.scan(step, x0, u)[<span class="dv">1</span>]</span></code></pre></div>
-<p>Putting everything together, we can run the SSM by first discretizing, then iterating step by step:</p>
+<p>Putting everything together, we can run the SSM by first discretizing, then iterating step by step,</p>
 <div class="sourceCode" id="cb6"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> run_SSM(A, B, C, u):</span>
 <span id="cb6-2"><a href="#cb6-2" aria-hidden="true" tabindex="-1"></a>    L <span class="op">=</span> u.shape[<span class="dv">0</span>]</span>
 <span id="cb6-3"><a href="#cb6-3" aria-hidden="true" tabindex="-1"></a>    N <span class="op">=</span> A.shape[<span class="dv">0</span>]</span>
@@ -409,7 +409,7 @@ my&#39;&#39;(t) = u(t) - by&#39;(t) - ky(t)
 <span id="cb7-4"><a href="#cb7-4" aria-hidden="true" tabindex="-1"></a>    C <span class="op">=</span> np.array([[<span class="fl">1.0</span>, <span class="dv">0</span>]])</span>
 <span id="cb7-5"><a href="#cb7-5" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> A, B, C</span></code></pre></div>
 <p>Looking at the <span class="math inline">\boldsymbol{C}</span>, we should be able to convince ourselves that the first dimension of the hidden state is the position (since that becomes <span class="math inline">y(t)</span>). The second dimension is the velocity, as it is impacted by <span class="math inline">u(t)</span> through <span class="math inline">\boldsymbol{B}</span>. The transition <span class="math inline">\boldsymbol{A}</span> relates these terms.</p>
-<p>We’ll set <span class="math inline">u</span> to be a continuous function of <span class="math inline">t</span>:</p>
+<p>We’ll set <span class="math inline">u</span> to be a continuous function of <span class="math inline">t</span>,</p>
 <div class="sourceCode" id="cb8"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb8-1"><a href="#cb8-1" aria-hidden="true" tabindex="-1"></a><span class="at">@partial</span>(np.vectorize, signature<span class="op">=</span><span class="st">&quot;()-&gt;()&quot;</span>)</span>
 <span id="cb8-2"><a href="#cb8-2" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> example_force(t):</span>
 <span id="cb8-3"><a href="#cb8-3" aria-hidden="true" tabindex="-1"></a>    x <span class="op">=</span> np.sin(<span class="dv">10</span> <span class="op">*</span> t)</span>
@@ -496,7 +496,7 @@ y &amp;= \boldsymbol{\overline{K}} \ast u
 <span id="cb11-3"><a href="#cb11-3" aria-hidden="true" tabindex="-1"></a>        [(Cb <span class="op">@</span> matrix_power(Ab, l) <span class="op">@</span> Bb).reshape() <span class="cf">for</span> l <span class="kw">in</span> <span class="bu">range</span>(L)]</span>
 <span id="cb11-4"><a href="#cb11-4" aria-hidden="true" tabindex="-1"></a>    )</span></code></pre></div>
 <p>Note this approach is really naive. For a better approach, see <a href="https://phys.au.dk/~fedorov/Numeric/now/Book/krylov.pdf">Krylov methods and power iterations</a>. However, we are going to replace this approach with S4 in Part 2.</p>
-<p>We can compute the result of applying this filter either with a standard direct convolution or with a padded (non-circular) <a href="https://en.wikipedia.org/wiki/Convolution_theorem">Fast Fourier Transform (FFT)</a>. As the length gets longer the second method will be more efficient:</p>
+<p>We can compute the result of applying this filter either with a standard direct convolution or with a padded (non-circular) <a href="https://en.wikipedia.org/wiki/Convolution_theorem">Fast Fourier Transform (FFT)</a>. As the length gets longer the second method will be more efficient,</p>
 <div class="sourceCode" id="cb12"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb12-1"><a href="#cb12-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> non_circular_convolution(u, K, nofft<span class="op">=</span><span class="va">False</span>):</span>
 <span id="cb12-2"><a href="#cb12-2" aria-hidden="true" tabindex="-1"></a>    <span class="cf">if</span> nofft:</span>
 <span id="cb12-3"><a href="#cb12-3" aria-hidden="true" tabindex="-1"></a>        <span class="cf">return</span> convolve(u, K, mode<span class="op">=</span><span class="st">&quot;full&quot;</span>)[: u.shape[<span class="dv">0</span>]]</span>
@@ -506,7 +506,7 @@ y &amp;= \boldsymbol{\overline{K}} \ast u
 <span id="cb12-7"><a href="#cb12-7" aria-hidden="true" tabindex="-1"></a>        Kd <span class="op">=</span> np.fft.rfft(np.pad(K, (<span class="dv">0</span>, u.shape[<span class="dv">0</span>])))</span>
 <span id="cb12-8"><a href="#cb12-8" aria-hidden="true" tabindex="-1"></a>        out <span class="op">=</span> ud <span class="op">*</span> Kd</span>
 <span id="cb12-9"><a href="#cb12-9" aria-hidden="true" tabindex="-1"></a>        <span class="cf">return</span> np.fft.irfft(out)[: u.shape[<span class="dv">0</span>]]</span></code></pre></div>
-<p>The CNN method and the RNN method yield (roughly) the same result:</p>
+<p>The CNN method and the RNN method yield (roughly) the same result,</p>
 <div class="sourceCode" id="cb13"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb13-1"><a href="#cb13-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> test_cnn_is_rnn(N<span class="op">=</span><span class="dv">4</span>, L<span class="op">=</span><span class="dv">16</span>, step<span class="op">=</span><span class="fl">1.0</span> <span class="op">/</span> <span class="dv">16</span>):</span>
 <span id="cb13-2"><a href="#cb13-2" aria-hidden="true" tabindex="-1"></a>    ssm <span class="op">=</span> random_SSM(rng, N)</span>
 <span id="cb13-3"><a href="#cb13-3" aria-hidden="true" tabindex="-1"></a>    u <span class="op">=</span> jax.random.uniform(rng, (L,))</span>
@@ -541,7 +541,7 @@ n+1 &amp; \text{if } n = k \\
 </span></p>
 <p>Previous work found that simply modifying an SSM from a random matrix <span class="math inline">\boldsymbol{A}</span> to HiPPO improved its performance on the sequential MNIST classification benchmark from <span class="math inline">50\%</span> to <span class="math inline">98\%</span>.</p>
 </blockquote>
-<p>This matrix is going to be really important, but it is a bit of magic. For our purposes we mainly need to know that: 1) we only need to calculate it once and 2) it has a nice, simple structure (which we will exploit in part 2). Without going into the ODE math, the main takeaway is that this matrix aims to remember the past history in the state a timescale invariant manner:</p>
+<p>This matrix is going to be really important, but it is a bit of magic. For our purposes we mainly need to know that: 1) we only need to calculate it once and 2) it has a nice, simple structure (which we will exploit in part 2). Without going into the ODE math, the main takeaway is that this matrix aims to remember the past history in the state a timescale invariant manner,</p>
 <div class="sourceCode" id="cb14"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb14-1"><a href="#cb14-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> make_HiPPO(N):</span>
 <span id="cb14-2"><a href="#cb14-2" aria-hidden="true" tabindex="-1"></a>    <span class="kw">def</span> v(n, k):</span>
 <span id="cb14-3"><a href="#cb14-3" aria-hidden="true" tabindex="-1"></a>        <span class="cf">if</span> n <span class="op">&gt;</span> k:</span>
@@ -585,7 +585,7 @@ n+1 &amp; \text{if } n = k \\
 <span id="cb16-18"><a href="#cb16-18" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb16-19"><a href="#cb16-19" aria-hidden="true" tabindex="-1"></a>    <span class="kw">def</span> <span class="fu">__call__</span>(<span class="va">self</span>, u):</span>
 <span id="cb16-20"><a href="#cb16-20" aria-hidden="true" tabindex="-1"></a>        <span class="cf">return</span> non_circular_convolution(u, <span class="va">self</span>.K) <span class="op">+</span> <span class="va">self</span>.D <span class="op">*</span> u</span></code></pre></div>
-<p>Since our SSMs operate on scalars, we make <span class="math inline">H</span> different, stacked copies (<span class="math inline">H</span> different SSMs!) with different parameters. Here we use the <a href="https://flax.readthedocs.io/en/latest/_autosummary/flax.linen.vmap.html">Flax vmap</a> method to easily define these copies:</p>
+<p>Since our SSMs operate on scalars, we make <span class="math inline">H</span> different, stacked copies (<span class="math inline">H</span> different SSMs!) with different parameters. Here we use the <a href="https://flax.readthedocs.io/en/latest/_autosummary/flax.linen.vmap.html">Flax vmap</a> method to easily define these copies,</p>
 <div class="sourceCode" id="cb17"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb17-1"><a href="#cb17-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> cloneLayer(layer):</span>
 <span id="cb17-2"><a href="#cb17-2" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> nn.vmap(</span>
 <span id="cb17-3"><a href="#cb17-3" aria-hidden="true" tabindex="-1"></a>        layer,</span>
@@ -594,7 +594,7 @@ n+1 &amp; \text{if } n = k \\
 <span id="cb17-6"><a href="#cb17-6" aria-hidden="true" tabindex="-1"></a>        variable_axes<span class="op">=</span>{<span class="st">&quot;params&quot;</span>: <span class="dv">1</span>},</span>
 <span id="cb17-7"><a href="#cb17-7" aria-hidden="true" tabindex="-1"></a>        split_rngs<span class="op">=</span>{<span class="st">&quot;params&quot;</span>: <span class="va">True</span>},</span>
 <span id="cb17-8"><a href="#cb17-8" aria-hidden="true" tabindex="-1"></a>    )</span></code></pre></div>
-<p>We then initialize <span class="math inline">A</span> with the HiPPO matrix, and pass it into the stack of modules above:</p>
+<p>We then initialize <span class="math inline">A</span> with the HiPPO matrix, and pass it into the stack of modules above,</p>
 <div class="sourceCode" id="cb18"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb18-1"><a href="#cb18-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> SSMInit(N):</span>
 <span id="cb18-2"><a href="#cb18-2" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> partial(cloneLayer(SSMLayer), A<span class="op">=</span>make_HiPPO(N), N<span class="op">=</span>N)</span></code></pre></div>
 <p>This SSM Layer can then be put into a standard NN. For instance, here we have a Transformer-style stack of residual blocks, each containing the <span class="math inline">H</span> stacked SSMs.</p>
@@ -696,7 +696,7 @@ n+1 &amp; \text{if } n = k \\
 <span id="cb23-6"><a href="#cb23-6" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb23-7"><a href="#cb23-7" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> gen</span></code></pre></div>
 <blockquote>
-<p>Intuitively, the generating function essentially converts the SSM convolution filter from the time domain to frequency domain. Importantly, it preserves the same information, and the desired SSM convolution filter can be recovered from evaluations of its <a href="https://math.stackexchange.com/questions/3213142/root-of-unity-filter">generating function at the roots of unity</a> <span class="math inline">\Omega = \{ \exp(2\pi \frac{k}{L} : k \in [L] \}</span> stably in <span class="math inline">O(L \log L)</span> operations by applying an <a href="https://en.wikipedia.org/wiki/Fast_Fourier_transform">FFT</a>:</p>
+<p>Intuitively, the generating function essentially converts the SSM convolution filter from the time domain to frequency domain. Importantly, it preserves the same information, and the desired SSM convolution filter can be recovered from evaluations of its <a href="https://math.stackexchange.com/questions/3213142/root-of-unity-filter">generating function at the roots of unity</a> <span class="math inline">\Omega = \{ \exp(2\pi \frac{k}{L} : k \in [L] \}</span> stably in <span class="math inline">O(L \log L)</span> operations by applying an <a href="https://en.wikipedia.org/wiki/Fast_Fourier_transform">FFT</a>,</p>
 </blockquote>
 <div class="sourceCode" id="cb24"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb24-1"><a href="#cb24-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> conv_from_gen(gen, L):</span>
 <span id="cb24-2"><a href="#cb24-2" aria-hidden="true" tabindex="-1"></a>    <span class="co"># Evaluate at roots of unity</span></span>
@@ -710,13 +710,13 @@ n+1 &amp; \text{if } n = k \\
 <p>But in the generating function we can replace the power with an inverse! <span class="math display">
 \hat{\mathcal{K}}_L(z) = \sum_{i=0}^{L-1} \boldsymbol{\overline{C}} \boldsymbol{\overline{A}}^i \boldsymbol{\overline{B}} z^i = \boldsymbol{\overline{C}} (\boldsymbol{I} - \boldsymbol{\overline{A}}^L z^L) (\boldsymbol{I} - \boldsymbol{\overline{A}} z)^{-1} \boldsymbol{\overline{B}} = \boldsymbol{\tilde{C}}  (\boldsymbol{I} - \boldsymbol{\overline{A}} z)^{-1} \boldsymbol{\overline{B}}
 </span></p>
-<p>And for all <span class="math inline">z \in \Omega_L</span>, we have <span class="math inline">z^L = 1</span> so that term is removed. We then pull this constant term into a new <span class="math inline">\boldsymbol{\tilde{C}}</span>. Critically this function does not call <code>K_conv</code>:</p>
+<p>And for all <span class="math inline">z \in \Omega_L</span>, we have <span class="math inline">z^L = 1</span> so that term is removed. We then pull this constant term into a new <span class="math inline">\boldsymbol{\tilde{C}}</span>. Critically this function does not call <code>K_conv</code>,</p>
 <div class="sourceCode" id="cb25"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb25-1"><a href="#cb25-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> K_gen_inverse(Ab, Bb, Cb, L):</span>
 <span id="cb25-2"><a href="#cb25-2" aria-hidden="true" tabindex="-1"></a>    I <span class="op">=</span> np.eye(Ab.shape[<span class="dv">0</span>])</span>
 <span id="cb25-3"><a href="#cb25-3" aria-hidden="true" tabindex="-1"></a>    Ab_L <span class="op">=</span> matrix_power(Ab, L)</span>
 <span id="cb25-4"><a href="#cb25-4" aria-hidden="true" tabindex="-1"></a>    Ct <span class="op">=</span> Cb <span class="op">@</span> (I <span class="op">-</span> Ab_L)</span>
 <span id="cb25-5"><a href="#cb25-5" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> <span class="kw">lambda</span> z: (Ct <span class="op">@</span> inv(I <span class="op">-</span> Ab <span class="op">*</span> z) <span class="op">@</span> Bb).reshape()</span></code></pre></div>
-<p>But it gives the same values as <code>K_conv</code>:</p>
+<p>But it gives the same values as <code>K_conv</code>,</p>
 <div class="sourceCode" id="cb26"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb26-1"><a href="#cb26-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> test_gen_inverse(L<span class="op">=</span><span class="dv">16</span>, N<span class="op">=</span><span class="dv">4</span>):</span>
 <span id="cb26-2"><a href="#cb26-2" aria-hidden="true" tabindex="-1"></a>    ssm <span class="op">=</span> random_SSM(rng, N)</span>
 <span id="cb26-3"><a href="#cb26-3" aria-hidden="true" tabindex="-1"></a>    b <span class="op">=</span> K_conv(<span class="op">*</span>ssm, L<span class="op">=</span>L)</span>
@@ -737,7 +737,7 @@ n+1 &amp; \text{if } n = k \\
 <p><span class="math display"> \begin{aligned}
 \boldsymbol{\hat{K}}_{\boldsymbol{\Lambda}}(z) &amp; = c(z) \sum_i \cdot \frac{\tilde{C}_i B_i} {(g(z) - \Lambda_{i})} = c(z) \cdot k_{z, \boldsymbol{\Lambda}}(\boldsymbol{\tilde{C}}, \boldsymbol{B}) \\
  \end{aligned}</span> where <span class="math inline">c</span> is a constant, and <span class="math inline">g</span> is a function of <span class="math inline">z</span>.</p>
-<p>We have effectively replaced an inverse with a weighted dot product. Let’s make a small helper function to compute this weight dot product for use. Here <a href="https://jax.readthedocs.io/en/latest/_autosummary/jax.numpy.vectorize.html">vectorize</a> is a decorator that let’s us broadcast this function automatically:</p>
+<p>We have effectively replaced an inverse with a weighted dot product. Let’s make a small helper function to compute this weight dot product for use. Here <a href="https://jax.readthedocs.io/en/latest/_autosummary/jax.numpy.vectorize.html">vectorize</a> is a decorator that let’s us broadcast this function automatically,</p>
 <div class="sourceCode" id="cb27"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb27-1"><a href="#cb27-1" aria-hidden="true" tabindex="-1"></a><span class="at">@partial</span>(np.vectorize, signature<span class="op">=</span><span class="st">&quot;(c),(),(c)-&gt;()&quot;</span>)</span>
 <span id="cb27-2"><a href="#cb27-2" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> cauchy_dot(v, omega, lambd):</span>
 <span id="cb27-3"><a href="#cb27-3" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> (v <span class="op">/</span> (omega <span class="op">-</span> lambd)).<span class="bu">sum</span>()</span></code></pre></div>
@@ -756,7 +756,7 @@ n+1 &amp; \text{if } n = k \\
 <p><span class="math display"> \begin{aligned}
 \boldsymbol{\hat{K}}_{DPLR}(z) &amp; = c(z) [k_{z, \Lambda}(\boldsymbol{\tilde{C}}, \boldsymbol{\boldsymbol{B}}) - k_{z, \Lambda}(\boldsymbol{\tilde{C}}, \boldsymbol{\boldsymbol{p}}) (1 - k_{z, \Lambda}(\boldsymbol{q^*}, \boldsymbol{\boldsymbol{p}}) )^{-1} k_{z, \Lambda}(\boldsymbol{q^*}, \boldsymbol{\boldsymbol{B}}) ]
  \end{aligned}</span></p>
-<p>The code consists of collecting up the terms and applying 4 weighted dot products:</p>
+<p>The code consists of collecting up the terms and applying 4 weighted dot products,</p>
 <div class="sourceCode" id="cb28"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb28-1"><a href="#cb28-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> K_gen_DPLR(Lambda, p, q, B, Ct, step):</span>
 <span id="cb28-2"><a href="#cb28-2" aria-hidden="true" tabindex="-1"></a>    aterm <span class="op">=</span> (Ct.conj().ravel(), q.conj().ravel())</span>
 <span id="cb28-3"><a href="#cb28-3" aria-hidden="true" tabindex="-1"></a>    bterm <span class="op">=</span> (B.ravel(), p.ravel())</span>
@@ -775,7 +775,7 @@ n+1 &amp; \text{if } n = k \\
 <span id="cb28-16"><a href="#cb28-16" aria-hidden="true" tabindex="-1"></a>        <span class="cf">return</span> c <span class="op">*</span> (k00 <span class="op">-</span> k01 <span class="op">*</span> (<span class="fl">1.0</span> <span class="op">/</span> (<span class="fl">1.0</span> <span class="op">+</span> k11)) <span class="op">*</span> k10)</span>
 <span id="cb28-17"><a href="#cb28-17" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb28-18"><a href="#cb28-18" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> gen</span></code></pre></div>
-<p>This is our final version of the <span class="math inline">K</span> function. Now we can check whether it worked. First, let’s generate a random Diagonal Plus Low Rank matrix:</p>
+<p>This is our final version of the <span class="math inline">K</span> function. Now we can check whether it worked. First, let’s generate a random Diagonal Plus Low Rank matrix,</p>
 <div class="sourceCode" id="cb29"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb29-1"><a href="#cb29-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> random_DPLR(rng, N):</span>
 <span id="cb29-2"><a href="#cb29-2" aria-hidden="true" tabindex="-1"></a>    l_r, p_r, q_r, b_r, c_r <span class="op">=</span> jax.random.split(rng, <span class="dv">5</span>)</span>
 <span id="cb29-3"><a href="#cb29-3" aria-hidden="true" tabindex="-1"></a>    Lambda <span class="op">=</span> jax.random.uniform(l_r, (N,))</span>
@@ -784,7 +784,7 @@ n+1 &amp; \text{if } n = k \\
 <span id="cb29-6"><a href="#cb29-6" aria-hidden="true" tabindex="-1"></a>    B <span class="op">=</span> jax.random.uniform(b_r, (N, <span class="dv">1</span>))</span>
 <span id="cb29-7"><a href="#cb29-7" aria-hidden="true" tabindex="-1"></a>    C <span class="op">=</span> jax.random.uniform(c_r, (<span class="dv">1</span>, N))</span>
 <span id="cb29-8"><a href="#cb29-8" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> Lambda, p, q, B, C</span></code></pre></div>
-<p>We can check that the DPLR method yields the same filter as computing <span class="math inline">\boldsymbol{A}</span> directly:</p>
+<p>We can check that the DPLR method yields the same filter as computing <span class="math inline">\boldsymbol{A}</span> directly,</p>
 <div class="sourceCode" id="cb30"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb30-1"><a href="#cb30-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> test_gen_dplr(L<span class="op">=</span><span class="dv">16</span>, N<span class="op">=</span><span class="dv">4</span>):</span>
 <span id="cb30-2"><a href="#cb30-2" aria-hidden="true" tabindex="-1"></a>    I <span class="op">=</span> np.eye(<span class="dv">4</span>)</span>
 <span id="cb30-3"><a href="#cb30-3" aria-hidden="true" tabindex="-1"></a></span>
@@ -805,7 +805,7 @@ n+1 &amp; \text{if } n = k \\
   \boldsymbol{A} = \boldsymbol{V} \boldsymbol{\Lambda} \boldsymbol{V}^* - \boldsymbol{p} \boldsymbol{q}^\top = \boldsymbol{V} \left( \boldsymbol{\Lambda} - \boldsymbol{V}^* \boldsymbol{p} (\boldsymbol{V}^*\boldsymbol{q})^* \right) \boldsymbol{V}^*
 </span> for <a href="https://en.wikipedia.org/wiki/Unitary_matrix">unitary</a> <span class="math inline">\boldsymbol{V} \in \mathbb{C}^{N \times N}</span>, diagonal <span class="math inline">\boldsymbol{\Lambda}</span>, and low-rank factorization <span class="math inline">\boldsymbol{p}, \boldsymbol{q} \in \mathbb{R}^{N \times r}</span>. An NPLR SSM is therefore <a href="https://en.wikipedia.org/wiki/Unitary_matrix">unitarily</a> equivalent to some DPLR matrix.</p>
 </blockquote>
-<p>For S4, we need to work with a HiPPO matrix for <span class="math inline">\boldsymbol{A}</span>. This requires extracting <span class="math inline">\boldsymbol{\Lambda}</span> from this decomposition. The appendix of the paper shows this by getting it into a <a href="https://en.wikipedia.org/wiki/Skew-symmetric_matrix">skew-symmetric</a> (normal) + low-rank form. We can use this math to get out the DPLR terms:</p>
+<p>For S4, we need to work with a HiPPO matrix for <span class="math inline">\boldsymbol{A}</span>. This requires extracting <span class="math inline">\boldsymbol{\Lambda}</span> from this decomposition. The appendix of the paper shows this by getting it into a <a href="https://en.wikipedia.org/wiki/Skew-symmetric_matrix">skew-symmetric</a> (normal) + low-rank form. We can use this math to get out the DPLR terms,</p>
 <div class="sourceCode" id="cb31"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb31-1"><a href="#cb31-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> make_NPLR_HiPPO(N):</span>
 <span id="cb31-2"><a href="#cb31-2" aria-hidden="true" tabindex="-1"></a>    <span class="co"># Make -HiPPO</span></span>
 <span id="cb31-3"><a href="#cb31-3" aria-hidden="true" tabindex="-1"></a>    nhippo <span class="op">=</span> <span class="op">-</span>make_HiPPO(N)</span>
@@ -816,7 +816,7 @@ n+1 &amp; \text{if } n = k \\
 <span id="cb31-8"><a href="#cb31-8" aria-hidden="true" tabindex="-1"></a>    <span class="co"># Diagonalize to S to V \Lambda V^*</span></span>
 <span id="cb31-9"><a href="#cb31-9" aria-hidden="true" tabindex="-1"></a>    Lambda, V <span class="op">=</span> jax.jit(eig, backend<span class="op">=</span><span class="st">&quot;cpu&quot;</span>)(S)</span>
 <span id="cb31-10"><a href="#cb31-10" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> nhippo, Lambda, p, q, V</span></code></pre></div>
-<p>Final sanity check just to make sure those identities hold:</p>
+<p>Final sanity check just to make sure those identities hold,</p>
 <div class="sourceCode" id="cb32"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb32-1"><a href="#cb32-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> test_nplr(N<span class="op">=</span><span class="dv">8</span>):</span>
 <span id="cb32-2"><a href="#cb32-2" aria-hidden="true" tabindex="-1"></a>    A2, Lambda, p, q, V <span class="op">=</span> make_NPLR_HiPPO(N)</span>
 <span id="cb32-3"><a href="#cb32-3" aria-hidden="true" tabindex="-1"></a>    p, q <span class="op">=</span> p[:, np.newaxis], q[:, np.newaxis]</span>
@@ -861,7 +861,7 @@ n+1 &amp; \text{if } n = k \\
 <span id="cb33-24"><a href="#cb33-24" aria-hidden="true" tabindex="-1"></a>    <span class="kw">def</span> <span class="fu">__call__</span>(<span class="va">self</span>, u):</span>
 <span id="cb33-25"><a href="#cb33-25" aria-hidden="true" tabindex="-1"></a>        <span class="cf">return</span> non_circular_convolution(u, <span class="va">self</span>.K) <span class="op">+</span> <span class="va">self</span>.D <span class="op">*</span> u</span></code></pre></div>
 <div class="sourceCode" id="cb34"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb34-1"><a href="#cb34-1" aria-hidden="true" tabindex="-1"></a>S4Layer <span class="op">=</span> cloneLayer(S4Layer)</span></code></pre></div>
-<p>We initialize the model by computing a DPLR initializer similar to HiPPO:</p>
+<p>We initialize the model by computing a DPLR initializer similar to HiPPO,</p>
 <div class="sourceCode" id="cb35"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb35-1"><a href="#cb35-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> S4LayerInit(N):</span>
 <span id="cb35-2"><a href="#cb35-2" aria-hidden="true" tabindex="-1"></a>    _, Lambda, p, q, V <span class="op">=</span> make_NPLR_HiPPO(N)</span>
 <span id="cb35-3"><a href="#cb35-3" aria-hidden="true" tabindex="-1"></a>    Vc <span class="op">=</span> V.conj().T</span>
@@ -879,7 +879,7 @@ n+1 &amp; \text{if } n = k \\
 <pre><code>   =&gt;&gt; Epoch 100 Metrics ===
            Train Loss: 0.53814 -- Test Loss: 0.52482 -- Test Accuracy: 0.8830
            Best Test Loss: 0.52117 -- Best Test Accuracy: 0.8842 at Epoch 91</code></pre>
-<p>We can sample from the model using the CNN implementation. Ideally we would use the RNN form, but that would require a bit more plumbing:</p>
+<p>We can sample from the model using the CNN implementation. Ideally we would use the RNN form, but that would require a bit more plumbing,</p>
 <div class="sourceCode" id="cb38"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb38-1"><a href="#cb38-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> sample_mnist():</span>
 <span id="cb38-2"><a href="#cb38-2" aria-hidden="true" tabindex="-1"></a>    <span class="im">import</span> matplotlib.pyplot <span class="im">as</span> plt</span>
 <span id="cb38-3"><a href="#cb38-3" aria-hidden="true" tabindex="-1"></a>    <span class="im">from</span> flax.training <span class="im">import</span> checkpoints</span>
