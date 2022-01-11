@@ -320,7 +320,9 @@ example_ssm()
 
 
 def K_conv(Ab, Bb, Cb, L):
-    return np.array([(Cb @ matrix_power(Ab, l) @ Bb).reshape() for l in range(L)])
+    return np.array(
+        [(Cb @ matrix_power(Ab, l) @ Bb).reshape() for l in range(L)]
+    )
 
 
 # Note this approach is really naive. For a better approach, see [Krylov methods and power
@@ -590,7 +592,9 @@ BatchSeqModel = nn.vmap(
 
 
 def K_conv_(Ab, Bb, Cb, L):
-    return np.array([(Cb @ matrix_power(Ab, l) @ Bb).reshape() for l in range(L)])
+    return np.array(
+        [(Cb @ matrix_power(Ab, l) @ Bb).reshape() for l in range(L)]
+    )
 
 
 # The contribution of S4 is a method for speeding up this function.
@@ -962,7 +966,7 @@ def sample_mnist():
         d_output=256,
         d_model=256,
         n_layers=6,
-        l_max=783
+        l_max=783,
     )
     rng = jax.random.PRNGKey(0)
     state = checkpoints.restore_checkpoint("models/best_84", None)

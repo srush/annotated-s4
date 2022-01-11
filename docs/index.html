@@ -492,7 +492,9 @@ y &amp;= \boldsymbol{\overline{K}} \ast u
 </blockquote>
 <p>Note that this is a <em>giant</em> filter. It is the size of the entire sequence!</p>
 <div class="sourceCode" id="cb11"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb11-1"><a href="#cb11-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> K_conv(Ab, Bb, Cb, L):</span>
-<span id="cb11-2"><a href="#cb11-2" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> np.array([(Cb <span class="op">@</span> matrix_power(Ab, l) <span class="op">@</span> Bb).reshape() <span class="cf">for</span> l <span class="kw">in</span> <span class="bu">range</span>(L)])</span></code></pre></div>
+<span id="cb11-2"><a href="#cb11-2" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> np.array(</span>
+<span id="cb11-3"><a href="#cb11-3" aria-hidden="true" tabindex="-1"></a>        [(Cb <span class="op">@</span> matrix_power(Ab, l) <span class="op">@</span> Bb).reshape() <span class="cf">for</span> l <span class="kw">in</span> <span class="bu">range</span>(L)]</span>
+<span id="cb11-4"><a href="#cb11-4" aria-hidden="true" tabindex="-1"></a>    )</span></code></pre></div>
 <p>Note this approach is really naive. For a better approach, see <a href="https://phys.au.dk/~fedorov/Numeric/now/Book/krylov.pdf">Krylov methods and power iterations</a>. However, we are going to replace this approach with S4 in Part 2.</p>
 <p>We can compute the result of applying this filter either with a standard direct convolution or with a padded (non-circular) <a href="https://en.wikipedia.org/wiki/Convolution_theorem">Fast Fourier Transform (FFT)</a>. As the length gets longer the second method will be more efficient:</p>
 <div class="sourceCode" id="cb12"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb12-1"><a href="#cb12-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> non_circular_convolution(u, K, nofft<span class="op">=</span><span class="va">False</span>):</span>
@@ -666,7 +668,9 @@ n+1 &amp; \text{if } n = k \\
 </blockquote>
 <p>Specifically recall this function here:</p>
 <div class="sourceCode" id="cb22"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb22-1"><a href="#cb22-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> K_conv_(Ab, Bb, Cb, L):</span>
-<span id="cb22-2"><a href="#cb22-2" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> np.array([(Cb <span class="op">@</span> matrix_power(Ab, l) <span class="op">@</span> Bb).reshape() <span class="cf">for</span> l <span class="kw">in</span> <span class="bu">range</span>(L)])</span></code></pre></div>
+<span id="cb22-2"><a href="#cb22-2" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> np.array(</span>
+<span id="cb22-3"><a href="#cb22-3" aria-hidden="true" tabindex="-1"></a>        [(Cb <span class="op">@</span> matrix_power(Ab, l) <span class="op">@</span> Bb).reshape() <span class="cf">for</span> l <span class="kw">in</span> <span class="bu">range</span>(L)]</span>
+<span id="cb22-4"><a href="#cb22-4" aria-hidden="true" tabindex="-1"></a>    )</span></code></pre></div>
 <p>The contribution of S4 is a method for speeding up this function. To do this we are going to focus on the case where the SSM has special structure. Specifically, Diagonal Plus Low-Rank (DPLR) in complex space.</p>
 <!-- #region -->
 <p><strong>DPLR:</strong> SSM is <span class="math inline">(\boldsymbol{\Lambda} - \boldsymbol{p}\boldsymbol{q}^*, \boldsymbol{B}, \boldsymbol{C})</span> for some diagonal <span class="math inline">\boldsymbol{\Lambda}</span> and vectors <span class="math inline">\boldsymbol{p}, \boldsymbol{q}, \boldsymbol{B}, \boldsymbol{C} \in \mathbb{C}^{N \times 1}</span>.</p>
@@ -887,7 +891,7 @@ n+1 &amp; \text{if } n = k \\
 <span id="cb38-9"><a href="#cb38-9" aria-hidden="true" tabindex="-1"></a>        d_output<span class="op">=</span><span class="dv">256</span>,</span>
 <span id="cb38-10"><a href="#cb38-10" aria-hidden="true" tabindex="-1"></a>        d_model<span class="op">=</span><span class="dv">256</span>,</span>
 <span id="cb38-11"><a href="#cb38-11" aria-hidden="true" tabindex="-1"></a>        n_layers<span class="op">=</span><span class="dv">6</span>,</span>
-<span id="cb38-12"><a href="#cb38-12" aria-hidden="true" tabindex="-1"></a>        l_max<span class="op">=</span><span class="dv">783</span></span>
+<span id="cb38-12"><a href="#cb38-12" aria-hidden="true" tabindex="-1"></a>        l_max<span class="op">=</span><span class="dv">783</span>,</span>
 <span id="cb38-13"><a href="#cb38-13" aria-hidden="true" tabindex="-1"></a>    )</span>
 <span id="cb38-14"><a href="#cb38-14" aria-hidden="true" tabindex="-1"></a>    rng <span class="op">=</span> jax.random.PRNGKey(<span class="dv">0</span>)</span>
 <span id="cb38-15"><a href="#cb38-15" aria-hidden="true" tabindex="-1"></a>    state <span class="op">=</span> checkpoints.restore_checkpoint(<span class="st">&quot;models/best_84&quot;</span>, <span class="va">None</span>)</span>
