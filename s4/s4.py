@@ -589,17 +589,8 @@ BatchSeqModel = nn.vmap(
 # Specifically recall this function here:
 
 
-def K_conv_(A, B, C, L):
-    def power(carry, _):
-        As, i = carry
-        if i == 0:
-            return (As, 1), As
-        else:
-            n = carry @ A
-            return (n, i + 1), n
-
-    _, As = jax.scan(power, (np.eyes(A.shape[0]), 0), np.zeros(L))
-    return (C @ As @ B).reshape(L)
+def K_conv(Ab, Bb, Cb, L):
+    return np.array([(Cb @ matrix_power(Ab, l) @ Bb).reshape() for l in range(L)])
 
 
 # The contribution of S4 is a method for speeding up this function.

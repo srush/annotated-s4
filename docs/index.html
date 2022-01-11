@@ -651,17 +651,8 @@ n+1 &amp; \text{if } n = k \\
 <p>The fundamental bottleneck in computing the discrete-time SSM is that it involves repeated matrix multiplication by <span class="math inline">\boldsymbol{\overline{A}}</span>. For example, computing naively involves <span class="math inline">L</span> successive multiplications by <span class="math inline">\boldsymbol{\overline{A}}</span>, requiring <span class="math inline">O(N^2 L)</span> operations and <span class="math inline">O(NL)</span> space.</p>
 </blockquote>
 <p>Specifically recall this function here:</p>
-<div class="sourceCode" id="cb21"><pre class="sourceCode python"><code class="sourceCode python"><a class="sourceLine" id="cb21-1" title="1"><span class="kw">def</span> K_conv_(A, B, C, L):</a>
-<a class="sourceLine" id="cb21-2" title="2">    <span class="kw">def</span> power(carry, _):</a>
-<a class="sourceLine" id="cb21-3" title="3">        As, i <span class="op">=</span> carry</a>
-<a class="sourceLine" id="cb21-4" title="4">        <span class="cf">if</span> i <span class="op">==</span> <span class="dv">0</span>:</a>
-<a class="sourceLine" id="cb21-5" title="5">            <span class="cf">return</span> (As, <span class="dv">1</span>), As</a>
-<a class="sourceLine" id="cb21-6" title="6">        <span class="cf">else</span>:</a>
-<a class="sourceLine" id="cb21-7" title="7">            n <span class="op">=</span> carry <span class="op">@</span> A</a>
-<a class="sourceLine" id="cb21-8" title="8">            <span class="cf">return</span> (n, i <span class="op">+</span> <span class="dv">1</span>), n</a>
-<a class="sourceLine" id="cb21-9" title="9"></a>
-<a class="sourceLine" id="cb21-10" title="10">    _, As <span class="op">=</span> jax.scan(power, (np.eyes(A.shape[<span class="dv">0</span>]), <span class="dv">0</span>), np.zeros(L))</a>
-<a class="sourceLine" id="cb21-11" title="11">    <span class="cf">return</span> (C <span class="op">@</span> As <span class="op">@</span> B).reshape(L)</a></code></pre></div>
+<div class="sourceCode" id="cb21"><pre class="sourceCode python"><code class="sourceCode python"><a class="sourceLine" id="cb21-1" title="1"><span class="kw">def</span> K_conv(Ab, Bb, Cb, L):</a>
+<a class="sourceLine" id="cb21-2" title="2">    <span class="cf">return</span> np.array([(Cb <span class="op">@</span> matrix_power(Ab, l) <span class="op">@</span> Bb).reshape() <span class="cf">for</span> l <span class="kw">in</span> <span class="bu">range</span>(L)])</a></code></pre></div>
 <p>The contribution of S4 is a method for speeding up this function. To do this we are going to focus on the case where the SSM has special structure. Specifically, Diagonal Plus Low-Rank (DPLR) in complex space.</p>
 <!-- #region -->
 <p><strong>DPLR:</strong> SSM is <span class="math inline">(\boldsymbol{\Lambda} - \boldsymbol{p}\boldsymbol{q}^*, \boldsymbol{B}, \boldsymbol{C})</span> for some diagonal <span class="math inline">\boldsymbol{\Lambda}</span> and vectors <span class="math inline">\boldsymbol{p}, \boldsymbol{q}, \boldsymbol{B}, \boldsymbol{C} \in \mathbb{C}^{N \times 1}</span>.</p>
