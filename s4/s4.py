@@ -17,17 +17,17 @@
 # Modeling](https://arxiv.org/abs/2111.00396) (S4) architecture is a new approach to very
 # long-range sequence modeling tasks for vision,
 # language, and audio, showing a capacity to capture dependencies over tens
-# of thousands of steps. The model show impressive results on the challenging
+# of thousands of steps. The model shows impressive results on the challenging
 # [Long Range Arena](https://github.com/google-research/long-range-arena) benchmark.
 
 # <img src="images/table.png" width="100%"/>
 
-# The paper is also refreshing departure from Transformers, and takes
+# The paper is also a refreshing departure from Transformers, and takes
 # a very different approach to an important problem-space.  However,
 # several of our colleagues have also noted privately (and on
 # [twitter](https://twitter.com/sleepinyourhat/status/1468037897446121483)!)
 # the difficulty of gaining intuition for the model.  With this goal,
-# this blog post is a implementation of the S4 paper that links code
+# this blog post is an implementation of the S4 paper that links code
 # with explanation from the paper itself in the style of [the
 # annotated
 # transformer](https://nlp.seas.harvard.edu/2018/04/03/attention.html).
@@ -59,12 +59,8 @@ from jax.numpy.linalg import eig, inv, matrix_power
 from jax.scipy.signal import convolve
 
 
-def run_example(fn):
-    if __name__ == "__main__":
-        fn()
-
-
 rng = jax.random.PRNGKey(1)
+
 
 # # Part 1: State Space Models
 
@@ -268,13 +264,13 @@ def example_ssm():
     anim.save("line.gif", dpi=80, writer="imagemagick")
 
 
-run_example(example_ssm)
+# example_ssm()
 
 # <img src="line.gif" width="100%">
 
 # Pretty neat. And that it was just 1 SSM, with 2 hidden states over 100 steps.
 # The final model will have had 100s over thousands of steps. But first we
-# need to make them practial to train.
+# need to make them practical to train.
 
 # ## Training SSMs: The Convolutional Representation
 
@@ -396,8 +392,10 @@ def test_cnn_is_rnn(N=4, L=16, step=1.0 / 16):
 
 # This matrix is going to be really important, but it is a bit
 # magic. For our purposes we mainly need to know that: we only need to
-# calculate it once and a simple structure (which we will exploit in part
-# 2).
+# calculate it once and a simple structure (which we will exploit in
+# part 2). Without going understanding the ODE math, the main takeaway
+# is that this matrix aims to remember the past history in the state a
+# timescale invariant manner.
 
 
 def make_HiPPO(N):
@@ -571,7 +569,7 @@ BatchSeqModel = nn.vmap(
 
 # Warning: The section has a lot of math. Roughly it boils down to: we
 # can compute the filter for Part 1 with a HiPPO-like matrix really
-# fast. If you are interested, the details are really neat. If not
+# fast. If you are interested, the details are really neat. If not,
 # skip to Part 3 for some cool applications like MNIST completion.
 
 # [Skip Button](#part-3-s4-in-practice)
@@ -687,7 +685,7 @@ def test_gen_inverse(L=16, N=4):
 # ## Step 2: Diagonal Case
 
 # The next step to assume special *structure* on the matrix
-# $\boldsymbol{A}$ to avoid the inverse.  To begin let us first
+# $\boldsymbol{A}$ to avoid the inverse.  To begin, let us first
 # convert the equation above to use the original SSM matrices. With
 # some algebra you can expand the discretization and show:
 
@@ -811,7 +809,7 @@ def test_gen_dplr(L=16, N=4):
 # ## Turning HiPPO to DPLR
 
 # This approach applies to DPLR matrices, but remember we would like it to also apply to the HiPPO matrix.
-#  While not DPLR in it's current form, the HiPPO matrix *does have special structure*. It's
+#  While not DPLR in its current form, the HiPPO matrix *does have special structure*. It is
 #  [Normal](https://en.wikipedia.org/wiki/Normal_matrix) Plus Low-Rank (NPLR). The paper argues that
 # this is just as good as DPLR for the purposes of learning an SSM network.
 
@@ -927,7 +925,7 @@ def S4LayerInit(N):
 #                Best Test Loss: 0.04091 -- Best Test Accuracy: 0.9878 at Epoch 9
 
 
-# A stranger problem is linear generation of MNIST. Here we
+# A more visually interesting task is generation of MNIST. Here we
 # simply feed in a sequence of pixels into the model and have it
 # predict the next one like language modeling. With a little
 # tweaking, we are able to get the model to an NLL of 0.52 on this
@@ -972,7 +970,7 @@ def sample_mnist():
     plt.savefig("sample.png")
 
 
-# run_example(sample_mnist)
+# sample_mnist()
 
 # <img src="images/sample.png" width="100%">
 
@@ -1001,7 +999,7 @@ def sample_mnist():
 # here, while also opening up a range of efficient techniques.
 # Finally from a practical level, the transformations in JAX
 # make it really nice to implement complex models like this
-# in very concise mathematical way (~200 LoC), with similar efficiency and performance!
+# in a very concise way (~200 LoC), with similar efficiency and performance!
 
 # We will end by thanking the authors [Albert Gu](http://web.stanford.edu/~albertgu/) and
 # [Karan Goel](https://krandiash.github.io/), who were super helpful in
