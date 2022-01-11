@@ -20,7 +20,7 @@ def create_sin_x_dataset(n_examples=1024, bsz=128):
     print("[*] Generating Toy Dataset: sin(x)...")
 
     # Constants
-    SEQ_LENGTH, N_CLASSES, IN_DIM = 200, 8, 1
+    SEQ_LENGTH, N_CLASSES, IN_DIM = 16, 8, 1
     x = np.linspace(0, 2 * np.pi, num=SEQ_LENGTH)
     y = np.digitize(np.sin(x), np.linspace(-1, 1, num=N_CLASSES))
 
