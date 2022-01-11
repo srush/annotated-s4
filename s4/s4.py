@@ -94,7 +94,7 @@ rng = jax.random.PRNGKey(1)
 # > is $N$-dimensional. The first equation defines the change in $x(t)$ over time.
 
 # Our SSMs will be defined by three matrices – $\boldsymbol{A}, \boldsymbol{B}, \boldsymbol{C}$ – which
-# we will learn. For now, we begin with a function a random SSM, to define sizes:
+# we will learn. For now, we begin with a function a random SSM, to define sizes,
 
 
 def random_SSM(rng, N):
@@ -147,7 +147,7 @@ def discretize(A, B, C, step):
 # As the paper says, this "step" function does look superficially like that of
 # an RNN. We can implement this with a
 # [scan](https://jax.readthedocs.io/en/latest/_autosummary/jax.lax.scan.html)
-# in JAX:
+# in JAX,
 
 
 def scan_SSM(Ab, Bb, Cb, u, x0):
@@ -160,7 +160,7 @@ def scan_SSM(Ab, Bb, Cb, u, x0):
 
 
 # Putting everything together, we can run the SSM
-# by first discretizing, then iterating step by step:
+# by first discretizing, then iterating step by step,
 
 
 def run_SSM(A, B, C, u):
@@ -210,7 +210,7 @@ def example_mass(k, b, m):
 #  $\boldsymbol{B}$. The transition $\boldsymbol{A}$ relates these terms.
 #
 
-# We'll set $u$ to be a continuous function of $t$:
+# We'll set $u$ to be a continuous function of $t$,
 
 
 @partial(np.vectorize, signature="()->()")
@@ -332,7 +332,7 @@ def K_conv(Ab, Bb, Cb, L):
 
 # We can compute the result of applying this filter either with a standard direct convolution or
 # with a padded (non-circular) [Fast Fourier Transform (FFT)](https://en.wikipedia.org/wiki/Convolution_theorem).
-# As the length gets longer the second method will be more efficient:
+# As the length gets longer the second method will be more efficient,
 
 
 def non_circular_convolution(u, K, nofft=False):
@@ -346,7 +346,7 @@ def non_circular_convolution(u, K, nofft=False):
         return np.fft.irfft(out)[: u.shape[0]]
 
 
-# The CNN method and the RNN method yield (roughly) the same result:
+# The CNN method and the RNN method yield (roughly) the same result,
 
 
 def test_cnn_is_rnn(N=4, L=16, step=1.0 / 16):
@@ -403,7 +403,7 @@ def test_cnn_is_rnn(N=4, L=16, step=1.0 / 16):
 # calculate it once and 2) it has a nice, simple structure (which we will exploit in
 # part 2). Without going into the ODE math, the main takeaway
 # is that this matrix aims to remember the past history in the state a
-# timescale invariant manner:
+# timescale invariant manner,
 
 
 def make_HiPPO(N):
@@ -472,7 +472,7 @@ class SSMLayer(nn.Module):
 # Since our SSMs operate on scalars, we make $H$ different, stacked copies ($H$ different SSMs!) with
 # different parameters. Here we use the [Flax vmap](
 # https://flax.readthedocs.io/en/latest/_autosummary/flax.linen.vmap.html)
-# method to easily define these copies:
+# method to easily define these copies,
 
 
 def cloneLayer(layer):
@@ -485,7 +485,7 @@ def cloneLayer(layer):
     )
 
 
-# We then initialize $A$ with the HiPPO matrix, and pass it into the stack of modules above:
+# We then initialize $A$ with the HiPPO matrix, and pass it into the stack of modules above,
 
 
 def SSMInit(N):
@@ -643,7 +643,7 @@ def K_gen_simple(Ab, Bb, Cb, L):
 # > can be  recovered from evaluations of its
 # > [generating function at the roots of unity](https://math.stackexchange.com/questions/3213142/root-of-unity-filter )
 # $\Omega = \{ \exp(2\pi \frac{k}{L} : k \in [L] \}$ stably in $O(L \log L)$ operations by applying an
-# [FFT](https://en.wikipedia.org/wiki/Fast_Fourier_transform):
+# [FFT](https://en.wikipedia.org/wiki/Fast_Fourier_transform),
 
 
 def conv_from_gen(gen, L):
@@ -663,7 +663,7 @@ def conv_from_gen(gen, L):
 # $$
 
 # And for all $z \in \Omega_L$, we have $z^L = 1$ so that term is removed. We then pull this constant
-# term into a new $\boldsymbol{\tilde{C}}$. Critically this function does not call `K_conv`:
+# term into a new $\boldsymbol{\tilde{C}}$. Critically this function does not call `K_conv`,
 
 
 def K_gen_inverse(Ab, Bb, Cb, L):
@@ -673,7 +673,7 @@ def K_gen_inverse(Ab, Bb, Cb, L):
     return lambda z: (Ct @ inv(I - Ab * z) @ Bb).reshape()
 
 
-# But it gives the same values as `K_conv`:
+# But it gives the same values as `K_conv`,
 
 
 def test_gen_inverse(L=16, N=4):
@@ -717,7 +717,7 @@ def test_gen_inverse(L=16, N=4):
 # We have effectively replaced an  inverse with a weighted dot product.
 # Let's make a small helper function to compute this weight dot product for use.
 # Here [vectorize](https://jax.readthedocs.io/en/latest/_autosummary/jax.numpy.vectorize.html)
-# is a decorator that let's us broadcast this function automatically:
+# is a decorator that let's us broadcast this function automatically,
 
 
 @partial(np.vectorize, signature="(c),(),(c)->()")
@@ -759,7 +759,7 @@ def cauchy_dot(v, omega, lambd):
 #  \end{aligned}$$
 
 
-# The code consists of collecting up the terms and applying 4 weighted dot products:
+# The code consists of collecting up the terms and applying 4 weighted dot products,
 
 
 def K_gen_DPLR(Lambda, p, q, B, Ct, step):
@@ -783,7 +783,7 @@ def K_gen_DPLR(Lambda, p, q, B, Ct, step):
 
 
 # This is our final version of the $K$ function. Now we can check whether it worked.
-# First, let's generate a random Diagonal Plus Low Rank matrix:
+# First, let's generate a random Diagonal Plus Low Rank matrix,
 
 
 def random_DPLR(rng, N):
@@ -796,7 +796,7 @@ def random_DPLR(rng, N):
     return Lambda, p, q, B, C
 
 
-# We can check that the DPLR method yields the same filter as computing $\boldsymbol{A}$ directly:
+# We can check that the DPLR method yields the same filter as computing $\boldsymbol{A}$ directly,
 
 
 def test_gen_dplr(L=16, N=4):
@@ -831,7 +831,7 @@ def test_gen_dplr(L=16, N=4):
 #  For S4, we need to work with a HiPPO matrix for $\boldsymbol{A}$. This requires extracting
 #  $\boldsymbol{\Lambda}$ from this decomposition. The appendix of the paper shows this
 #  by getting it into  a [skew-symmetric](https://en.wikipedia.org/wiki/Skew-symmetric_matrix)
-#  (normal) + low-rank form. We can use this math to get out the DPLR terms:
+#  (normal) + low-rank form. We can use this math to get out the DPLR terms,
 
 
 def make_NPLR_HiPPO(N):
@@ -846,7 +846,7 @@ def make_NPLR_HiPPO(N):
     return nhippo, Lambda, p, q, V
 
 
-# Final sanity check just to make sure those identities hold:
+# Final sanity check just to make sure those identities hold,
 
 
 def test_nplr(N=8):
@@ -908,7 +908,7 @@ class S4Layer(nn.Module):
 
 S4Layer = cloneLayer(S4Layer)
 
-# We initialize the model by computing a DPLR initializer similar to HiPPO:
+# We initialize the model by computing a DPLR initializer similar to HiPPO,
 
 
 def S4LayerInit(N):
@@ -952,7 +952,7 @@ def S4LayerInit(N):
 
 #
 # We can sample from the model using the CNN implementation. Ideally we would use the
-# RNN form, but that would require a bit more plumbing:
+# RNN form, but that would require a bit more plumbing,
 
 
 def sample_mnist():
