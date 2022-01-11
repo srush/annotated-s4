@@ -651,7 +651,7 @@ n+1 &amp; \text{if } n = k \\
 <p>The fundamental bottleneck in computing the discrete-time SSM is that it involves repeated matrix multiplication by <span class="math inline">\boldsymbol{\overline{A}}</span>. For example, computing naively involves <span class="math inline">L</span> successive multiplications by <span class="math inline">\boldsymbol{\overline{A}}</span>, requiring <span class="math inline">O(N^2 L)</span> operations and <span class="math inline">O(NL)</span> space.</p>
 </blockquote>
 <p>Specifically recall this function here:</p>
-<div class="sourceCode" id="cb21"><pre class="sourceCode python"><code class="sourceCode python"><a class="sourceLine" id="cb21-1" title="1"><span class="kw">def</span> K_conv(Ab, Bb, Cb, L):</a>
+<div class="sourceCode" id="cb21"><pre class="sourceCode python"><code class="sourceCode python"><a class="sourceLine" id="cb21-1" title="1"><span class="kw">def</span> K_conv_(Ab, Bb, Cb, L):</a>
 <a class="sourceLine" id="cb21-2" title="2">    <span class="cf">return</span> np.array([(Cb <span class="op">@</span> matrix_power(Ab, l) <span class="op">@</span> Bb).reshape() <span class="cf">for</span> l <span class="kw">in</span> <span class="bu">range</span>(L)])</a></code></pre></div>
 <p>The contribution of S4 is a method for speeding up this function. To do this we are going to focus on the case where the SSM has special structure. Specifically, Diagonal Plus Low-Rank (DPLR) in complex space.</p>
 <!-- #region -->

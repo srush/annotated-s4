@@ -589,7 +589,7 @@ BatchSeqModel = nn.vmap(
 # Specifically recall this function here:
 
 
-def K_conv(Ab, Bb, Cb, L):
+def K_conv_(Ab, Bb, Cb, L):
     return np.array([(Cb @ matrix_power(Ab, l) @ Bb).reshape() for l in range(L)])
 
 
