@@ -11,7 +11,7 @@
 # <img src="images/hero.png" width="100%"/>
 
 
-# *Blog Post by [Sasha Rush](http://rush-nlp.com/) and [Sidd Karamcheti](https://www.siddkaramcheti.com/)*
+# *Blog Post and [Library](https://github.com/srush/annotated-s4/) by [Sasha Rush](http://rush-nlp.com/) and [Sidd Karamcheti](https://www.siddkaramcheti.com/)*
 #
 # The [Structured State Space for Sequence
 # Modeling](https://arxiv.org/abs/2111.00396) (S4) architecture is a new approach to very
@@ -421,10 +421,12 @@ def make_HiPPO(N):
     return np.array(mat)
 
 
-# Diving a bit deeper, the intuitive explanation of this matrix is that it
-# produces a hidden state that memorizes its history. It does this by keeping track
-# of the coefficients of a Legendre polynomial. These coefficients let it approximate
-# all of the previous history. Let us look at an example,
+# Diving a bit deeper, the intuitive explanation of this matrix is
+# that it produces a hidden state that memorizes its history. It does
+# this by keeping track of the coefficients of a [Legendre
+# polynomial](https://en.wikipedia.org/wiki/Legendre_polynomials). These
+# coefficients let it approximate all of the previous history. Let us
+# look at an example,
 
 
 def example_legendre(N=8):
@@ -984,7 +986,7 @@ def S4LayerInit(N):
     return partial(S4Layer, N=N, A=A, p=p, q=q, Lambda=Lambda)
 
 
-# ### MNIST Experiments
+# ### Experiments
 
 # Now that we have the model, we can try it out on some MNIST experiments.
 # For these experiments we linearize MNIST and just treat each image as a sequence of
@@ -995,11 +997,6 @@ def S4LayerInit(N):
 # classification task is a bit strange. However in practice, the model
 # with $H=256$ and four layers seems to get up near 99% right away.
 
-#        =>> Epoch 9 Metrics ===
-#                Train Loss: 0.06640 -- Test Loss: 0.04091 -- Test Accuracy: 0.9878
-#                Best Test Loss: 0.04091 -- Best Test Accuracy: 0.9878 at Epoch 9
-
-
 # A more visually interesting task is generating MNIST digits, by predicting entire
 # sequences of pixels! Here, we simply feed in a sequence of pixels into the model and have it
 # predict the next one like language modeling. With a little
@@ -1009,10 +1006,6 @@ def S4LayerInit(N):
 # The metric usually used for this task is *[bits per
 # dimension](https://paperswithcode.com/sota/image-generation-on-mnist)* which is
 # NLL in base 2 for MNIST. A score of 0.52 is ~0.76 BPD which is near PixelCNN++.
-
-#        =>> Epoch 100 Metrics ===
-#                Train Loss: 0.53814 -- Test Loss: 0.52482 -- Test Accuracy: 0.8830
-#                Best Test Loss: 0.52117 -- Best Test Accuracy: 0.8842 at Epoch 91
 
 # We can sample from the model using the CNN implementation. Ideally we would use the
 # RNN form, but that would require a bit more plumbing,
@@ -1056,15 +1049,37 @@ sample_mnist()
 # We can also do prefix-samples – given the first 300 pixels, try to complete the image.
 # S4 is on the left, true on the right.
 
-# <img src="images/im12.png" width="100%">
-# <img src="images/im13.png" width="100%">
-# <img src="images/im14.png" width="100%">
-# <img src="images/im15.png" width="100%">
-# <img src="images/im16.png" width="100%">
-# <img src="images/im17.png" width="100%">
-# <img src="images/im18.png" width="100%">
-# <img src="images/im19.png" width="100%">
+# <img src="images/im12.png" width="45%">
+# <img src="images/im13.png" width="45%">
+# <img src="images/im14.png" width="45%">
+# <img src="images/im15.png" width="45%">
+# <img src="images/im16.png" width="45%">
+# <img src="images/im17.png" width="45%">
+# <img src="images/im18.png" width="45%">
+# <img src="images/im19.png" width="45%">
 
+
+# Next we tried training a model to generate drawings. For this we
+# used the [QuickDraw
+# dataset](https://github.com/googlecreativelab/quickdraw-dataset).
+# The dataset includes a version of the dataset downsampled to MNIST
+# size so we can use roughly the same model as above. The dataset
+# is much larger though (5M images) and more complex. We only trained
+# for 1 epoch with a $H=256$, 4 layer model. Still, the approach was
+# able to generate relatively coherent completions. These are prefix
+# samples with 500 pixels given. 
+
+# <img src="images/quickdraw/im1.png" width="45%">
+# <img src="images/quickdraw/im2.png" width="45%">
+# <img src="images/quickdraw/im3.png" width="45%">
+# <img src="images/quickdraw/im4.png" width="45%">
+# <img src="images/quickdraw/im5.png" width="45%">
+# <img src="images/quickdraw/im6.png" width="45%">
+
+
+# Our [full code base](https://github.com/srush/annotated-s4/) contains
+# more examples and infrastructure for training models for generations and
+# classification. 
 
 # ## Conclusion
 
