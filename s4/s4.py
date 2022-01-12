@@ -1067,7 +1067,7 @@ sample_mnist()
 # is much larger though (5M images) and more complex. We only trained
 # for 1 epoch with a $H=256$, 4 layer model. Still, the approach was
 # able to generate relatively coherent completions. These are prefix
-# samples with 500 pixels given. 
+# samples with 500 pixels given.
 
 # <img src="images/quickdraw/im1.png" width="45%">
 # <img src="images/quickdraw/im2.png" width="45%">
@@ -1079,7 +1079,7 @@ sample_mnist()
 
 # Our [full code base](https://github.com/srush/annotated-s4/) contains
 # more examples and infrastructure for training models for generations and
-# classification. 
+# classification.
 
 # ## Conclusion
 
