@@ -3,12 +3,13 @@ import jax
 import jax.numpy as np
 import matplotlib.pyplot as plt
 import numpy as onp
+import seaborn
 from flax.training import checkpoints
 from .data import Datasets
 from .s4 import S4LayerInit
 from .train import BatchSeqModel
 
-import seaborn
+
 seaborn.set_context("paper")
 
 if __name__ == "__main__":
@@ -32,7 +33,8 @@ if __name__ == "__main__":
     model = model(training=False)
     it = iter(testloader)
     for j, im in enumerate(it):
-        if j < 10: continue
+        if j < 10:
+            continue
         print(j)
         image = np.array(im[0].numpy())
         # cur = np.zeros((1, 783, 1))
@@ -80,7 +82,6 @@ if __name__ == "__main__":
         final2[:, :, 1] = image.reshape(28, 28)
         final2.reshape(28 * 28, 3)[:start, 0] = image.reshape(28 * 28)[:start]
         final2.reshape(28 * 28, 3)[:start, 2] = image.reshape(28 * 28)[:start]
-
 
         fig, (ax1, ax2) = plt.subplots(ncols=2)
         ax1.set_title("Sampled")
