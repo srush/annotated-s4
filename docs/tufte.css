@@ -221,8 +221,8 @@ code, .code { font-family: Consolas, "Liberation Mono", Menlo, Courier, monospac
               line-height: 1.6;
             }
 
-div.sourceCode {
-    background:#f7f4f4;
+pre > code.hljs {
+    background: hsl(0deg 0% 97%);
     padding: 30px
      
 }
