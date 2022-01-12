@@ -13,7 +13,12 @@ if __name__ == "__main__":
 
     model = S4LayerInit(N=64)
     model = partial(
-        BatchSeqModel, layer=model, d_output=256, d_model=512, n_layers=6, l_max=783
+        BatchSeqModel,
+        layer=model,
+        d_output=256,
+        d_model=512,
+        n_layers=6,
+        l_max=783,
     )
 
     rng = jax.random.PRNGKey(0)
