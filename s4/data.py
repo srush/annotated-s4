@@ -26,7 +26,9 @@ def create_sin_x_dataset(n_examples=1024, bsz=128):
 
     # Tile this `n_examples` times...
     data = torch.Tensor(
-        np.tile(np.expand_dims(np.expand_dims(y, -1), 0), reps=[n_examples, 1, 1])
+        np.tile(
+            np.expand_dims(np.expand_dims(y, -1), 0), reps=[n_examples, 1, 1]
+        )
     )
 
     # Build Datasets -- Two entries to match (inputs, targets) structure
@@ -34,8 +36,12 @@ def create_sin_x_dataset(n_examples=1024, bsz=128):
     test = TensorDataset(data[:1], data[:1])
 
     # Return data loaders, with the provided batch size
-    trainloader = torch.utils.data.DataLoader(train, batch_size=bsz, shuffle=True)
-    testloader = torch.utils.data.DataLoader(test, batch_size=bsz, shuffle=False)
+    trainloader = torch.utils.data.DataLoader(
+        train, batch_size=bsz, shuffle=True
+    )
+    testloader = torch.utils.data.DataLoader(
+        test, batch_size=bsz, shuffle=False
+    )
 
     return trainloader, testloader, N_CLASSES, SEQ_LENGTH, IN_DIM
 
@@ -60,9 +66,9 @@ def create_sin_ax_b_dataset(n_examples=20000, bsz=128):
         data_key, a_rng, b_rng = jax.random.split(data_key, num=3)
 
         # Compute a, b
-        a, b = jax.random.uniform(a_rng, minval=1.0, maxval=A_MAX), jax.random.uniform(
-            b_rng, maxval=B_MAX
-        )
+        a, b = jax.random.uniform(
+            a_rng, minval=1.0, maxval=A_MAX
+        ), jax.random.uniform(b_rng, maxval=B_MAX)
         train_data.append(
             np.digitize(np.sin(a * x + b), np.linspace(-1, 1, num=N_CLASSES))
         )
@@ -73,9 +79,9 @@ def create_sin_ax_b_dataset(n_examples=20000, bsz=128):
         data_key, a_rng, b_rng = jax.random.split(data_key, num=3)
 
         # Compute a, b
-        a, b = jax.random.uniform(a_rng, minval=1.0, maxval=A_MAX), jax.random.uniform(
-            b_rng, maxval=B_MAX
-        )
+        a, b = jax.random.uniform(
+            a_rng, minval=1.0, maxval=A_MAX
+        ), jax.random.uniform(b_rng, maxval=B_MAX)
         test_data.append(
             np.digitize(np.sin(a * x + b), np.linspace(-1, 1, num=N_CLASSES))
         )
@@ -87,8 +93,12 @@ def create_sin_ax_b_dataset(n_examples=20000, bsz=128):
     test = TensorDataset(test_data, test_data)
 
     # Return data loaders, with the provided batch size
-    trainloader = torch.utils.data.DataLoader(train, batch_size=bsz, shuffle=True)
-    testloader = torch.utils.data.DataLoader(test, batch_size=bsz, shuffle=False)
+    trainloader = torch.utils.data.DataLoader(
+        train, batch_size=bsz, shuffle=True
+    )
+    testloader = torch.utils.data.DataLoader(
+        test, batch_size=bsz, shuffle=False
+    )
 
     return trainloader, testloader, N_CLASSES, SEQ_LENGTH, IN_DIM
 
@@ -106,7 +116,9 @@ def create_mnist_dataset(bsz=128):
     tf = transforms.Compose(
         [
             transforms.ToTensor(),
-            transforms.Lambda(lambda x: (x.view(1, SEQ_LENGTH).t() * 256).int()),
+            transforms.Lambda(
+                lambda x: (x.view(1, SEQ_LENGTH).t() * 256).int()
+            ),
         ]
     )
 
@@ -118,8 +130,12 @@ def create_mnist_dataset(bsz=128):
     )
 
     # Return data loaders, with the provided batch size
-    trainloader = torch.utils.data.DataLoader(train, batch_size=bsz, shuffle=True)
-    testloader = torch.utils.data.DataLoader(test, batch_size=bsz, shuffle=False)
+    trainloader = torch.utils.data.DataLoader(
+        train, batch_size=bsz, shuffle=True
+    )
+    testloader = torch.utils.data.DataLoader(
+        test, batch_size=bsz, shuffle=False
+    )
 
     return trainloader, testloader, N_CLASSES, SEQ_LENGTH, IN_DIM
 
@@ -146,7 +162,8 @@ def create_quickdraw_dataset(bsz=128):
 
         # Download all of the .npy "simplified" drawings...
         print(
-            "\tDownloading Simplified Drawings from Google Cloud (will take a while)..."
+            "\tDownloading Simplified Drawings from Google Cloud (will take a"
+            " while)..."
         )
         client = storage.Client.create_anonymous_client()
         bucket = client.get_bucket("quickdraw_dataset")
@@ -170,7 +187,9 @@ def create_quickdraw_dataset(bsz=128):
             labels.append(np.ones(len(class_data)) * i)
 
         # Create "full" dataset & labels
-        data, labels = np.concatenate(data, axis=0), np.concatenate(labels, axis=0)
+        data, labels = np.concatenate(data, axis=0), np.concatenate(
+            labels, axis=0
+        )
 
         # Save Dataset
         np.savez("data/quickdraw/data.npz", data=data, labels=labels)
@@ -188,8 +207,12 @@ def create_quickdraw_dataset(bsz=128):
     )
 
     # Return data loaders with the provided batch size
-    trainloader = torch.utils.data.DataLoader(train, batch_size=bsz, shuffle=True)
-    testloader = torch.utils.data.DataLoader(test, batch_size=bsz, shuffle=False)
+    trainloader = torch.utils.data.DataLoader(
+        train, batch_size=bsz, shuffle=True
+    )
+    testloader = torch.utils.data.DataLoader(
+        test, batch_size=bsz, shuffle=False
+    )
 
     return trainloader, testloader, N_CLASSES, SEQ_LENGTH, IN_DIM
 
@@ -204,7 +227,9 @@ def create_mnist_classification_dataset(bsz=128):
     tf = transforms.Compose(
         [
             transforms.ToTensor(),
-            transforms.Lambda(lambda x: (x.view(1, SEQ_LENGTH).t() * 256).int()),
+            transforms.Lambda(
+                lambda x: (x.view(1, SEQ_LENGTH).t() * 256).int()
+            ),
         ]
     )
 
@@ -216,8 +241,12 @@ def create_mnist_classification_dataset(bsz=128):
     )
 
     # Return data loaders, with the provided batch size
-    trainloader = torch.utils.data.DataLoader(train, batch_size=bsz, shuffle=True)
-    testloader = torch.utils.data.DataLoader(test, batch_size=bsz, shuffle=False)
+    trainloader = torch.utils.data.DataLoader(
+        train, batch_size=bsz, shuffle=True
+    )
+    testloader = torch.utils.data.DataLoader(
+        test, batch_size=bsz, shuffle=False
+    )
 
     return trainloader, testloader, N_CLASSES, SEQ_LENGTH, IN_DIM
 
@@ -232,7 +261,9 @@ def create_cifar_classification_dataset(bsz=128):
     tf = transforms.Compose(
         [
             transforms.ToTensor(),
-            transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
+            transforms.Normalize(
+                (0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)
+            ),
             transforms.Lambda(lambda x: x.view(3, 1024).t()),
         ]
     )
@@ -245,8 +276,12 @@ def create_cifar_classification_dataset(bsz=128):
     )
 
     # Return data loaders, with the provided batch size
-    trainloader = torch.utils.data.DataLoader(train, batch_size=bsz, shuffle=True)
-    testloader = torch.utils.data.DataLoader(test, batch_size=bsz, shuffle=False)
+    trainloader = torch.utils.data.DataLoader(
+        train, batch_size=bsz, shuffle=True
+    )
+    testloader = torch.utils.data.DataLoader(
+        test, batch_size=bsz, shuffle=False
+    )
 
     return trainloader, testloader, N_CLASSES, SEQ_LENGTH, IN_DIM
 

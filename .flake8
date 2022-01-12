@@ -1,6 +1,6 @@
 [flake8]
 exclude = .git
-max-line-length = 79
+max-line-length = 80
 ignore =
     E203,   # Black default for colon/whitespace handling...
     E266,   # Too many leading #s for block comment -- conflicts with jupytext

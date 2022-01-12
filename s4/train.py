@@ -93,7 +93,9 @@ def create_train_state(
         #
         #   > Solution: Use Optax.multi_transform!
         s4_fn = map_nested_fn(
-            lambda k, _: "s4" if k in ["B", "C", "Ct", "D", "log_step"] else "regular"
+            lambda k, _: "s4"
+            if k in ["B", "C", "Ct", "D", "log_step"]
+            else "regular"
         )
         tx = optax.multi_transform(
             {
@@ -106,7 +108,9 @@ def create_train_state(
     else:
         tx = optax.adamw(learning_rate=lr, weight_decay=0.01)
 
-    return train_state.TrainState.create(apply_fn=model.apply, params=params, tx=tx)
+    return train_state.TrainState.create(
+        apply_fn=model.apply, params=params, tx=tx
+    )
 
 
 # We also use this opportunity to write generic train_epoch and validation functions. These functions generally
@@ -123,7 +127,12 @@ def train_epoch(state, rng, model, trainloader, classification=False):
         labels = np.array(labels.numpy())  # Not the most efficient...
         rng, drop_rng = jax.random.split(rng)
         state, loss = train_step(
-            state, drop_rng, inputs, labels, model, classification=classification
+            state,
+            drop_rng,
+            inputs,
+            labels,
+            model,
+            classification=classification,
         )
         batch_losses.append(loss)
 
@@ -173,7 +182,9 @@ class FeedForwardModel(nn.Module):
 
 
 @partial(jax.jit, static_argnums=(4, 5))
-def train_step(state, rng, batch_inputs, batch_labels, model, classification=False):
+def train_step(
+    state, rng, batch_inputs, batch_labels, model, classification=False
+):
     def loss_fn(params):
         logits, mod_vars = model.apply(
             {"params": params},
@@ -223,7 +234,9 @@ class LSTMRecurrentModel(nn.Module):
             split_rngs={"params": False},
         )
         dummy_rng = jax.random.PRNGKey(0)
-        self.init_h = nn.OptimizedLSTMCell.initialize_carry(dummy_rng, (), self.d_model)
+        self.init_h = nn.OptimizedLSTMCell.initialize_carry(
+            dummy_rng, (), self.d_model
+        )
         self.LSTM = LSTM(name="lstm_cell")
 
     def __call__(self, xs):
@@ -270,7 +283,9 @@ def example_train(
     classification = "classification" in dataset
 
     # Create dataset...
-    trainloader, testloader, n_classes, seq_len, in_dim = create_dataset_fn(bsz=bsz)
+    trainloader, testloader, n_classes, seq_len, in_dim = create_dataset_fn(
+        bsz=bsz
+    )
     print(f"[*] Starting `{model}` Training on `{dataset}` =>> Initializing...")
 
     model_cls = partial(
@@ -300,7 +315,11 @@ def example_train(
     for epoch in range(epochs):
         print(f"[*] Starting Training Epoch {epoch + 1}...")
         state, train_loss = train_epoch(
-            state, train_rng, model_cls, trainloader, classification=classification
+            state,
+            train_rng,
+            model_cls,
+            trainloader,
+            classification=classification,
         )
 
         print(f"[*] Running Epoch {epoch + 1} Validation...")
@@ -310,8 +329,8 @@ def example_train(
 
         print(f"\n=>> Epoch {epoch + 1} Metrics ===")
         print(
-            f"\tTrain Loss: {train_loss:.5f} -- Test Loss: {test_loss:.5f} -- Test"
-            f" Accuracy: {test_acc:.4f}"
+            f"\tTrain Loss: {train_loss:.5f} -- Test Loss: {test_loss:.5f} --"
+            f" Test Accuracy: {test_acc:.4f}"
         )
 
         # Save a checkpoint each epoch & handle best (test loss... not "copacetic" but ehh)
@@ -345,8 +364,12 @@ if __name__ == "__main__":
     import argparse
 
     parser = argparse.ArgumentParser()
-    parser.add_argument("--dataset", type=str, choices=Datasets.keys(), required=True)
-    parser.add_argument("--model", type=str, choices=Models.keys(), required=True)
+    parser.add_argument(
+        "--dataset", type=str, choices=Datasets.keys(), required=True
+    )
+    parser.add_argument(
+        "--model", type=str, choices=Models.keys(), required=True
+    )
     parser.add_argument("--epochs", type=int, default=10)
     parser.add_argument("--bsz", type=int, default=128)
     parser.add_argument("--suffix", type=str, default=None)
