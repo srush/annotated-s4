@@ -265,7 +265,7 @@ def example_ssm():
     anim.save("line.gif", dpi=150, writer="imagemagick")
 
 
-example_ssm()
+# example_ssm()
 
 # <img src="line.gif" width="100%">
 
@@ -326,7 +326,7 @@ def K_conv(Ab, Bb, Cb, L):
 
 
 # Warning this implementation is naive and unstable. In practice it is
-# actually not going to work for more than very small lengths. 
+# actually not going to work for more than very small lengths.
 # However we are going to replace it with S4 in Part 2, so for
 # now we just keep it around as a placeholder.
 
@@ -420,9 +420,68 @@ def make_HiPPO(N):
     mat = [[v(n, k) for k in range(1, N + 1)] for n in range(1, N + 1)]
     return np.array(mat)
 
-# The very high-level explanation of this matrix.
-# 
 
+# The intuitive explanation of this matrix is that it
+# produces a hidden state that memorizes its history.
+# It does this by keeping track of the coefficients of a
+# Legendre polynomial. These coefficients let it approximate
+# all of the previous history. Let us look at an example,
+
+
+def example_legendre(N=8):
+    # Random hidden state as coefficients
+    import numpy as np
+    import numpy.polynomial.legendre
+
+    x = (np.random.rand(N) - 0.5) * 2
+    t = np.linspace(-1, 1, 100)
+    f = numpy.polynomial.legendre.Legendre(x)(t)
+
+    # Plot
+    import matplotlib.pyplot as plt
+    import seaborn
+
+    seaborn.set_context("talk")
+    fig = plt.figure(figsize=(20, 10))
+    ax = fig.gca(projection="3d")
+    ax.plot(
+        np.linspace(-25, (N - 1) * 100 + 25, 100),
+        [0] * 100,
+        zs=-1,
+        zdir="x",
+        color="black",
+    )
+    ax.plot(t, f, zs=N * 100, zdir="y", c="r")
+    for i in range(N):
+        coef = [0] * N
+        coef[N - i - 1] = 1
+        ax.set_zlim(-4, 4)
+        ax.set_yticks([])
+        ax.set_zticks([])
+        # Plot basis function.
+        f = numpy.polynomial.legendre.Legendre(coef)(t)
+        ax.bar(
+            [100 * i],
+            [x[i]],
+            zs=-1,
+            zdir="x",
+            label="x%d" % i,
+            color="brown",
+            fill=False,
+            width=50,
+        )
+        ax.plot(t, f, zs=100 * i, zdir="y", c="b", alpha=0.5)
+    ax.view_init(elev=40.0, azim=-45)
+    fig.savefig("images/leg.png")
+
+
+# The red line represents that curve we are approximating.
+# The black bars represent the values of our hidden state.
+# Each is a coefficient for one element of the Legendre series
+# shown as blue functions. The intuition is that the HiPPO matrix
+# updates these coefficients each step.
+
+# <img src="images/leg.png" width="100%">
 
 # ### An SSM Neural Network.
 
@@ -601,7 +660,7 @@ def K_conv_(Ab, Bb, Cb, L):
     )
 
 
-# The contribution of S4 is a method for speeding up this function.
+# The contribution of S4 is a stable method for speeding up this function.
 # To do this we are going to focus on the case where the SSM
 # has special structure. Specifically, Diagonal Plus Low-Rank (DPLR) in complex
 #  space.
@@ -1024,6 +1083,7 @@ sample_mnist()
 # [Karan Goel](https://krandiash.github.io/), who were super helpful in
 # putting this together, and pointing you again to their
 # [paper](https://arxiv.org/abs/2111.00396) and
-# [codebase](https://github.com/HazyResearch/state-spaces).
+# [codebase](https://github.com/HazyResearch/state-spaces). Also thanks to Conner Vercellino and Laurel Orr for
+# providing helpful feedback.
 #
 # / Cheers – Sasha & Sidd
