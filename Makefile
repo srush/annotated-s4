@@ -36,7 +36,7 @@ s4/s4.md: s4/s4.py
 	jupytext --to markdown s4/s4.py
 
 blog: s4/s4.md
-	pandoc s4/s4.md  --katex=/usr/local/lib/node_modules/katex/dist/ --output=docs/index.html --to=html5 --css=docs/tufte.css --highlight-style=pygments --self-contained --metadata pagetitle="The Annotated S4"
+	pandoc docs/header-includes.yaml s4/s4.md  --katex=/usr/local/lib/node_modules/katex/dist/ --output=docs/index.html --to=html5 --css=docs/github.min.css --css=docs/tufte.css --no-highlight --self-contained --metadata pagetitle="The Annotated S4"
 
 clean: s4.ipynb
 	rm -f s4.ipynb
