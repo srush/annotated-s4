@@ -33,7 +33,7 @@
 # transformer](https://nlp.seas.harvard.edu/2018/04/03/attention.html).
 # Hopefully it helps you in following the details of the model.
 
-# # Table of Contents
+# ## Table of Contents
 
 # - Part 1: [State Space Models](#part-1-state-space-models)
 # - Part 2: [Implementing S4](#part-2-implementing-s4)
@@ -62,7 +62,7 @@ from jax.scipy.signal import convolve
 rng = jax.random.PRNGKey(1)
 
 
-# # Part 1: State Space Models
+# ## Part 1: State Space Models
 
 # Okay, let's get started. Our goal is going to be the efficient
 # modeling of long sequences. To do this, we are going to build a
@@ -104,7 +104,7 @@ def random_SSM(rng, N):
     return A, B, C
 
 
-# ## Discrete-time SSM: The Recurrent Representation
+# ### Discrete-time SSM: The Recurrent Representation
 #
 # > To be applied on a discrete input sequence $(u_0, u_1, \dots )$
 # > instead of continuous function $u(t)$, the SSM must be
@@ -171,7 +171,7 @@ def run_SSM(A, B, C, u):
     return scan_SSM(Ab, Bb, Cb, u[:, np.newaxis], np.zeros((N,)))
 
 
-# ## Tangent: A Mechanics Example
+# ### Tangent: A Mechanics Example
 
 #  To gain some intuition and to test our SSM implementation, we pause
 #  from machine learning to implement a [classic example from mechanics](https://en.wikipedia.org/wiki/State-space_representation#Moving_object_example).
@@ -242,8 +242,8 @@ def example_ssm():
     seaborn.set_context("paper")
     fig, (ax1, ax2, ax3) = plt.subplots(3)
     camera = Camera(fig)
-    ax1.set_title("Force u_k")
-    ax2.set_title("Position y_k")
+    ax1.set_title("Force $u_k$")
+    ax2.set_title("Position $y_k$")
     ax3.set_title("Object")
     ax1.set_xticks([], [])
     ax2.set_xticks([], [])
@@ -261,10 +261,10 @@ def example_ssm():
         )
         camera.snap()
     anim = camera.animate()
-    anim.save("line.gif", dpi=80, writer="imagemagick")
+    anim.save("line.gif", dpi=150, writer="imagemagick")
 
 
-# example_ssm()
+example_ssm()
 
 # <img src="line.gif" width="100%">
 
@@ -272,7 +272,7 @@ def example_ssm():
 # The final model will have had 100s over thousands of steps. But first we
 # need to make them practical to train.
 
-# ## Training SSMs: The Convolutional Representation
+# ### Training SSMs: The Convolutional Representation
 
 # The punchline of this section is that we can turn the "RNN" above into a "CNN"
 # by unrolling. Let's go through the derivation.
@@ -323,9 +323,10 @@ def K_conv(Ab, Bb, Cb, L):
     return np.array([(Cb @ matrix_power(Ab, l) @ Bb).reshape() for l in range(L)])
 
 
-# Note this approach is really naive, see [Krylov methods and power
-# iterations](https://phys.au.dk/~fedorov/Numeric/now/Book/krylov.pdf) for
-# a better approach. However we are going to replace it with S4 in Part 2.
+# Warning this implementation is naive and unstable. In practice it is
+# actually not going to work for more than very small lengths. 
+# However we are going to replace it with S4 in Part 2, so for
+# now we just keep it around as a placeholder.
 
 
 # We can compute this either with a standard direct convolution or with a padded (non-circular) FFT.
@@ -364,7 +365,7 @@ def test_cnn_is_rnn(N=4, L=16, step=1.0 / 16):
 # At this point we have all of the machinery used for SSM training. The next
 # steps are about 1) making them stable to train, 2) making them fast.
 
-# ## Addressing Long-Range Dependencies with HiPPO
+# ### Addressing Long-Range Dependencies with HiPPO
 
 # <img src="images/hippo.png" width="100%"/>
 #
@@ -398,7 +399,7 @@ def test_cnn_is_rnn(N=4, L=16, step=1.0 / 16):
 # This matrix is going to be really important, but it is a bit
 # magic. For our purposes we mainly need to know that: we only need to
 # calculate it once and a simple structure (which we will exploit in
-# part 2). Without going understanding the ODE math, the main takeaway
+# Part 2). Without going understanding the ODE math, the main takeaway
 # is that this matrix aims to remember the past history in the state a
 # timescale invariant manner.
 
@@ -415,6 +416,9 @@ def make_HiPPO(N):
     # Do it slow so we don't mess it up :)
     mat = [[v(n, k) for k in range(1, N + 1)] for n in range(1, N + 1)]
     return np.array(mat)
+
+# The very high-level explanation of this matrix.
+# 
 
 
 # ### An SSM Neural Network.
@@ -569,7 +573,7 @@ BatchSeqModel = nn.vmap(
 # section is all about making this SSM Layer faster – a lot faster!
 
 
-# # Part 2: Implementing S4
+# ## Part 2: Implementing S4
 
 # Warning: The section has a lot of math. Roughly it boils down to: we
 # can compute the filter for Part 1 with a HiPPO-like matrix really
@@ -610,7 +614,7 @@ def K_conv_(Ab, Bb, Cb, L):
 #  3. We show the low-rank term can now be corrected by applying the **[Woodbury identity](https://en.wikipedia.org/wiki/Woodbury_matrix_identity)** which reduces $(\boldsymbol{\Lambda} + \boldsymbol{p}\boldsymbol{q}^*)^{-1}$ in terms of $\boldsymbol{\Lambda}^{-1}$, truly reducing to the diagonal case.
 
 
-# ## Step 1. SSM Generating Functions
+# ### Step 1. SSM Generating Functions
 
 # The main step will be switching from computing the sequence, to its generating function.
 # From the paper's appendix:
@@ -685,7 +689,7 @@ def test_gen_inverse(L=16, N=4):
 #  However this inverse still needs to be calculated $L$
 #  times (for each of the roots of unity).
 
-# ## Step 2: Diagonal Case
+# ### Step 2: Diagonal Case
 
 # The next step to assume special *structure* on the matrix
 # $\boldsymbol{A}$ to avoid the inverse.  To begin, let us first
@@ -727,7 +731,7 @@ def cauchy_dot(v, omega, lambd):
 # On GPU though, it is efficient enough just to compute it directly.
 
 
-# ## Step 3: Diagonal Plus Low-Rank
+# ### Step 3: Diagonal Plus Low-Rank
 
 # The final step is to relax the diagonal assumption. In addition to
 # the diagonal term we allow a low-rank component with
@@ -809,7 +813,7 @@ def test_gen_dplr(L=16, N=4):
     assert np.isclose(a, b, rtol=1e-2, atol=1e-4).all()
 
 
-# ## Turning HiPPO to DPLR
+# ### Turning HiPPO to DPLR
 
 # This approach applies to DPLR matrices, but remember we would like it to also apply to the HiPPO matrix.
 #  While not DPLR in its current form, the HiPPO matrix *does have special structure*. It is
@@ -855,15 +859,15 @@ def test_nplr(N=8):
     assert np.allclose(A2, A4, atol=1e-2, rtol=1e-2)
 
 
-# # Part 3: S4 in Practice
+# ## Part 3: S4 in Practice
 
 # That was a lot of work, but now the actual model is concise. In fact
 # we are only using four functions:
 
-# 1. `discretize` -> Convert SSM to discrete form.
-# 2. `K_gen_DPLR` -> Truncated generating function when $\boldsymbol{A}$ is DPLR (S4-part)
-# 3. `conv_from_gen` -> Convert generating function to filter
-# 4. `non_circular_convolution` -> Run convolution
+# 1. `discretize` - Convert SSM to discrete form.
+# 2. `K_gen_DPLR` - Truncated generating function when $\boldsymbol{A}$ is DPLR (S4-part)
+# 3. `conv_from_gen` - Convert generating function to filter
+# 4. `non_circular_convolution` - Run convolution
 
 
 #  A full S4 Layer is very similar to the simple SSM layer above. The
@@ -914,7 +918,7 @@ def S4LayerInit(N):
     return partial(S4Layer, N=N, A=A, p=p, q=q, Lambda=Lambda)
 
 
-# ## MNIST Experiments
+# ### MNIST Experiments
 
 # Now that we have the model, we can try it out on some MNIST experiments.
 # For these experiments we linearize MNIST and just treat it as a sequence of
@@ -993,7 +997,7 @@ def sample_mnist():
 # <img src="images/im19.png" width="100%">
 
 
-# # Conclusion
+# ## Conclusion
 
 
 # Putting together this post inspired lots of thoughts about future
