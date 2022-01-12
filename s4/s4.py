@@ -33,7 +33,7 @@
 # transformer](https://nlp.seas.harvard.edu/2018/04/03/attention.html).
 # Hopefully it helps you in following the details of the model.
 
-# # Table of Contents
+# ## Table of Contents
 
 # - Part 1: [State Space Models](#part-1-state-space-models)
 # - Part 2: [Implementing S4](#part-2-implementing-s4)
@@ -63,7 +63,7 @@ from jax.scipy.signal import convolve
 rng = jax.random.PRNGKey(1)
 
 
-# # Part 1: State Space Models
+# ## Part 1: State Space Models
 
 # Okay, let's get started – our goal is the efficient
 # modeling of long sequences. To do this, we are going to build a
@@ -105,7 +105,7 @@ def random_SSM(rng, N):
     return A, B, C
 
 
-# ## Discrete-time SSM: The Recurrent Representation
+# ### Discrete-time SSM: The Recurrent Representation
 #
 # > To be applied on a discrete input sequence $(u_0, u_1, \dots )$
 # > instead of continuous function $u(t)$, the SSM must be
@@ -172,7 +172,7 @@ def run_SSM(A, B, C, u):
     return scan_SSM(Ab, Bb, Cb, u[:, np.newaxis], np.zeros((N,)))
 
 
-# ## Tangent: A Mechanics Example
+# ### Tangent: A Mechanics Example
 
 #  To gain some intuition and to test our SSM implementation, we pause
 #  from machine learning to implement a [classic example from mechanics](https://en.wikipedia.org/wiki/State-space_representation#Moving_object_example).
@@ -243,8 +243,8 @@ def example_ssm():
     seaborn.set_context("paper")
     fig, (ax1, ax2, ax3) = plt.subplots(3)
     camera = Camera(fig)
-    ax1.set_title("Force u_k")
-    ax2.set_title("Position y_k")
+    ax1.set_title("Force $u_k$")
+    ax2.set_title("Position $y_k$")
     ax3.set_title("Object")
     ax1.set_xticks([], [])
     ax2.set_xticks([], [])
@@ -262,10 +262,10 @@ def example_ssm():
         )
         camera.snap()
     anim = camera.animate()
-    anim.save("line.gif", dpi=80, writer="imagemagick")
+    anim.save("line.gif", dpi=150, writer="imagemagick")
 
 
-example_ssm()
+# example_ssm()
 
 # <img src="line.gif" width="100%">
 
@@ -273,7 +273,7 @@ example_ssm()
 # The final model will have had *100s of stacked SSMs* over *thousands of steps*. But first – we
 # need to make these models practical to train.
 
-# ## Training SSMs: The Convolutional Representation
+# ### Training SSMs: The Convolutional Representation
 
 # The punchline of this section is that we can turn the "RNN" above into a "CNN"
 # by unrolling. Let's go through the derivation.
@@ -325,9 +325,10 @@ def K_conv(Ab, Bb, Cb, L):
     )
 
 
-# Note this approach is really naive. For a better approach, see [Krylov methods and power
-# iterations](https://phys.au.dk/~fedorov/Numeric/now/Book/krylov.pdf).
-# However, we are going to replace this approach with S4 in Part 2.
+# Warning this implementation is naive and unstable. In practice it is
+# actually not going to work for more than very small lengths.
+# However we are going to replace it with S4 in Part 2, so for
+# now we just keep it around as a placeholder.
 
 
 # We can compute the result of applying this filter either with a standard direct convolution or
@@ -367,7 +368,7 @@ def test_cnn_is_rnn(N=4, L=16, step=1.0 / 16):
 # At this point we have all of the machinery used for SSM training. The next
 # steps are about 1) making these models stable to train, and 2) making them fast.
 
-# ## Addressing Long-Range Dependencies with HiPPO
+# ### Addressing Long-Range Dependencies with HiPPO
 
 # <img src="images/hippo.png" width="100%"/>
 #
@@ -419,6 +420,68 @@ def make_HiPPO(N):
     mat = [[v(n, k) for k in range(1, N + 1)] for n in range(1, N + 1)]
     return np.array(mat)
 
+
+# The intuitive explanation of this matrix is that it
+# produces a hidden state that memorizes its history.
+# It does this by keeping track of the coefficients of a
+# Legendre polynomial. These coefficients let it approximate
+# all of the previous history. Let us look at an example,
+
+
+def example_legendre(N=8):
+    # Random hidden state as coefficients
+    import numpy as np
+    import numpy.polynomial.legendre
+
+    x = (np.random.rand(N) - 0.5) * 2
+    t = np.linspace(-1, 1, 100)
+    f = numpy.polynomial.legendre.Legendre(x)(t)
+
+    # Plot
+    import matplotlib.pyplot as plt
+    import seaborn
+
+    seaborn.set_context("talk")
+    fig = plt.figure(figsize=(20, 10))
+    ax = fig.gca(projection="3d")
+    ax.plot(
+        np.linspace(-25, (N - 1) * 100 + 25, 100),
+        [0] * 100,
+        zs=-1,
+        zdir="x",
+        color="black",
+    )
+    ax.plot(t, f, zs=N * 100, zdir="y", c="r")
+    for i in range(N):
+        coef = [0] * N
+        coef[N - i - 1] = 1
+        ax.set_zlim(-4, 4)
+        ax.set_yticks([])
+        ax.set_zticks([])
+        # Plot basis function.
+        f = numpy.polynomial.legendre.Legendre(coef)(t)
+        ax.bar(
+            [100 * i],
+            [x[i]],
+            zs=-1,
+            zdir="x",
+            label="x%d" % i,
+            color="brown",
+            fill=False,
+            width=50,
+        )
+        ax.plot(t, f, zs=100 * i, zdir="y", c="b", alpha=0.5)
+    ax.view_init(elev=40.0, azim=-45)
+    fig.savefig("images/leg.png")
+
+
+# The red line represents that curve we are approximating.
+# The black bars represent the values of our hidden state.
+# Each is a coefficient for one element of the Legendre series
+# shown as blue functions. The intuition is that the HiPPO matrix
+# updates these coefficients each step.
+
+# <img src="images/leg.png" width="100%">
 
 # ### An SSM Neural Network.
 
@@ -571,7 +634,7 @@ BatchSeqModel = nn.vmap(
 # section is all about making this SSM Layer faster – a lot faster!
 
 
-# # Part 2: Implementing S4
+# ## Part 2: Implementing S4
 
 # Warning: The section has a lot of math. Roughly it boils down to: we
 # can compute the filter from Part 1 with a "HiPPO-like" matrix really
@@ -597,7 +660,7 @@ def K_conv_(Ab, Bb, Cb, L):
     )
 
 
-# The contribution of S4 is a method for speeding up this function.
+# The contribution of S4 is a stable method for speeding up this function.
 # To do this we are going to focus on the case where the SSM
 # has special structure. Specifically, Diagonal Plus Low-Rank (DPLR) in complex
 #  space.
@@ -614,7 +677,7 @@ def K_conv_(Ab, Bb, Cb, L):
 #  3. We show the low-rank term can now be corrected by applying the **[Woodbury identity](https://en.wikipedia.org/wiki/Woodbury_matrix_identity)** which reduces $(\boldsymbol{\Lambda} + \boldsymbol{p}\boldsymbol{q}^*)^{-1}$ in terms of $\boldsymbol{\Lambda}^{-1}$, truly reducing to the diagonal case.
 
 
-# ## Step 1. SSM Generating Functions
+# ### Step 1. SSM Generating Functions
 
 # The main step will be switching from computing the sequence to computing its generating function.
 # From the paper's appendix:
@@ -689,7 +752,7 @@ def test_gen_inverse(L=16, N=4):
 #  However this inverse still needs to be calculated $L$
 #  times (for each of the roots of unity).
 
-# ## Step 2: Diagonal Case
+# ### Step 2: Diagonal Case
 
 # The next step to assume special *structure* on the matrix
 # $\boldsymbol{A}$ to avoid the inverse.  To begin, let us first
@@ -731,7 +794,7 @@ def cauchy_dot(v, omega, lambd):
 # On a GPU though, it is efficient enough just to compute it directly.
 
 
-# ## Step 3: Diagonal Plus Low-Rank
+# ### Step 3: Diagonal Plus Low-Rank
 
 # The final step is to relax the diagonal assumption. In addition to
 # the diagonal term we allow a low-rank component with
@@ -814,7 +877,7 @@ def test_gen_dplr(L=16, N=4):
     assert np.isclose(a, b, rtol=1e-2, atol=1e-4).all()
 
 
-# ## Turning HiPPO to DPLR
+# ### Turning HiPPO to DPLR
 
 # This approach applies to DPLR matrices, but remember we would like it to also apply to the HiPPO matrix.
 #  While not DPLR in its current form, the HiPPO matrix *does have special structure*. It is
@@ -860,7 +923,7 @@ def test_nplr(N=8):
     assert np.allclose(A2, A4, atol=1e-2, rtol=1e-2)
 
 
-# # Part 3: S4 in Practice
+# ## Part 3: S4 in Practice
 
 # That was a lot of work, but now the actual model is concise. In fact
 # we are only using four functions:
@@ -920,7 +983,7 @@ def S4LayerInit(N):
     return partial(S4Layer, N=N, A=A, p=p, q=q, Lambda=Lambda)
 
 
-# ## MNIST Experiments
+# ### MNIST Experiments
 
 # Now that we have the model, we can try it out on some MNIST experiments.
 # For these experiments we linearize MNIST and just treat it as a sequence of
@@ -1003,7 +1066,7 @@ sample_mnist()
 # <img src="images/im19.png" width="100%">
 
 
-# # Conclusion
+# ## Conclusion
 
 
 # Putting together this post inspired lots of thoughts about future
@@ -1020,6 +1083,7 @@ sample_mnist()
 # [Karan Goel](https://krandiash.github.io/), who were super helpful in
 # putting this together, and pointing you again to their
 # [paper](https://arxiv.org/abs/2111.00396) and
-# [codebase](https://github.com/HazyResearch/state-spaces).
+# [codebase](https://github.com/HazyResearch/state-spaces). Also thanks to Conner Vercellino and Laurel Orr for
+# providing helpful feedback.
 #
 # / Cheers – Sasha & Sidd
