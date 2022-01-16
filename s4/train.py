@@ -62,7 +62,7 @@ def create_train_state(
     init_rng, dropout_rng = jax.random.split(rng, num=2)
     params = model.init(
         {"params": init_rng, "dropout": dropout_rng},
-        np.ones((bsz, seq_len - 1, in_dim)),
+        np.ones((bsz, seq_len, in_dim)),
     )[
         "params"
     ].unfreeze()  # Note: Added immediate `unfreeze()` to play well w/ Optax. See below!
@@ -186,15 +186,21 @@ def train_step(
     state, rng, batch_inputs, batch_labels, model, classification=False
 ):
     def loss_fn(params):
-        logits, mod_vars = model.apply(
-            {"params": params},
-            batch_inputs[:, :-1],
-            rngs={"dropout": rng},
-            mutable=["intermediates"],
-        )
         if classification:
+            logits, mod_vars = model.apply(
+                {"params": params},
+                batch_inputs,
+                rngs={"dropout": rng},
+                mutable=["intermediates"],
+            )
             loss = np.mean(cross_entropy_loss(logits, batch_labels))
         else:
+            logits, mod_vars = model.apply(
+                {"params": params},
+                batch_inputs[:, :-1],
+                rngs={"dropout": rng},
+                mutable=["intermediates"],
+            )
             loss = np.mean(cross_entropy_loss(logits, batch_inputs[:, 1:, 0]))
         return loss, logits
 
@@ -206,11 +212,12 @@ def train_step(
 
 @partial(jax.jit, static_argnums=(3, 4))
 def eval_step(batch_inputs, batch_labels, params, model, classification=False):
-    logits = model.apply({"params": params}, batch_inputs[:, :-1])
     if classification:
+        logits = model.apply({"params": params}, batch_inputs)
         loss = np.mean(cross_entropy_loss(logits, batch_labels))
         acc = np.mean(compute_accuracy(logits, batch_labels))
     else:
+        logits = model.apply({"params": params}, batch_inputs[:, :-1])
         loss = np.mean(cross_entropy_loss(logits, batch_inputs[:, 1:, 0]))
         acc = np.mean(compute_accuracy(logits, batch_inputs[:, 1:, 0]))
     return loss, acc
@@ -304,7 +311,7 @@ def example_train(
         rng,
         in_dim=in_dim,
         bsz=bsz,
-        seq_len=seq_len,
+        seq_len=seq_len if classification else seq_len - 1,
         lr=lr,
         lr_schedule=lr_schedule,
         total_steps=len(trainloader) * epochs,
