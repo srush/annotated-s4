@@ -60,7 +60,6 @@ from jax.nn.initializers import lecun_normal
 from jax.numpy.linalg import eig, inv, matrix_power
 from jax.scipy.signal import convolve
 
-
 rng = jax.random.PRNGKey(1)
 
 
@@ -266,7 +265,7 @@ def example_ssm():
     anim.save("line.gif", dpi=150, writer="imagemagick")
 
 
-example_ssm()
+# example_ssm()
 
 # <img src="line.gif" width="100%">
 
@@ -577,7 +576,7 @@ class SeqInternal(nn.Module):
             deterministic=not self.training,
         )
 
-    def __call__(self, x, blank):
+    def __call__(self, x):
         x2 = self.seq(x)
         z = self.drop(self.out(self.drop(nn.gelu(x2))))
         return self.norm(z + x)
@@ -592,6 +591,7 @@ class SeqModel(nn.Module):
     dropout: float = 0.2
     training: bool = True
     classification: bool = False
+    ar: bool = False
 
     def setup(self):
         self.encoder = nn.Dense(self.d_model)
@@ -610,7 +610,10 @@ class SeqModel(nn.Module):
     def __call__(self, x):
         x = self.encoder(x)
         for layer in self.layers:
-            x = layer(x, None)
+            if self.ar:
+                x = layer(x)
+            else:
+                x = layer(x)
         if self.classification:
             x = np.mean(x, axis=0)
         x = self.decoder(x)
@@ -903,13 +906,13 @@ def make_NPLR_HiPPO(N):
     nhippo = -make_HiPPO(N)
 
     # Add in a rank 1 term. Makes it Normal.
-    p = 0.5 * np.sqrt(2 * np.arange(1, N + 1) + 1.0)
-    q = 2 * p
-    S = nhippo + p[:, np.newaxis] * q[np.newaxis, :]
+    m = np.sqrt(2 * np.arange(1, N + 1) + 1.0)
+    p = np.sqrt(0.5) * m 
+    S = nhippo + p[:, np.newaxis] * p[np.newaxis, :]
 
     # Diagonalize to S to V \Lambda V^*
     Lambda, V = jax.jit(eig, backend="cpu")(S)
-    return nhippo, Lambda, p, q, V
+    return nhippo, Lambda, p, p, V
 
 
 # Final sanity check just to make sure those identities hold,
@@ -947,27 +950,35 @@ def test_nplr(N=8):
 
 class S4Layer(nn.Module):
     A: np.DeviceArray
+    B: np.DeviceArray
     p: np.DeviceArray
     q: np.DeviceArray
     Lambda: np.DeviceArray
-
     N: int
     l_max: int
+    D: np.DeviceArray = np.ones((1,))
 
-    def setup(self):
-        self.B = self.param("B", lecun_normal(), (self.N, 1))
-        self.D = self.param("D", nn.initializers.ones, (1,))
+    def setup(self):        
         self.Ct = self.param(
             "Ct", lecun_normal(dtype=jax.numpy.complex64), (1, self.N)
         )
+
+        # Step is randomly initialized but not updated.
+        # (See train.py)
         self.log_step = self.param("log_step", log_step_initializer(), (1,))
         step = np.exp(self.log_step)
-
+        
         K_gen = K_gen_DPLR(
             self.Lambda, self.p, self.q, self.B, self.Ct, step[0]
         )
         self.K = conv_from_gen(K_gen, self.l_max)
 
+    def decode(self):
+        I = np.eye(self.l_max)
+        Ab, Bb, _ = discretize(self.A, self.B, self.Ct)
+        Cb = self.Ct @ inv(I - np.power(Ab, self.l_max))
+        return scan_SSM(Ab, Bb, Cb)
+        
     def __call__(self, u):
         return non_circular_convolution(u, self.K) + self.D * u
 
@@ -983,7 +994,8 @@ def S4LayerInit(N):
     p = Vc @ p
     q = Vc @ q.conj()
     A = np.diag(Lambda) - p[:, np.newaxis] @ q[:, np.newaxis].conj().T
-    return partial(S4Layer, N=N, A=A, p=p, q=q, Lambda=Lambda)
+    B = np.sqrt(1 + 2 * np.arange(N)).reshape(N, 1)
+    return partial(S4Layer, N=N, A=A, Lambda=Lambda, p=p, q=q, B=B)
 
 
 # ### Experiments
@@ -1042,7 +1054,7 @@ def sample_mnist():
     plt.savefig("sample.png")
 
 
-sample_mnist()
+# sample_mnist()
 
 # <img src="images/sample.png" width="100%">
 
