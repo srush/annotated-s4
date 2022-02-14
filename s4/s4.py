@@ -950,21 +950,23 @@ def test_nplr(N=8):
 
 class S4Layer(nn.Module):
     A: np.DeviceArray
-    B: np.DeviceArray
+    # B: np.DeviceArray
     p: np.DeviceArray
     q: np.DeviceArray
     Lambda: np.DeviceArray
     N: int
     l_max: int
-    D: np.DeviceArray = np.ones((1,))
+    # D: np.DeviceArray = np.ones((1,))
 
     def setup(self):        
         self.Ct = self.param(
             "Ct", lecun_normal(dtype=jax.numpy.complex64), (1, self.N)
         )
+        self.B = self.param("B", nn.initializers.ones, (self.N, 1)) 
 
         # Step is randomly initialized but not updated.
         # (See train.py)
+        self.D = self.param("D", nn.initializers.ones, (1,)) 
         self.log_step = self.param("log_step", log_step_initializer(), (1,))
         step = np.exp(self.log_step)
         
@@ -994,8 +996,8 @@ def S4LayerInit(N):
     p = Vc @ p
     q = Vc @ q.conj()
     A = np.diag(Lambda) - p[:, np.newaxis] @ q[:, np.newaxis].conj().T
-    B = np.sqrt(1 + 2 * np.arange(N)).reshape(N, 1)
-    return partial(S4Layer, N=N, A=A, Lambda=Lambda, p=p, q=q, B=B)
+    # B = np.sqrt(1. + 2 * np.arange(N)).reshape(N, 1)
+    return partial(S4Layer, N=N, A=A, Lambda=Lambda, p=p, q=q) #B=B)
 
 
 # ### Experiments
