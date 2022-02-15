@@ -95,7 +95,7 @@ def create_train_state(
         s4_fn = map_nested_fn(
             lambda k, _: 
             "s4"
-            if k in ["B"]
+            if k in ["B", "C_t"]
             else ("none" if k in ["D", "log_step"]
                   else "regular")
         )

@@ -156,7 +156,7 @@ def scan_SSM(Ab, Bb, Cb, u, x0):
         y_k = Cb @ x_k
         return x_k, y_k
 
-    return jax.lax.scan(step, x0, u)[1]
+    return jax.lax.scan(step, x0, u)
 
 
 # Putting everything together, we can run the SSM
@@ -169,7 +169,7 @@ def run_SSM(A, B, C, u):
     Ab, Bb, Cb = discretize(A, B, C, step=1.0 / L)
 
     # Run recurrence
-    return scan_SSM(Ab, Bb, Cb, u[:, np.newaxis], np.zeros((N,)))
+    return scan_SSM(Ab, Bb, Cb, u[:, np.newaxis], np.zeros((N,)))[1]
 
 
 # ### Tangent: A Mechanics Example
@@ -352,10 +352,10 @@ def non_circular_convolution(u, K, nofft=False):
 def test_cnn_is_rnn(N=4, L=16, step=1.0 / 16):
     ssm = random_SSM(rng, N)
     u = jax.random.uniform(rng, (L,))
-
+    jax.random.split(rng, 3)
     # "RNN"
     rec = run_SSM(*ssm, u)
-
+    
     # "CNN"
     ssmb = discretize(*ssm, step=step)
     conv = non_circular_convolution(u, K_conv(*ssmb, L))
@@ -514,7 +514,8 @@ class SSMLayer(nn.Module):
     A: np.DeviceArray  # HiPPO
     N: int
     l_max: int
-
+    decode : bool = False
+    
     def setup(self):
         # SSM parameters
         self.B = self.param("B", lecun_normal(), (self.N, 1))
@@ -543,7 +544,7 @@ def cloneLayer(layer):
         layer,
         in_axes=1,
         out_axes=1,
-        variable_axes={"params": 1},
+        variable_axes={"params": 1, "cache" : 1},
         split_rngs={"params": True},
     )
 
@@ -565,9 +566,10 @@ class SeqInternal(nn.Module):
     dropout: float
     d_model: int
     training: bool = True
-
+    decode : bool = False
+    
     def setup(self):
-        self.seq = self.layer(l_max=self.l_max)
+        self.seq = self.layer(l_max=self.l_max, decode = self.decode)
         self.norm = nn.LayerNorm()
         self.out = nn.Dense(self.d_model)
         self.drop = nn.Dropout(
@@ -591,7 +593,7 @@ class SeqModel(nn.Module):
     dropout: float = 0.2
     training: bool = True
     classification: bool = False
-    ar: bool = False
+    decode: bool = False
 
     def setup(self):
         self.encoder = nn.Dense(self.d_model)
@@ -603,6 +605,7 @@ class SeqModel(nn.Module):
                 dropout=self.dropout,
                 training=self.training,
                 l_max=self.l_max,
+                decode = self.decode
             )
             for _ in range(self.n_layers)
         ]
@@ -610,10 +613,7 @@ class SeqModel(nn.Module):
     def __call__(self, x):
         x = self.encoder(x)
         for layer in self.layers:
-            if self.ar:
-                x = layer(x)
-            else:
-                x = layer(x)
+            x = layer(x)
         if self.classification:
             x = np.mean(x, axis=0)
         x = self.decoder(x)
@@ -624,7 +624,7 @@ BatchSeqModel = nn.vmap(
     SeqModel,
     in_axes=0,
     out_axes=0,
-    variable_axes={"params": None, "dropout": None},
+    variable_axes={"params": None, "dropout": None, "cache": 0},
     split_rngs={"params": False, "dropout": True},
 )
 
@@ -870,16 +870,26 @@ def test_gen_dplr(L=16, N=4):
     I = np.eye(4)
 
     # Create a DPLR A matrix and discretize
-    Lambda, p, q, B, C = random_DPLR(rng, N)
+    _, _, _, B, _ = random_DPLR(rng, N)
+    _, Lambda, p, q, V = make_NPLR_HiPPO(N)
+    # Vc = V.conj().T
+    # p = Vc @ p
+    # q = Vc @ q.conj()
+    # A = np.diag(Lambda) - p[:, np.newaxis] @ q[:, np.newaxis].conj().T
+    # B = Vc @ np.sqrt(1. + 2 * np.arange(N)).reshape(N, 1)
+    _, _, C = random_SSM(rng, N)
+
     A = np.diag(Lambda) - p[:, np.newaxis] * q[np.newaxis, :]
+    # print(A, B)
     Ab, Bb, Cb = discretize(A, B, C, 1.0 / L)
     a = K_conv(Ab, Bb, Cb, L=L)
 
     # Compare to the DPLR generating function approach.
     Ct = (I - matrix_power(Ab, L)).conj().T @ Cb.ravel()
     b = conv_from_gen(K_gen_DPLR(Lambda, p, q, B, Ct, step=1.0 / L), L)
+    print(a, b)
     assert np.isclose(a, b, rtol=1e-2, atol=1e-4).all()
-
+    assert False
 
 # ### Turning HiPPO to DPLR
 
@@ -906,13 +916,13 @@ def make_NPLR_HiPPO(N):
     nhippo = -make_HiPPO(N)
 
     # Add in a rank 1 term. Makes it Normal.
-    m = np.sqrt(2 * np.arange(1, N + 1) + 1.0)
-    p = np.sqrt(0.5) * m 
-    S = nhippo + p[:, np.newaxis] * p[np.newaxis, :]
+    p = 0.5 * np.sqrt(2 * np.arange(1, N + 1) + 1.0)
+    q = 2 * p 
+    S = nhippo + p[:, np.newaxis] * q[np.newaxis, :]
 
     # Diagonalize to S to V \Lambda V^*
     Lambda, V = jax.jit(eig, backend="cpu")(S)
-    return nhippo, Lambda, p, p, V
+    return nhippo, Lambda, p, q, V
 
 
 # Final sanity check just to make sure those identities hold,
@@ -929,6 +939,84 @@ def test_nplr(N=8):
     assert np.allclose(A2, A4, atol=1e-2, rtol=1e-2)
 
 
+def discrete_DPLR(Lambda, p, q, B, Ct, step, L):
+    A = np.diag(Lambda) - p[:, np.newaxis] @ q[:, np.newaxis].conj().T
+    I = np.eye(Lambda.shape[0])
+    A0 = (2. / step) * I + A
+    D = np.diag(1.0 / ((2. / step) - Lambda))
+    qc = q.conj().T.reshape(1, -1)
+    p2 = p.reshape(-1, 1)        
+    A1 = D - (D @ p2 * (1.0 / (1 + (qc @ D @ p2))) * qc @ D)
+    Ab = A1 @ A0
+    Bb = 2 * A1 @ B
+    Cb = (Ct.conj() @ inv(I - matrix_power(Ab, L)))
+    return Ab, Bb, Cb
+
+def test_conversion(N= 16, L=16):
+    step = 1. / L
+    _, Lambda, p, q, V = make_NPLR_HiPPO(N)
+    Vc = V.conj().T
+    p = Vc @ p
+    q = Vc @ q.conj()
+    B = Vc @ np.sqrt(1. + 2 * np.arange(N)).reshape(N, 1)
+    Ct = lecun_normal(
+        dtype=np.complex64 # FAILS if uncomment
+    )(rng, (1, N))
+    Ab, Bb, Cb = discrete_DPLR(Lambda, p, q, B, Ct, step, L)
+    
+    K_gen = K_gen_DPLR(Lambda, p, q, B, Ct, step)
+    K = conv_from_gen(K_gen, L)
+    K2 = K_conv(Ab, Bb, Cb, L=L)
+    assert np.allclose(K.real, K2.real, atol=1e-2, rtol=1e-2)
+
+
+    # A = np.diag(Lambda) - p[:, np.newaxis] @ q[:, np.newaxis].conj().T
+    # B = np.ones((N, 1))
+    # Ab, Bb, _ = discretize(A, B, C, step)
+    # Ct = (C.reshape(-1) - (matrix_power(Ab, L)).conj().T @ C.reshape(-1)).reshape(1, -1)
+    # _, _, Ct = random_SSM(rng, N)
+
+    # Ct = np.concatenate([Ct, Ct.conj()], axis=1)
+    # Ab, Bb, Cb = discretize(A, B, C, 1.0 / L)
+
+
+    # Cb2 = (inv(I - matrix_power(Ab, L).conj().T) @ Ct.reshape(-1)).reshape(1, -1)
+    # assert np.allclose(Cb, Cb2)
+    # C = np.concatenate([C[:, :C.shape[1] // 2],
+    #                     C[:, :C.shape[1] // 2].conj()],
+    #                    axis=-1)
+    # A0 = (2. / step) * I + A
+    # D = np.diag(1.0 / ((2. / step) - Lambda))
+    # qc = q.conj().T.reshape(1, -1)
+    # p2 = p.reshape(-1, 1)
+
+    # A1 = D - (D @ p2 * (1.0 / (1 + (qc @ D @ p2))) * qc @ D)
+    # Ab = A1 @ A0
+
+
+    # Bb = 2 * A1 @ B
+    # Cb = C
+    
+    u = np.arange(L) * 1.
+    y1 = non_circular_convolution(u, K.real)
+
+
+
+    _, y2 = scan_SSM(Ab, Bb, Cb, u[:, np.newaxis],
+                     np.zeros((N,)).astype(np.complex64))
+    print(y1)
+    print(y2.reshape(-1))
+    # Ab, Bb, _ = discretize(A, B, C, step)
+    # _, y2 = scan_SSM(Ab, Bb, Cb, u[:, np.newaxis],
+    #                  np.zeros((N,)).astype(np.complex64))
+    # print(y2.reshape(-1))
+    # print(V.shape)
+    # print(Vc @ y2.reshape(-1) @ V)
+    # print(y2.reshape(-1).real)
+
+    # assert np.allclose(y1, y2.reshape(-1).real, atol=1e-2, rtol=1e-2)
+    
+    
 # ## Part 3: S4 in Practice
 
 # That was a lot of work, but now the actual model is concise. In fact
@@ -950,39 +1038,60 @@ def test_nplr(N=8):
 
 class S4Layer(nn.Module):
     A: np.DeviceArray
-    # B: np.DeviceArray
+    B: np.DeviceArray
     p: np.DeviceArray
     q: np.DeviceArray
     Lambda: np.DeviceArray
     N: int
     l_max: int
-    # D: np.DeviceArray = np.ones((1,))
+    decode: bool = False
 
     def setup(self):        
         self.Ct = self.param(
-            "Ct", lecun_normal(dtype=jax.numpy.complex64), (1, self.N)
+            "Ct", lecun_normal(dtype=np.complex64), (1, self.N)
         )
-        self.B = self.param("B", nn.initializers.ones, (self.N, 1)) 
-
+        
         # Step is randomly initialized but not updated.
         # (See train.py)
         self.D = self.param("D", nn.initializers.ones, (1,)) 
         self.log_step = self.param("log_step", log_step_initializer(), (1,))
-        step = np.exp(self.log_step)
+        self.step = np.exp(self.log_step)
         
         K_gen = K_gen_DPLR(
-            self.Lambda, self.p, self.q, self.B, self.Ct, step[0]
+            self.Lambda, self.p, self.q, self.B, self.Ct, self.step[0]
         )
         self.K = conv_from_gen(K_gen, self.l_max)
+        if self.decode:
+            self.Ab, self.Bb, self.Cb = discrete_DPLR(self.Lambda, self.p, self.q, self.B, self.Ct, self.step[0], self.l_max)
 
-    def decode(self):
-        I = np.eye(self.l_max)
-        Ab, Bb, _ = discretize(self.A, self.B, self.Ct)
-        Cb = self.Ct @ inv(I - np.power(Ab, self.l_max))
-        return scan_SSM(Ab, Bb, Cb)
+            self.cache = self.has_variable("cache", "cache_x_k")
+            self.x_k_1 = self.variable("cache", "cache_x_k", np.zeros, (self.N,), np.complex64)
+        # print(self.K)
+        # print(K_conv(self.Ab, self.Bb, self.Cb, L=self.l_max).real)
+        # assert np.allclose(self.K , K_conv(self.Ab, self.Bb, self.Cb, L=self.l_max).real, atol=1e-2, rtol=1e-2)
+        # I = np.eye(self.N)
+        # A0 = (2. / step) * I + self.A
+        # D = np.diag(1.0 / ((2. / step) - self.Lambda))
+        # qc = self.q.conj().T.reshape(1, -1)
+        # p2 = self.p.reshape(-1, 1)        
+        # A1 = D - (D @ p2 * (1.0 / (1 + (qc @ D @ p2))) * qc @ D)
+        # Ab = A1 @ A0
+        # Bb = 2 * A1 @ self.B
+
+        # self.Ab, self.Bb = Ab, Bb
+        # self.Cb = (inv(I - matrix_power(self.Ab, self.l_max).conj().T) @ self.Ct.reshape(-1)).reshape(1, -1)
         
     def __call__(self, u):
-        return non_circular_convolution(u, self.K) + self.D * u
+        if not self.decode:
+            return non_circular_convolution(u, self.K) + self.D * u
+        else:
+            x_k, y_s = scan_SSM(self.Ab, self.Bb, self.Cb, u[:, np.newaxis],
+                                self.x_k_1.value)
+
+            self.x_k_1.value = x_k
+            return y_s.reshape(-1).real + self.D * u
+            
+
 
 
 S4Layer = cloneLayer(S4Layer)
@@ -996,8 +1105,9 @@ def S4LayerInit(N):
     p = Vc @ p
     q = Vc @ q.conj()
     A = np.diag(Lambda) - p[:, np.newaxis] @ q[:, np.newaxis].conj().T
+    B = Vc @ np.sqrt(1. + 2 * np.arange(N)).reshape(N, 1)
     # B = np.sqrt(1. + 2 * np.arange(N)).reshape(N, 1)
-    return partial(S4Layer, N=N, A=A, Lambda=Lambda, p=p, q=q) #B=B)
+    return partial(S4Layer, N=N, A=A, Lambda=Lambda, p=p, q=q, B=B)
 
 
 # ### Experiments
@@ -1024,11 +1134,64 @@ def S4LayerInit(N):
 # We can sample from the model using the CNN implementation. Ideally we would use the
 # RNN form, but that would require a bit more plumbing,
 
+from jax.config import config
 
+
+def test_model():
+
+    model = BatchSeqModel(
+        layer=S4LayerInit(N=8),
+        d_output=8,
+        d_model=8,
+        n_layers=1,
+        l_max=4,
+        training=False,
+        decode=False
+    )
+    rng = jax.random.PRNGKey(2)
+    init_rng, dropout_rng = jax.random.split(rng, num=2)
+    x = np.ones((1, 4, 1))
+    state = model.init(
+        {"params": init_rng},
+        x
+    )
+    y = model.apply(state, x)
+
+
+    model = BatchSeqModel(
+        layer=S4LayerInit(N=8),
+        d_output=8,
+        d_model=8,
+        n_layers=1,
+        l_max=4,
+        training=False,
+        decode=True
+    )
+    state = model.init(
+        {"params": init_rng},
+        x
+    )
+    y2, _ = model.apply(state, x, mutable=["cache"])
+    print(y2)
+
+
+    z = np.zeros((1, 4, 8))
+    vars = {"cache" : state["cache"].unfreeze()}
+    def loop(i, vars):
+        cur, vars = vars
+        y2, vars = model.apply({"params": state["params"],
+                                "cache": vars["cache"]},
+                               np.ones((1,1,1)), mutable=["cache"])
+        cur = cur.at[0, i].set(y2[0, 0])
+        return cur, vars.unfreeze()
+    z = jax.lax.fori_loop(0, 4, loop, (z, vars))[0]
+    print(z)
+    assert np.allclose(z, y2, atol=1e-2, rtol=1e-2)
+    
 def sample_mnist():
     import matplotlib.pyplot as plt
     from flax.training import checkpoints
-
+    print("sample")
     model = S4LayerInit(N=64)
     model = partial(
         BatchSeqModel,
@@ -1038,25 +1201,31 @@ def sample_mnist():
         n_layers=6,
         l_max=783,
     )
-    rng = jax.random.PRNGKey(0)
+    config.update('jax_disable_jit', True)
+    rng = jax.random.PRNGKey(2)
     state = checkpoints.restore_checkpoint("models/best_84", None)
     model = model(training=False)
     start = np.zeros((1, 784, 1))
 
+    variables = model.init(rng, start)
+    vars = {"cache" : variables["cache"].unfreeze()}
     def loop(i, cur):
-        cur, rng = cur
+        cur, rng, vars = cur
         r, rng = jax.random.split(rng)
-        out = model.apply({"params": state["params"]}, cur[:, :-1])
-        p = jax.random.categorical(rng, out[0, i])
-        cur = jax.ops.index_update(cur, (0, i + 1, 0), p)
-        return cur, rng
+        out, vars = model.apply({"params": state["params"], "cache": vars["cache"]},
+                                cur[:, np.arange(1) * i],
+                                mutable=["cache"])
+        print(out[0, 0])
+        p = jax.random.categorical(rng, out[0, 0])
+        cur = cur.at[0, i + 1, 0].set(p)
+        return cur, rng, vars.unfreeze()
 
-    out = jax.lax.fori_loop(0, 783, jax.jit(loop), (start, rng))[0]
+    out = jax.lax.fori_loop(0, 783, jax.jit(loop), (start, rng, vars))[0]
     plt.imshow(out.reshape(28, 28))
     plt.savefig("sample.png")
 
-
-# sample_mnist()
+if __name__ == "__main__":
+    sample_mnist()
 
 # <img src="images/sample.png" width="100%">
 
