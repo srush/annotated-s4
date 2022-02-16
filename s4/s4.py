@@ -56,7 +56,7 @@ from functools import partial
 import jax
 import jax.numpy as np
 from flax import linen as nn
-from jax.nn.initializers import lecun_normal
+from jax.nn.initializers import lecun_normal, uniform
 from jax.numpy.linalg import eig, inv, matrix_power
 from jax.scipy.signal import convolve
 
@@ -952,7 +952,7 @@ def discrete_DPLR(Lambda, p, q, B, Ct, step, L):
     Cb = (Ct.conj() @ inv(I - matrix_power(Ab, L)))
     return Ab, Bb, Cb
 
-def test_conversion(N= 16, L=16):
+def test_conversion(N=8, L=16):
     step = 1. / L
     _, Lambda, p, q, V = make_NPLR_HiPPO(N)
     Vc = V.conj().T
@@ -1053,7 +1053,7 @@ class S4Layer(nn.Module):
         
         # Step is randomly initialized but not updated.
         # (See train.py)
-        self.D = self.param("D", nn.initializers.ones, (1,)) 
+        self.D = self.param("D", uniform(), (1,)) 
         self.log_step = self.param("log_step", log_step_initializer(), (1,))
         self.step = np.exp(self.log_step)
         

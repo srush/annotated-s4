@@ -95,15 +95,15 @@ def create_train_state(
         s4_fn = map_nested_fn(
             lambda k, _: 
             "s4"
-            if k in ["B", "C_t"]
-            else ("none" if k in ["D", "log_step"]
+            if k in []
+            else ("none" if k in ["log_step"]
                   else "regular")
         )
         tx = optax.multi_transform(
             {
                 "none": optax.sgd(learning_rate=0.0),
                 "s4": optax.adam(learning_rate=1e-3),
-                "regular": optax.adamw(learning_rate=lr, weight_decay=0.01),
+                "regular": optax.adamw(learning_rate=lr),
             },
             s4_fn,
         )
