@@ -361,7 +361,7 @@ def test_cnn_is_rnn(N=4, L=16, step=1.0 / 16):
     conv = non_circular_convolution(u, K_conv(*ssmb, L))
 
     # Check
-    assert np.isclose(rec.ravel(), conv.ravel(), rtol=1e-2, atol=1e-4).all()
+    assert np.allclose(rec.ravel(), conv.ravel())
 
 
 # At this point we have all of the machinery used for SSM training. The next
@@ -526,11 +526,23 @@ class SSMLayer(nn.Module):
         self.log_step = self.param("log_step", log_step_initializer(), (1,))
 
         step = np.exp(self.log_step)
-        ssm = discretize(self.A, self.B, self.C, step=step)
+        self.ssm = discretize(self.A, self.B, self.C, step=step)
         self.K = K_conv(*ssm, self.l_max)
 
+        # RNN Cache
+        self.x_k_1 = self.variable("cache", "cache_x_k", np.zeros, (self.N,))
+
     def __call__(self, u):
-        return non_circular_convolution(u, self.K) + self.D * u
+        if not self.decode:
+            # CNN Mode
+            return non_circular_convolution(u, self.K) + self.D * u
+        else:
+            # RNN Mode
+            x_k, y_s = scan_SSM(*self.ssm, u[:, np.newaxis],
+                                self.x_k_1.value)
+            if self.is_mutable_collection("cache"):
+                self.x_k_1.value = x_k
+            return y_s.reshape(-1).real + self.D * u
 
 
 # Since our SSMs operate on scalars, we make $H$ different, stacked copies ($H$ different SSMs!) with
@@ -544,7 +556,7 @@ def cloneLayer(layer):
         layer,
         in_axes=1,
         out_axes=1,
-        variable_axes={"params": 1, "cache" : 1},
+        variable_axes={"params": 1, "cache" : 1, "prime" : 1},
         split_rngs={"params": True},
     )
 
@@ -624,7 +636,7 @@ BatchSeqModel = nn.vmap(
     SeqModel,
     in_axes=0,
     out_axes=0,
-    variable_axes={"params": None, "dropout": None, "cache": 0},
+    variable_axes={"params": None, "dropout": None, "cache": 0, "prime" : None},
     split_rngs={"params": False, "dropout": True},
 )
 
@@ -658,7 +670,7 @@ BatchSeqModel = nn.vmap(
 # Specifically, recall this function here:
 
 
-def K_conv_(Ab, Bb, Cb, L):
+def K_conv(Ab, Bb, Cb, L):
     return np.array(
         [(Cb @ matrix_power(Ab, l) @ Bb).reshape() for l in range(L)]
     )
@@ -715,9 +727,10 @@ def K_gen_simple(Ab, Bb, Cb, L):
 
 def conv_from_gen(gen, L):
     # Evaluate at roots of unity
-    Omega_L = np.exp((2j * np.pi / L) * np.arange(L))
+    Omega_L = np.exp((2j * np.pi) * (np.arange(L) / L))
     atRoots = jax.vmap(gen)(Omega_L)
     # Inverse FFT
+    print(atRoots)
     out = np.fft.ifft(atRoots, L).reshape(L)
     # Numpy returns the values out of order.
     order = np.array([i if i == 0 else L - i for i in range(L)])
@@ -736,8 +749,8 @@ def conv_from_gen(gen, L):
 def K_gen_inverse(Ab, Bb, Cb, L):
     I = np.eye(Ab.shape[0])
     Ab_L = matrix_power(Ab, L)
-    Ct = Cb @ (I - Ab_L)
-    return lambda z: (Ct @ inv(I - Ab * z) @ Bb).reshape()
+    Ct =  Cb @ (I - Ab_L)
+    return lambda z: (Ct.conj() @ inv(I - Ab * z) @ Bb).reshape()
 
 
 # But it does output the same values,
@@ -745,10 +758,11 @@ def K_gen_inverse(Ab, Bb, Cb, L):
 
 def test_gen_inverse(L=16, N=4):
     ssm = random_SSM(rng, N)
+    ssm = discretize(*ssm, 1.0 / L)
     b = K_conv(*ssm, L=L)
 
     a = conv_from_gen(K_gen_inverse(*ssm, L=L), L)
-    assert np.isclose(a, b, rtol=1e-2, atol=1e-4).all()
+    assert np.allclose(a, b)
 
 
 #  In summary, Step 1 allows us to replace the matrix power with an
@@ -872,24 +886,23 @@ def test_gen_dplr(L=16, N=4):
     # Create a DPLR A matrix and discretize
     _, _, _, B, _ = random_DPLR(rng, N)
     _, Lambda, p, q, V = make_NPLR_HiPPO(N)
-    # Vc = V.conj().T
-    # p = Vc @ p
-    # q = Vc @ q.conj()
-    # A = np.diag(Lambda) - p[:, np.newaxis] @ q[:, np.newaxis].conj().T
-    # B = Vc @ np.sqrt(1. + 2 * np.arange(N)).reshape(N, 1)
+    Vc = V.conj().T
+    p = Vc @ p
+    q = Vc @ q.conj()
+    A = np.diag(Lambda) - p[:, np.newaxis] @ q[:, np.newaxis].conj().T
+    B = Vc @ np.sqrt(1. + 2 * np.arange(N)).reshape(N, 1)
     _, _, C = random_SSM(rng, N)
 
-    A = np.diag(Lambda) - p[:, np.newaxis] * q[np.newaxis, :]
+    # A = np.diag(Lambda) - p[:, np.newaxis] * q[np.newaxis, :]
     # print(A, B)
     Ab, Bb, Cb = discretize(A, B, C, 1.0 / L)
-    a = K_conv(Ab, Bb, Cb, L=L)
+    a = K_conv(Ab, Bb, Cb.conj(), L=L)
 
     # Compare to the DPLR generating function approach.
     Ct = (I - matrix_power(Ab, L)).conj().T @ Cb.ravel()
     b = conv_from_gen(K_gen_DPLR(Lambda, p, q, B, Ct, step=1.0 / L), L)
-    print(a, b)
-    assert np.isclose(a, b, rtol=1e-2, atol=1e-4).all()
-    assert False
+    assert np.allclose(a, b)
+
 
 # ### Turning HiPPO to DPLR
 
@@ -922,6 +935,7 @@ def make_NPLR_HiPPO(N):
 
     # Diagonalize to S to V \Lambda V^*
     Lambda, V = jax.jit(eig, backend="cpu")(S)
+    # Lambda, V = eig(jax.device_put(S, device=jax.devices("cpu")[0]))
     return nhippo, Lambda, p, q, V
 
 
@@ -935,8 +949,8 @@ def test_nplr(N=8):
     Vc = V.conj().T
     A3 = V @ (Lambda - (Vc @ p) @ (Vc @ q.conj()).conj().T) @ Vc
     A4 = V @ Lambda @ Vc - (p @ q.T)
-    assert np.allclose(A2, A3, atol=1e-2, rtol=1e-2)
-    assert np.allclose(A2, A4, atol=1e-2, rtol=1e-2)
+    assert np.allclose(A2, A3, atol=1e-4, rtol=1e-4)
+    assert np.allclose(A2, A4, atol=1e-4, rtol=1e-4)
 
 
 def discrete_DPLR(Lambda, p, q, B, Ct, step, L):
@@ -949,8 +963,8 @@ def discrete_DPLR(Lambda, p, q, B, Ct, step, L):
     A1 = D - (D @ p2 * (1.0 / (1 + (qc @ D @ p2))) * qc @ D)
     Ab = A1 @ A0
     Bb = 2 * A1 @ B
-    Cb = (Ct.conj() @ inv(I - matrix_power(Ab, L)))
-    return Ab, Bb, Cb
+    Cb = (Ct @ inv(I - matrix_power(Ab, L)).conj())
+    return Ab, Bb, Cb.conj()
 
 def test_conversion(N=8, L=16):
     step = 1. / L
@@ -958,7 +972,11 @@ def test_conversion(N=8, L=16):
     Vc = V.conj().T
     p = Vc @ p
     q = Vc @ q.conj()
-    B = Vc @ np.sqrt(1. + 2 * np.arange(N)).reshape(N, 1)
+    B = lecun_normal(
+        dtype=np.complex64 # FAILS if uncomment
+    )(rng, (N, 1))
+
+    B = Vc @ B
     Ct = lecun_normal(
         dtype=np.complex64 # FAILS if uncomment
     )(rng, (1, N))
@@ -967,7 +985,11 @@ def test_conversion(N=8, L=16):
     K_gen = K_gen_DPLR(Lambda, p, q, B, Ct, step)
     K = conv_from_gen(K_gen, L)
     K2 = K_conv(Ab, Bb, Cb, L=L)
-    assert np.allclose(K.real, K2.real, atol=1e-2, rtol=1e-2)
+    print("here")
+    print(K)
+    print(K2)
+    assert np.allclose(K.real, K2.real, atol=1e-5, rtol=1e-5)
+    
 
 
     # A = np.diag(Lambda) - p[:, np.newaxis] @ q[:, np.newaxis].conj().T
@@ -1004,8 +1026,9 @@ def test_conversion(N=8, L=16):
 
     _, y2 = scan_SSM(Ab, Bb, Cb, u[:, np.newaxis],
                      np.zeros((N,)).astype(np.complex64))
-    print(y1)
-    print(y2.reshape(-1))
+    assert np.allclose(y1, y2.reshape(-1).real, atol=1e-4, rtol=1e-4)
+    # print(y1)
+    # print(y2.reshape(-1))
     # Ab, Bb, _ = discretize(A, B, C, step)
     # _, y2 = scan_SSM(Ab, Bb, Cb, u[:, np.newaxis],
     #                  np.zeros((N,)).astype(np.complex64))
@@ -1014,7 +1037,7 @@ def test_conversion(N=8, L=16):
     # print(Vc @ y2.reshape(-1) @ V)
     # print(y2.reshape(-1).real)
 
-    # assert np.allclose(y1, y2.reshape(-1).real, atol=1e-2, rtol=1e-2)
+    # 
     
     
 # ## Part 3: S4 in Practice
@@ -1038,7 +1061,7 @@ def test_conversion(N=8, L=16):
 
 class S4Layer(nn.Module):
     A: np.DeviceArray
-    B: np.DeviceArray
+    Vc: np.DeviceArray
     p: np.DeviceArray
     q: np.DeviceArray
     Lambda: np.DeviceArray
@@ -1047,50 +1070,50 @@ class S4Layer(nn.Module):
     decode: bool = False
 
     def setup(self):        
+        # Learned Parameters
         self.Ct = self.param(
             "Ct", lecun_normal(dtype=np.complex64), (1, self.N)
         )
-        
-        # Step is randomly initialized but not updated.
-        # (See train.py)
+        self.B = self.Vc @ self.param("B", lecun_normal(), (self.N, 1))
         self.D = self.param("D", uniform(), (1,)) 
-        self.log_step = self.param("log_step", log_step_initializer(), (1,))
-        self.step = np.exp(self.log_step)
-        
-        K_gen = K_gen_DPLR(
-            self.Lambda, self.p, self.q, self.B, self.Ct, self.step[0]
-        )
-        self.K = conv_from_gen(K_gen, self.l_max)
-        if self.decode:
-            self.Ab, self.Bb, self.Cb = discrete_DPLR(self.Lambda, self.p, self.q, self.B, self.Ct, self.step[0], self.l_max)
+        self.step = np.exp(self.param("log_step", log_step_initializer(), (1,)))
 
-            self.cache = self.has_variable("cache", "cache_x_k")
-            self.x_k_1 = self.variable("cache", "cache_x_k", np.zeros, (self.N,), np.complex64)
-        # print(self.K)
-        # print(K_conv(self.Ab, self.Bb, self.Cb, L=self.l_max).real)
-        # assert np.allclose(self.K , K_conv(self.Ab, self.Bb, self.Cb, L=self.l_max).real, atol=1e-2, rtol=1e-2)
-        # I = np.eye(self.N)
-        # A0 = (2. / step) * I + self.A
-        # D = np.diag(1.0 / ((2. / step) - self.Lambda))
-        # qc = self.q.conj().T.reshape(1, -1)
-        # p2 = self.p.reshape(-1, 1)        
-        # A1 = D - (D @ p2 * (1.0 / (1 + (qc @ D @ p2))) * qc @ D)
-        # Ab = A1 @ A0
-        # Bb = 2 * A1 @ self.B
-
-        # self.Ab, self.Bb = Ab, Bb
-        # self.Cb = (inv(I - matrix_power(self.Ab, self.l_max).conj().T) @ self.Ct.reshape(-1)).reshape(1, -1)
-        
-    def __call__(self, u):
         if not self.decode:
+            # CNN mode
+            K_gen = K_gen_DPLR(
+                self.Lambda, self.p, self.q, self.B, self.Ct, self.step[0]
+            )
+            self.K = conv_from_gen(K_gen, self.l_max)
+
+        else:
+            # RNN mode
+            def init_discrete():
+                # Appendix C.2
+                return discrete_DPLR(self.Lambda, self.p,
+                                     self.q, self.B,
+                                     self.Ct, self.step[0],
+                                     self.l_max)
+            
+            ssm_var = self.variable("prime", "ssm", init_discrete)
+            if self.is_mutable_collection("prime"):
+                ssm_var.value = init_discrete()
+            self.ssm = ssm_var.value
+            
+            # Cache
+            self.x_k_1 = self.variable("cache", "cache_x_k", np.zeros, (self.N,), np.complex64)
+                    
+    def __call__(self, u):
+        # This is identical to SSM Layer
+        if not self.decode:
+            # CNN Mode
             return non_circular_convolution(u, self.K) + self.D * u
         else:
-            x_k, y_s = scan_SSM(self.Ab, self.Bb, self.Cb, u[:, np.newaxis],
+            # RNN Mode
+            x_k, y_s = scan_SSM(*self.ssm, u[:, np.newaxis],
                                 self.x_k_1.value)
-
-            self.x_k_1.value = x_k
+            if self.is_mutable_collection("cache"):
+                self.x_k_1.value = x_k
             return y_s.reshape(-1).real + self.D * u
-            
 
 
 
@@ -1107,7 +1130,7 @@ def S4LayerInit(N):
     A = np.diag(Lambda) - p[:, np.newaxis] @ q[:, np.newaxis].conj().T
     B = Vc @ np.sqrt(1. + 2 * np.arange(N)).reshape(N, 1)
     # B = np.sqrt(1. + 2 * np.arange(N)).reshape(N, 1)
-    return partial(S4Layer, N=N, A=A, Lambda=Lambda, p=p, q=q, B=B)
+    return partial(S4Layer, N=N, A=A, Lambda=Lambda, p=p, q=q, Vc=Vc)
 
 
 # ### Experiments
@@ -1138,19 +1161,26 @@ from jax.config import config
 
 
 def test_model():
-
-    model = BatchSeqModel(
-        layer=S4LayerInit(N=8),
-        d_output=8,
+    # config.update('jax_disable_jit', True)    
+    L = 4
+    OUT = 8
+    model = S4LayerInit(N=64)
+    pmodel = partial(
+        BatchSeqModel,
+        layer=model,
+        d_output=OUT,
         d_model=8,
-        n_layers=1,
-        l_max=4,
-        training=False,
-        decode=False
+        n_layers=2,
+        l_max=L,
+    )
+
+    model = pmodel(training=False,
+                   decode=False
     )
     rng = jax.random.PRNGKey(2)
     init_rng, dropout_rng = jax.random.split(rng, num=2)
-    x = np.ones((1, 4, 1))
+    x = np.ones((1, L, 1))
+    x = x.at[0, :, 0].set(np.arange(L))
     state = model.init(
         {"params": init_rng},
         x
@@ -1158,12 +1188,7 @@ def test_model():
     y = model.apply(state, x)
 
 
-    model = BatchSeqModel(
-        layer=S4LayerInit(N=8),
-        d_output=8,
-        d_model=8,
-        n_layers=1,
-        l_max=4,
+    model = pmodel(
         training=False,
         decode=True
     )
@@ -1172,55 +1197,92 @@ def test_model():
         x
     )
     y2, _ = model.apply(state, x, mutable=["cache"])
+    print(y)
     print(y2)
+    assert np.allclose(y, y2)
 
-
-    z = np.zeros((1, 4, 8))
+    z = np.zeros((1, L, OUT))
     vars = {"cache" : state["cache"].unfreeze()}
     def loop(i, vars):
         cur, vars = vars
         y2, vars = model.apply({"params": state["params"],
                                 "cache": vars["cache"]},
-                               np.ones((1,1,1)), mutable=["cache"])
+                               x[:, np.arange(1,2)*i],
+                               mutable=["cache"])
         cur = cur.at[0, i].set(y2[0, 0])
         return cur, vars.unfreeze()
     z = jax.lax.fori_loop(0, 4, loop, (z, vars))[0]
+    print(y2)
     print(z)
-    assert np.allclose(z, y2, atol=1e-2, rtol=1e-2)
+    assert np.allclose(z, y2)
     
 def sample_mnist():
     import matplotlib.pyplot as plt
     from flax.training import checkpoints
-    print("sample")
     model = S4LayerInit(N=64)
-    model = partial(
+    pmodel = partial(
         BatchSeqModel,
         layer=model,
         d_output=256,
-        d_model=256,
+        d_model=512,
         n_layers=6,
         l_max=783,
     )
-    config.update('jax_disable_jit', True)
+    # config.update('jax_disable_jit', True)
     rng = jax.random.PRNGKey(2)
-    state = checkpoints.restore_checkpoint("models/best_84", None)
-    model = model(training=False)
+    # state = checkpoints.restore_checkpoint("models/best_84", None)
+    state = checkpoints.restore_checkpoint("checkpoints/mnist/s4-d_model=512/best_87", None)
+    assert "params" in state
+
+    # model = pmodel(training=False,
+    #               decode=False)
+    # start = np.zeros((1, 784, 1))
+    # variables = model.init(rng, start[:, :-1])
+    
+
+    # def loopA(i, cur):
+    #     cur, rng = cur
+    #     r, rng = jax.random.split(rng)
+    #     out = model.apply({"params": state["params"]}, cur[:, :-1])
+    #     p = jax.random.categorical(r, out[0, i])
+    #     cur = jax.ops.index_update(cur, (0, i + 1, 0), p)
+    #     return cur, rng
+    # out2 = jax.lax.fori_loop(0, 783, jax.jit(loopA), (start, rng))[0]
+
+    
+    model = pmodel(training=False, decode=True)
     start = np.zeros((1, 784, 1))
+    variables = model.init(rng, start[:, :-1])
+    
+    vars = {"params": state["params"],
+            "cache" : variables["cache"].unfreeze(),
+            "prime" : variables["prime"].unfreeze()}
 
-    variables = model.init(rng, start)
-    vars = {"cache" : variables["cache"].unfreeze()}
+    _, prime_vars = model.apply(vars,
+                                start[:, :-1],
+                                mutable=["prime"])
+
+    
     def loop(i, cur):
-        cur, rng, vars = cur
+        x, rng, vars = cur
         r, rng = jax.random.split(rng)
-        out, vars = model.apply({"params": state["params"], "cache": vars["cache"]},
-                                cur[:, np.arange(1) * i],
+        out, vars = model.apply({"params": state["params"],
+                                 "prime": prime_vars["prime"],
+                                 "cache": vars["cache"]},
+                                x[:, np.arange(1, 2) * i],
                                 mutable=["cache"])
-        print(out[0, 0])
-        p = jax.random.categorical(rng, out[0, 0])
-        cur = cur.at[0, i + 1, 0].set(p)
-        return cur, rng, vars.unfreeze()
+        vars = {"cache" : vars["cache"].unfreeze(),
+                "prime" : prime_vars["prime"].unfreeze()}
+        
+        p = jax.random.categorical(r, out[0, 0])
+        x = x.at[0, i + 1, 0].set(p)
+        return x, rng, vars
 
-    out = jax.lax.fori_loop(0, 783, jax.jit(loop), (start, rng, vars))[0]
+    init_vars = {"cache" : variables["cache"].unfreeze(),
+                 "prime" : prime_vars["prime"].unfreeze()}
+
+    out = jax.lax.fori_loop(0, 783, jax.jit(loop), (start, rng, init_vars))[0]
+    # assert np.allclose(out, out2)
     plt.imshow(out.reshape(28, 28))
     plt.savefig("sample.png")
 
