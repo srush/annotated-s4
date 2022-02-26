@@ -353,10 +353,10 @@ def test_cnn_is_rnn(N=4, L=16, step=1.0 / 16):
     ssm = random_SSM(rng, N)
     u = jax.random.uniform(rng, (L,))
     jax.random.split(rng, 3)
-    # "RNN"
+    # RNN
     rec = run_SSM(*ssm, u)
     
-    # "CNN"
+    # CNN
     ssmb = discretize(*ssm, step=step)
     conv = non_circular_convolution(u, K_conv(*ssmb, L))
 
@@ -529,7 +529,7 @@ class SSMLayer(nn.Module):
         self.ssm = discretize(self.A, self.B, self.C, step=step)
         self.K = K_conv(*ssm, self.l_max)
 
-        # RNN Cache
+        # RNN cache for long sequences
         self.x_k_1 = self.variable("cache", "cache_x_k", np.zeros, (self.N,))
 
     def __call__(self, u):
@@ -572,7 +572,7 @@ def SSMInit(N):
 # we have a Transformer-style stack of residual blocks, each containing the $H$ stacked SSMs.
 
 
-class SeqInternal(nn.Module):
+class SequenceBlock(nn.Module):
     layer: nn.Module
     l_max: int
     dropout: float
@@ -596,7 +596,7 @@ class SeqInternal(nn.Module):
         return self.norm(z + x)
 
 
-class SeqModel(nn.Module):
+class StackedModel(nn.Module):
     layer: nn.Module
     d_output: int
     d_model: int
@@ -611,7 +611,7 @@ class SeqModel(nn.Module):
         self.encoder = nn.Dense(self.d_model)
         self.decoder = nn.Dense(self.d_output)
         self.layers = [
-            SeqInternal(
+            SequenceBlock(
                 layer=self.layer,
                 d_model=self.d_model,
                 dropout=self.dropout,
@@ -632,8 +632,8 @@ class SeqModel(nn.Module):
         return nn.log_softmax(x, axis=-1)
 
 
-BatchSeqModel = nn.vmap(
-    SeqModel,
+BatchStackedModel = nn.vmap(
+    StackedModel,
     in_axes=0,
     out_axes=0,
     variable_axes={"params": None, "dropout": None, "cache": 0, "prime" : None},
@@ -730,7 +730,6 @@ def conv_from_gen(gen, L):
     Omega_L = np.exp((2j * np.pi) * (np.arange(L) / L))
     atRoots = jax.vmap(gen)(Omega_L)
     # Inverse FFT
-    print(atRoots)
     out = np.fft.ifft(atRoots, L).reshape(L)
     # Numpy returns the values out of order.
     order = np.array([i if i == 0 else L - i for i in range(L)])
@@ -893,8 +892,6 @@ def test_gen_dplr(L=16, N=4):
     B = Vc @ np.sqrt(1. + 2 * np.arange(N)).reshape(N, 1)
     _, _, C = random_SSM(rng, N)
 
-    # A = np.diag(Lambda) - p[:, np.newaxis] * q[np.newaxis, :]
-    # print(A, B)
     Ab, Bb, Cb = discretize(A, B, C, 1.0 / L)
     a = K_conv(Ab, Bb, Cb.conj(), L=L)
 
@@ -902,6 +899,85 @@ def test_gen_dplr(L=16, N=4):
     Ct = (I - matrix_power(Ab, L)).conj().T @ Cb.ravel()
     b = conv_from_gen(K_gen_DPLR(Lambda, p, q, B, Ct, step=1.0 / L), L)
     assert np.allclose(a, b)
+
+# ### Diagonal Plus Low-Rank RNN.
+
+# A secondary benefit of the DPLR factorization is that it allows
+# us to compute the discretized form of the SSM without having
+# to invert the $A$ matrix directly. Here we return to the paper
+# for the derivation.
+
+# > Recall that discretization computes,
+# $$
+# \begin{align*}
+#   \bm{\overline{A}} &= (\bm{I} - \Delta/2 \cdot \bm{A})^{-1}(\bm{I} + \Delta/2 \cdot \bm{A}) \\
+#   \bm{\overline{B}} &= (\bm{I} - \Delta/2 \cdot \bm{A})^{-1} \Delta \bm{B}
+#   .
+# \end{align*}
+# $$
+# >
+# > We simplify both terms in the definition of $\bm{\overline{A}}$ independently.
+# > The first term is:
+# $$
+# \begin{align*}
+#   \bm{I} + \frac{\Delta}{2} \bm{A}
+#   &= \bm{I} + \frac{\Delta}{2} (\bm{\Lambda} - \bm{p} \bm{q}^*)
+#   \\&= \frac{\Delta}{2} \left[ \frac{2}{\Delta}\bm{I} + (\bm{\Lambda} - \bm{p} \bm{q}^*) \right]
+#   \\&= \frac{\Delta}{2} \bm{A_0}
+# \end{align*}
+# $$
+# > where $\bm{A_0}$ is defined as the term in the final brackets.
+# >
+# > The second term is known as the Backward Euler's method.
+# > Although this inverse term is normally difficult to deal with,
+# > in the DPLR case we can simplify it using Woodbury's Identity as described above.
+# $$
+# \begin{align*}
+#   \left( \bm{I} - \frac{\Delta}{2} \bm{A} \right)^{-1}
+#   &=
+#   \left( \bm{I} - \frac{\Delta}{2} (\bm{\Lambda} - \bm{p} \bm{q}^*) \right)^{-1}
+#   \\&=
+#   \frac{2}{\Delta} \left[ \frac{2}{\Delta} - \bm{\Lambda} + \bm{p} \bm{q}^* \right]^{-1}
+#   \\&=
+#   \frac{2}{\Delta} \left[ \bm{D} - \bm{D} \bm{p} \left( 1 + \bm{q}^* \bm{D} \bm{p} \right)^{-1} \bm{q}^* \bm{D} \right]
+#   \\&= \frac{2}{\Delta} \bm{A_1}
+# \end{align*}
+# $$
+# > where $\bm{D} = \left( \frac{2}{\Delta}-\bm{\Lambda} \right)^{-1}$
+# > and $\bm{A_1}$ is defined as the term in the final brackets.
+# > 
+# >  The discrete-time SSM \eqref{eq:2} becomes
+# $$
+# \begin{align*}
+#   x_{k} &= \bm{\overline{A}} x_{k-1} + \bm{\overline{B}} u_k \\
+#   &= \bm{A_1} \bm{A_0} x_{k-1} + 2 \bm{A_1} \bm{B} u_k \\
+#   y_k &= \bm{C} x_k
+#   .
+# \end{align*}
+# $$
+
+
+def discrete_DPLR(Lambda, p, q, B, Ct, step, L):
+    N = Lambda.shape[0]
+    A = np.diag(Lambda) - p[:, np.newaxis] @ q[:, np.newaxis].conj().T
+    I = np.eye(N)
+
+    # Forward Euler
+    A0 = (2. / step) * I + A
+
+    # Backward Euler
+    D = np.diag(1.0 / ((2. / step) - Lambda))
+    qc = q.conj().T.reshape(1, -1)
+    p2 = p.reshape(-1, 1)
+    A1 = D - (D @ p2 * (1.0 / (1 + (qc @ D @ p2))) * qc @ D)
+
+    # A bar and B bar
+    Ab = A1 @ A0
+    Bb = 2 * A1 @ B
+    
+    # Recover Cbar from Ct
+    Cb = (Ct @ inv(I - matrix_power(Ab, L)).conj())
+    return Ab, Bb, Cb.conj()
 
 
 # ### Turning HiPPO to DPLR
@@ -939,7 +1015,7 @@ def make_NPLR_HiPPO(N):
     return nhippo, Lambda, p, q, V
 
 
-# Final sanity check just to make sure those identities hold,
+# Sanity check just to make sure those identities hold,
 
 
 def test_nplr(N=8):
@@ -952,92 +1028,44 @@ def test_nplr(N=8):
     assert np.allclose(A2, A3, atol=1e-4, rtol=1e-4)
     assert np.allclose(A2, A4, atol=1e-4, rtol=1e-4)
 
+# ### Final Check
 
-def discrete_DPLR(Lambda, p, q, B, Ct, step, L):
-    A = np.diag(Lambda) - p[:, np.newaxis] @ q[:, np.newaxis].conj().T
-    I = np.eye(Lambda.shape[0])
-    A0 = (2. / step) * I + A
-    D = np.diag(1.0 / ((2. / step) - Lambda))
-    qc = q.conj().T.reshape(1, -1)
-    p2 = p.reshape(-1, 1)        
-    A1 = D - (D @ p2 * (1.0 / (1 + (qc @ D @ p2))) * qc @ D)
-    Ab = A1 @ A0
-    Bb = 2 * A1 @ B
-    Cb = (Ct @ inv(I - matrix_power(Ab, L)).conj())
-    return Ab, Bb, Cb.conj()
+# This tests that everything works as planned. 
 
 def test_conversion(N=8, L=16):
     step = 1. / L
+    # Compute a HiPPO NPLR matrix.
     _, Lambda, p, q, V = make_NPLR_HiPPO(N)
     Vc = V.conj().T
     p = Vc @ p
     q = Vc @ q.conj()
     B = lecun_normal(
-        dtype=np.complex64 # FAILS if uncomment
+        dtype=np.complex64 
     )(rng, (N, 1))
-
     B = Vc @ B
+    # Random complex Ct
     Ct = lecun_normal(
-        dtype=np.complex64 # FAILS if uncomment
+        dtype=np.complex64 
     )(rng, (1, N))
-    Ab, Bb, Cb = discrete_DPLR(Lambda, p, q, B, Ct, step, L)
-    
+
+
+    # CNN form.
     K_gen = K_gen_DPLR(Lambda, p, q, B, Ct, step)
     K = conv_from_gen(K_gen, L)
+    
+    # RNN form.
+    Ab, Bb, Cb = discrete_DPLR(Lambda, p, q, B, Ct, step, L)
     K2 = K_conv(Ab, Bb, Cb, L=L)
-    print("here")
-    print(K)
-    print(K2)
     assert np.allclose(K.real, K2.real, atol=1e-5, rtol=1e-5)
     
-
-
-    # A = np.diag(Lambda) - p[:, np.newaxis] @ q[:, np.newaxis].conj().T
-    # B = np.ones((N, 1))
-    # Ab, Bb, _ = discretize(A, B, C, step)
-    # Ct = (C.reshape(-1) - (matrix_power(Ab, L)).conj().T @ C.reshape(-1)).reshape(1, -1)
-    # _, _, Ct = random_SSM(rng, N)
-
-    # Ct = np.concatenate([Ct, Ct.conj()], axis=1)
-    # Ab, Bb, Cb = discretize(A, B, C, 1.0 / L)
-
-
-    # Cb2 = (inv(I - matrix_power(Ab, L).conj().T) @ Ct.reshape(-1)).reshape(1, -1)
-    # assert np.allclose(Cb, Cb2)
-    # C = np.concatenate([C[:, :C.shape[1] // 2],
-    #                     C[:, :C.shape[1] // 2].conj()],
-    #                    axis=-1)
-    # A0 = (2. / step) * I + A
-    # D = np.diag(1.0 / ((2. / step) - Lambda))
-    # qc = q.conj().T.reshape(1, -1)
-    # p2 = p.reshape(-1, 1)
-
-    # A1 = D - (D @ p2 * (1.0 / (1 + (qc @ D @ p2))) * qc @ D)
-    # Ab = A1 @ A0
-
-
-    # Bb = 2 * A1 @ B
-    # Cb = C
-    
+    # Apply CNN
     u = np.arange(L) * 1.
     y1 = non_circular_convolution(u, K.real)
 
-
-
+    # Apply RNN
     _, y2 = scan_SSM(Ab, Bb, Cb, u[:, np.newaxis],
                      np.zeros((N,)).astype(np.complex64))
     assert np.allclose(y1, y2.reshape(-1).real, atol=1e-4, rtol=1e-4)
-    # print(y1)
-    # print(y2.reshape(-1))
-    # Ab, Bb, _ = discretize(A, B, C, step)
-    # _, y2 = scan_SSM(Ab, Bb, Cb, u[:, np.newaxis],
-    #                  np.zeros((N,)).astype(np.complex64))
-    # print(y2.reshape(-1))
-    # print(V.shape)
-    # print(Vc @ y2.reshape(-1) @ V)
-    # print(y2.reshape(-1).real)
-
-    # 
     
     
 # ## Part 3: S4 in Practice
@@ -1079,16 +1107,17 @@ class S4Layer(nn.Module):
         self.step = np.exp(self.param("log_step", log_step_initializer(), (1,)))
 
         if not self.decode:
-            # CNN mode
+            # CNN mode, compute kernel.
             K_gen = K_gen_DPLR(
                 self.Lambda, self.p, self.q, self.B, self.Ct, self.step[0]
             )
             self.K = conv_from_gen(K_gen, self.l_max)
 
         else:
-            # RNN mode
+            # RNN mode, discretize
+
+            # Flax trick to cache discrete form.
             def init_discrete():
-                # Appendix C.2
                 return discrete_DPLR(self.Lambda, self.p,
                                      self.q, self.B,
                                      self.Ct, self.step[0],
@@ -1099,7 +1128,7 @@ class S4Layer(nn.Module):
                 ssm_var.value = init_discrete()
             self.ssm = ssm_var.value
             
-            # Cache
+            # RNN Cache
             self.x_k_1 = self.variable("cache", "cache_x_k", np.zeros, (self.N,), np.complex64)
                     
     def __call__(self, u):
@@ -1119,8 +1148,7 @@ class S4Layer(nn.Module):
 
 S4Layer = cloneLayer(S4Layer)
 
-# We initialize the model by computing a DPLR initializer similar to HiPPO,
-
+# We initialize the model by computing a HiPPO DPLR initializer
 
 def S4LayerInit(N):
     _, Lambda, p, q, V = make_NPLR_HiPPO(N)
@@ -1128,8 +1156,6 @@ def S4LayerInit(N):
     p = Vc @ p
     q = Vc @ q.conj()
     A = np.diag(Lambda) - p[:, np.newaxis] @ q[:, np.newaxis].conj().T
-    B = Vc @ np.sqrt(1. + 2 * np.arange(N)).reshape(N, 1)
-    # B = np.sqrt(1. + 2 * np.arange(N)).reshape(N, 1)
     return partial(S4Layer, N=N, A=A, Lambda=Lambda, p=p, q=q, Vc=Vc)
 
 
@@ -1154,140 +1180,69 @@ def S4LayerInit(N):
 # dimension](https://paperswithcode.com/sota/image-generation-on-mnist)* which is
 # NLL in base 2 for MNIST. A score of 0.52 is ~0.76 BPD which is near PixelCNN++.
 
-# We can sample from the model using the CNN implementation. Ideally we would use the
-# RNN form, but that would require a bit more plumbing,
+# We can sample from the model using the RNN implementation. Here is
+# what the sampling code looks like. Note that we keep a running cache
+# to remember the RNN state. 
 
-from jax.config import config
-
-
-def test_model():
-    # config.update('jax_disable_jit', True)    
-    L = 4
-    OUT = 8
-    model = S4LayerInit(N=64)
-    pmodel = partial(
-        BatchSeqModel,
-        layer=model,
-        d_output=OUT,
-        d_model=8,
-        n_layers=2,
-        l_max=L,
-    )
-
-    model = pmodel(training=False,
-                   decode=False
-    )
-    rng = jax.random.PRNGKey(2)
-    init_rng, dropout_rng = jax.random.split(rng, num=2)
-    x = np.ones((1, L, 1))
-    x = x.at[0, :, 0].set(np.arange(L))
-    state = model.init(
-        {"params": init_rng},
-        x
-    )
-    y = model.apply(state, x)
+def sample(model, params, prime, cache, x, start, end, rng):
+    def loop(i, cur):
+        x, rng, cache = cur
+        r, rng = jax.random.split(rng)
+        out, vars = model.apply({"params": params,
+                                 "prime": prime,
+                                 "cache": cache},
+                                x[:, np.arange(1, 2) * i],
+                                mutable=["cache"])
+        def update(x, out):
+            p = jax.random.categorical(r, out[0])
+            x = x.at[i + 1, 0].set(p)
+            return x
+        x = jax.vmap(update)(x, out)
+        return x, rng, vars["cache"].unfreeze()
+    return jax.lax.fori_loop(start, end, jax.jit(loop), (x, rng, cache))[0]
 
 
-    model = pmodel(
-        training=False,
-        decode=True
-    )
-    state = model.init(
-        {"params": init_rng},
-        x
-    )
-    y2, _ = model.apply(state, x, mutable=["cache"])
-    print(y)
-    print(y2)
-    assert np.allclose(y, y2)
+# To get this in a good form, we first precompute the discretized
+# version of the the RNN for each S4 layers. We do this through the
+# "prime" collection of variables.
 
-    z = np.zeros((1, L, OUT))
-    vars = {"cache" : state["cache"].unfreeze()}
-    def loop(i, vars):
-        cur, vars = vars
-        y2, vars = model.apply({"params": state["params"],
-                                "cache": vars["cache"]},
-                               x[:, np.arange(1,2)*i],
-                               mutable=["cache"])
-        cur = cur.at[0, i].set(y2[0, 0])
-        return cur, vars.unfreeze()
-    z = jax.lax.fori_loop(0, 4, loop, (z, vars))[0]
-    print(y2)
-    print(z)
-    assert np.allclose(z, y2)
-    
-def sample_mnist():
-    import matplotlib.pyplot as plt
+def init_from_checkpoint(model, checkpoint, init_x):
     from flax.training import checkpoints
-    model = S4LayerInit(N=64)
-    pmodel = partial(
-        BatchSeqModel,
-        layer=model,
-        d_output=256,
-        d_model=512,
-        n_layers=6,
-        l_max=783,
-    )
-    # config.update('jax_disable_jit', True)
-    rng = jax.random.PRNGKey(2)
-    # state = checkpoints.restore_checkpoint("models/best_84", None)
-    state = checkpoints.restore_checkpoint("checkpoints/mnist/s4-d_model=512/best_87", None)
+    state = checkpoints.restore_checkpoint(checkpoint, None)
     assert "params" in state
-
-    # model = pmodel(training=False,
-    #               decode=False)
-    # start = np.zeros((1, 784, 1))
-    # variables = model.init(rng, start[:, :-1])
-    
-
-    # def loopA(i, cur):
-    #     cur, rng = cur
-    #     r, rng = jax.random.split(rng)
-    #     out = model.apply({"params": state["params"]}, cur[:, :-1])
-    #     p = jax.random.categorical(r, out[0, i])
-    #     cur = jax.ops.index_update(cur, (0, i + 1, 0), p)
-    #     return cur, rng
-    # out2 = jax.lax.fori_loop(0, 783, jax.jit(loopA), (start, rng))[0]
-
-    
-    model = pmodel(training=False, decode=True)
-    start = np.zeros((1, 784, 1))
-    variables = model.init(rng, start[:, :-1])
-    
+    variables = model.init(rng, init_x)
     vars = {"params": state["params"],
             "cache" : variables["cache"].unfreeze(),
             "prime" : variables["prime"].unfreeze()}
+    _, prime_vars = model.apply(vars, init_x, mutable=["prime"])
+    return vars["params"], prime_vars["prime"], vars["cache"]
 
-    _, prime_vars = model.apply(vars,
-                                start[:, :-1],
-                                mutable=["prime"])
 
-    
-    def loop(i, cur):
-        x, rng, vars = cur
-        r, rng = jax.random.split(rng)
-        out, vars = model.apply({"params": state["params"],
-                                 "prime": prime_vars["prime"],
-                                 "cache": vars["cache"]},
-                                x[:, np.arange(1, 2) * i],
-                                mutable=["cache"])
-        vars = {"cache" : vars["cache"].unfreeze(),
-                "prime" : prime_vars["prime"].unfreeze()}
-        
-        p = jax.random.categorical(r, out[0, 0])
-        x = x.at[0, i + 1, 0].set(p)
-        return x, rng, vars
+# Putting this altogether we can sample from the model directly.
 
-    init_vars = {"cache" : variables["cache"].unfreeze(),
-                 "prime" : prime_vars["prime"].unfreeze()}
+MNIST_LEN = 784
+def DefaultMNist():
+    return BatchStackedModel(
+        layer=S4LayerInit(N=64),
+        d_output=256,
+        d_model=512,
+        n_layers=6,
+        l_max=MNIST_LEN-1,
+        training=False, decode=True)
 
-    out = jax.lax.fori_loop(0, 783, jax.jit(loop), (start, rng, init_vars))[0]
-    # assert np.allclose(out, out2)
+default_train_path = "checkpoints/mnist/s4-d_model=512/best_87"
+
+def sample_mnist():
+    import matplotlib.pyplot as plt
+    model = DefaultMNist()
+    start = np.zeros((1, MNIST_LEN, 1))
+    params, prime, cache = init_from_checkpoint(model, default_train_path, start[:, :-1])
+    out = sample(model, params, prime, cache, start, 0, MNIST_LEN-1, rng)
     plt.imshow(out.reshape(28, 28))
     plt.savefig("sample.png")
 
-if __name__ == "__main__":
-    sample_mnist()
+# if __name__ == "__main__":
+#     sample_mnist()
 
 # <img src="images/sample.png" width="100%">
 
@@ -1302,6 +1257,61 @@ if __name__ == "__main__":
 # <img src="images/im17.png" width="45%">
 # <img src="images/im18.png" width="45%">
 # <img src="images/im19.png" width="45%">
+
+
+def sample_mnist_prefix():
+    import matplotlib.pyplot as plt
+    import numpy as onp
+    from .data import Datasets
+    model = DefaultMNist()
+    BATCH = 32
+    START = 300
+    start = np.zeros((BATCH, MNIST_LEN, 1))
+    params, prime, init_cache = init_from_checkpoint(model, default_train_path, start[:, :-1])
+
+    _, testloader, _, _, _ = Datasets["mnist"](bsz=BATCH)
+    it = iter(testloader)
+    for j, im in enumerate(it):
+        image = im[0].numpy()
+
+        cur = onp.array(image)
+        cur[:, START+1:, 0] = 0
+        cur = np.array(cur)
+        
+        # Cache the first `start` inputs. 
+        out, vars = model.apply({"params": params,
+                                 "prime": prime,
+                                 "cache": init_cache},
+                                cur[:, np.arange(0, START)],
+                                mutable=["cache"])
+        cache = vars["cache"].unfreeze()
+        out = sample(model, params, prime, cache, cur, START, MNIST_LEN-1, rng)
+        print(j)
+        
+        # Visualization
+        out = out.reshape(BATCH, 28, 28)
+        final = onp.zeros((BATCH, 28, 28, 3))
+        final[:, :, :, 0] = out
+        final.reshape(BATCH, 28 * 28, 3)[:, :START, 1] = image.reshape(BATCH, 28 * 28)[:, :START]
+        final.reshape(BATCH, 28 * 28, 3)[:, :start, 2] = image.reshape(BATCH, 28 * 28)[:, :START]
+        final2 = onp.zeros((BATCH, 28, 28, 3))
+        final2[:, :, :, 1] = image.reshape(BATCH, 28, 28)
+        final2.reshape(BATCH, 28 * 28, 3)[:, :START, 0] = image.reshape(BATCH, 28 * 28)[:, :START]
+        final2.reshape(BATCH, 28 * 28, 3)[:, :START, 2] = image.reshape(BATCH, 28 * 28)[:, :START]
+        for k in range(BATCH):
+            fig, (ax1, ax2) = plt.subplots(ncols=2)
+            ax1.set_title("Sampled")
+            ax1.imshow(final[k] / 256.0)
+            ax2.set_title("True")
+            ax1.axis("off")
+            ax2.axis("off")
+            ax2.imshow(final2[k] / 256.0)
+            fig.savefig("im%d.%d.png" % (j, k))
+            print(j)
+
+
+if __name__ == "__main__":
+    sample_mnist_prefix()
 
 
 # Next we tried training a model to generate drawings. For this we

@@ -217,6 +217,7 @@ def create_quickdraw_dataset(bsz=128):
     return trainloader, testloader, N_CLASSES, SEQ_LENGTH, IN_DIM
 
 
+
 # ### MNIST Classification
 # **Task**: Predict MNIST class given sequence model over pixels (784 pixels => 10 classes).
 def create_mnist_classification_dataset(bsz=128):
@@ -286,11 +287,52 @@ def create_cifar_classification_dataset(bsz=128):
     return trainloader, testloader, N_CLASSES, SEQ_LENGTH, IN_DIM
 
 
+# ### MNIST Classification
+# **Task**: Predict MNIST class given sequence model over pixels (784 pixels => 10 classes).
+def create_fsdd_classification_dataset(bsz=128):
+    print("[*] Generating FSDD Classification Dataset...")
+
+    # Constants
+    SEQ_LENGTH, N_CLASSES, IN_DIM = 6400, 10, 1
+
+    from torchfsdd import TorchFSDDGenerator, TrimSilence
+    from torchaudio.transforms import MFCC, MuLawEncoding
+    from torchvision.transforms import Compose
+    import torchvision.transforms as transforms
+    import torch
+    # Create a transformation pipeline to apply to the recordings
+    transforms = Compose([
+                TrimSilence(threshold=1e-6),
+                MuLawEncoding(quantization_channels=512),
+                transforms.Lambda(
+                    lambda x: torch.nn.functional.pad(x, (0, 6400 - x.shape[0])).view(-1, 1)
+                )
+    ])
+
+    # Fetch the latest version of FSDD and initialize a generator with those files
+    fsdd = TorchFSDDGenerator(version='master', transforms=transforms)
+
+    # Create two Torch datasets for a train-test split from the generator
+    train, test = fsdd.train_test_split(test_size=0.1)
+
+    # Return data loaders, with the provided batch size
+    trainloader = torch.utils.data.DataLoader(
+        train, batch_size=bsz, shuffle=True
+    )
+    testloader = torch.utils.data.DataLoader(
+        test, batch_size=bsz, shuffle=False
+    )
+
+    return trainloader, testloader, N_CLASSES, SEQ_LENGTH, IN_DIM
+
+
+
 Datasets = {
     "mnist": create_mnist_dataset,
     "quickdraw": create_quickdraw_dataset,
     "sin": create_sin_x_dataset,
     "sin_noise": create_sin_ax_b_dataset,
     "mnist-classification": create_mnist_classification_dataset,
+    "fsdd-classification": create_fsdd_classification_dataset,
     "cifar-classification": create_cifar_classification_dataset,
 }

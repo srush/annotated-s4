@@ -8,7 +8,7 @@ from flax import linen as nn
 from flax.training import checkpoints, train_state
 from tqdm import tqdm
 from .data import Datasets
-from .s4 import BatchSeqModel, S4LayerInit, SSMInit, make_NPLR_HiPPO, discretize
+from .s4 import BatchStackedModel, S4LayerInit, SSMInit, make_NPLR_HiPPO, discretize
 
 
 # ## Baseline Models
@@ -299,7 +299,7 @@ def example_train(
     print(f"[*] Starting `{model}` Training on `{dataset}` =>> Initializing...")
 
     model_cls = partial(
-        BatchSeqModel,
+        BatchStackedModel,
         layer=model_cls,
         d_model=d_model,
         d_output=n_classes,
