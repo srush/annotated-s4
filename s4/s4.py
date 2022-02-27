@@ -35,7 +35,8 @@
 # with explanations from the S4 paper – very much in the style of [the annotated
 # transformer](https://nlp.seas.harvard.edu/2018/04/03/attention.html).
 # Hopefully this combination of code and literate explanations helps you follow the
-# details of the model.
+# details of the model. By the end of the blog you will have an efficient working version of
+# S4 that can operate as a CNN for training, but then convert to an efficient RNN at test time.
 
 # ## Table of Contents
 
