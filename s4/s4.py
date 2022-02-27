@@ -13,6 +13,10 @@
 
 # *Blog Post and [Library](https://github.com/srush/annotated-s4/) by [Sasha Rush](http://rush-nlp.com/) and [Sidd Karamcheti](https://www.siddkaramcheti.com/)*
 #
+#   * v1 - Initial working version released
+#   * v2 - Updated to include RNN code and speech
+
+#
 # The [Structured State Space for Sequence
 # Modeling](https://arxiv.org/abs/2111.00396) (S4) architecture is a new approach to very
 # long-range sequence modeling tasks for vision,
@@ -25,8 +29,7 @@
 
 # The paper is also a refreshing departure from Transformers, taking
 # a very different approach to an important problem-space.  However,
-# several of our colleagues have also noted privately (and on
-# [twitter](https://twitter.com/sleepinyourhat/status/1468037897446121483)!)
+# several of our colleagues have also noted privately 
 # the difficulty of gaining intuition for the model.  This blog post is a first
 # step towards this goal of gaining intuition, linking concrete code implementations
 # with explanations from the S4 paper – very much in the style of [the annotated
@@ -264,9 +267,8 @@ def example_ssm():
         camera.snap()
     anim = camera.animate()
     anim.save("line.gif", dpi=150, writer="imagemagick")
-
-
-# example_ssm()
+if False:
+    example_ssm()
 
 # <img src="line.gif" width="100%">
 
@@ -509,7 +511,10 @@ def log_step_initializer(dt_min=0.001, dt_max=0.1):
 # Note for Torch users: `setup` in Flax is called each time the parameters are updated.
 # This is similar to the
 # [Torch parameterizations](https://pytorch.org/tutorials/intermediate/parametrizations.html).
-
+#
+# As noted above this same layer can be used either as an RNN or a CNN. The argument
+# `decode` determines which path is used. In the case of RNN we cache the previous state
+# at each call in a Flax variable collection called `cache`.
 
 class SSMLayer(nn.Module):
     A: np.DeviceArray  # HiPPO
@@ -568,9 +573,9 @@ def SSMInit(N):
     return partial(cloneLayer(SSMLayer), A=make_HiPPO(N), N=N)
 
 
-# This SSM Layer can then be put into a standard NN. For instance, here
-# we have a Transformer-style stack of residual blocks, each containing the $H$ stacked SSMs.
-
+# This SSM Layer can then be put into a standard NN.
+# Here we add a block that pairs a call to an SSM with
+# dropout and a linear projection.
 
 class SequenceBlock(nn.Module):
     layer: nn.Module
@@ -596,6 +601,10 @@ class SequenceBlock(nn.Module):
         return self.norm(z + x)
 
 
+# We can then stack a bunch of these blocks on top of each other
+# to produce a stack of SSM layers. This can be used for
+# classification or generation in the standard way as a Transformer.
+    
 class StackedModel(nn.Module):
     layer: nn.Module
     d_output: int
@@ -630,6 +639,10 @@ class StackedModel(nn.Module):
             x = np.mean(x, axis=0)
         x = self.decoder(x)
         return nn.log_softmax(x, axis=-1)
+
+# In Flax we add the batch dimension as a lifted transformation.
+# We need to route through several variable collections which
+# handle RNN and parameter caching (described below).
 
 
 BatchStackedModel = nn.vmap(
@@ -1072,11 +1085,11 @@ def test_conversion(N=8, L=16):
 # That was a lot of work, but now the actual model is concise. In fact
 # we are only using four functions:
 
-# 1. `discretize` → Convert SSM to discrete form.
-# 2. `K_gen_DPLR` → Truncated generating function when $\boldsymbol{A}$ is DPLR (S4-part)
-# 3. `conv_from_gen` → Convert generating function to filter
-# 4. `non_circular_convolution` → Run convolution
 
+# 1. `K_gen_DPLR` → Truncated generating function when $\boldsymbol{A}$ is DPLR (S4-part)
+# 2. `conv_from_gen` → Convert generating function to filter
+# 3. `non_circular_convolution` → Run convolution
+# 4. `discretize_DPLR` → Convert SSM to discrete form for RNN.
 
 #  A full S4 Layer is very similar to the simple SSM layer above. The
 #  only difference is in the the computation of $\boldsymbol{K}$.
@@ -1233,36 +1246,7 @@ def init_from_checkpoint(model, checkpoint, init_x):
 
 # Putting this altogether we can sample from the model directly.
 
-MNIST_LEN = 784
-
-
-def DefaultMNist(l):
-    return BatchStackedModel(
-        layer=S4LayerInit(N=64),
-        d_output=256,
-        d_model=512,
-        n_layers=6,
-        l_max=l-1,
-        training=False,
-        decode=True,
-    )
-def DefaultFSDD(l):
-    return BatchStackedModel(
-        layer=S4LayerInit(N=64),
-        d_output=256,
-        d_model=128,
-        n_layers=4,
-        l_max=l-1,
-        training=False,
-        decode=True,
-    )
-
-
-default_train_path = "checkpoints/mnist/s4-d_model=512/best_87"
-default_speech_train_path = "checkpoints/fsdd/s4-d_model=128/best_188"
-
-
-def sample_checkpoint(path, model, length = MNIST_LEN):
+def sample_checkpoint(path, model, length):
     start = np.zeros((1, length, 1))
     print("[*] Initializing from checkpoint %s"%path) 
     params, prime, cache = init_from_checkpoint(
@@ -1270,20 +1254,8 @@ def sample_checkpoint(path, model, length = MNIST_LEN):
     )
     print("[*] Sampling output") 
     return sample(model, params, prime, cache, start, 0, length - 1, rng)
-    
 
-if __name__ == "__main__":
-    import matplotlib.pyplot as plt
-    from torchaudio.transforms import MuLawDecoding
-    import torch
-    import numpy as onp
-    L = 6400
-    out = sample_checkpoint(default_speech_train_path, DefaultFSDD(L), L)
-    transform = MuLawDecoding(quantization_channels=255)
-    out = transform(torch.tensor(onp.asarray(out.reshape(L)[2:])))
-    torch.save(out, "tensor.t")
-    plt.plot(np.arange(L-2), out)
-    plt.savefig("sample.png")
+
 
 # <img src="images/sample.png" width="100%">
 
@@ -1300,17 +1272,16 @@ if __name__ == "__main__":
 # <img src="images/im19.png" width="45%">
 
 
-def sample_mnist_prefix():
+def sample_mnist_prefix(path, model, length):
     import matplotlib.pyplot as plt
     import numpy as onp
     from .data import Datasets
 
-    model = DefaultMNist()
     BATCH = 32
     START = 300
-    start = np.zeros((BATCH, MNIST_LEN, 1))
+    start = np.zeros((BATCH, length, 1))
     params, prime, init_cache = init_from_checkpoint(
-        model, default_train_path, start[:, :-1]
+        model, path, start[:, :-1]
     )
 
     _, testloader, _, _, _ = Datasets["mnist"](bsz=BATCH)
@@ -1330,28 +1301,23 @@ def sample_mnist_prefix():
         )
         cache = vars["cache"].unfreeze()
         out = sample(
-            model, params, prime, cache, cur, START, MNIST_LEN - 1, rng
+            model, params, prime, cache, cur, START, length - 1, rng
         )
         print(j)
 
         # Visualization
         out = out.reshape(BATCH, 28, 28)
         final = onp.zeros((BATCH, 28, 28, 3))
-        final[:, :, :, 0] = out
-        final.reshape(BATCH, 28 * 28, 3)[:, :START, 1] = image.reshape(
-            BATCH, 28 * 28
-        )[:, :START]
-        final.reshape(BATCH, 28 * 28, 3)[:, :start, 2] = image.reshape(
-            BATCH, 28 * 28
-        )[:, :START]
         final2 = onp.zeros((BATCH, 28, 28, 3))
-        final2[:, :, :, 1] = image.reshape(BATCH, 28, 28)
-        final2.reshape(BATCH, 28 * 28, 3)[:, :START, 0] = image.reshape(
-            BATCH, 28 * 28
-        )[:, :START]
-        final2.reshape(BATCH, 28 * 28, 3)[:, :START, 2] = image.reshape(
-            BATCH, 28 * 28
-        )[:, :START]
+        final[:, :, :, 0] = out
+        f = final.reshape(BATCH, 28 * 28, 3)
+        i = image.reshape(BATCH, 28 * 28)
+        f[:, :START, 1] = i[:, :START]
+        f[:, :START, 2] = i[:, :START]
+        f = final2.reshape(BATCH, 28 * 28, 3)
+        final2[:, :, :, 1] = i
+        f[:, :START, 0] = i[:, :START]
+        f[:, :START, 2] = i[:, :START]
         for k in range(BATCH):
             fig, (ax1, ax2) = plt.subplots(ncols=2)
             ax1.set_title("Sampled")
@@ -1363,9 +1329,6 @@ def sample_mnist_prefix():
             fig.savefig("im%d.%d.png" % (j, k))
             print(j)
 
-
-# if __name__ == "__main__":
-#     sample_mnist_prefix()
 
 
 # Next we tried training a model to generate drawings. For this we
