@@ -215,6 +215,7 @@ def create_quickdraw_dataset(bsz=128):
 
     return trainloader, testloader, N_CLASSES, SEQ_LENGTH, IN_DIM
 
+
 # ### FSDD Sequence Modeling
 # **Task**: Predict next wav value given history, in an autoregressive fashion (6400 pixels x 256 values).
 #
@@ -241,11 +242,11 @@ def create_fsdd_dataset(bsz=128):
     )
 
     # Fetch the latest version of FSDD and initialize a generator with those files
-    fsdd = TorchFSDDGenerator("local", "recordings/",  transforms=tf)
+    fsdd = TorchFSDDGenerator("local", "recordings/", transforms=tf)
 
     # Create two Torch datasets for a train-test split from the generator
     train, test = fsdd.train_test_split(test_size=0.1)
-    
+
     # Return data loaders, with the provided batch size
     trainloader = torch.utils.data.DataLoader(
         train, batch_size=bsz, shuffle=True
@@ -255,7 +256,6 @@ def create_fsdd_dataset(bsz=128):
     )
 
     return trainloader, testloader, N_CLASSES, SEQ_LENGTH, IN_DIM
-
 
 
 # ### MNIST Classification

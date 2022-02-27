@@ -29,7 +29,7 @@
 
 # The paper is also a refreshing departure from Transformers, taking
 # a very different approach to an important problem-space.  However,
-# several of our colleagues have also noted privately 
+# several of our colleagues have also noted privately
 # the difficulty of gaining intuition for the model.  This blog post is a first
 # step towards this goal of gaining intuition, linking concrete code implementations
 # with explanations from the S4 paper – very much in the style of [the annotated
@@ -267,6 +267,8 @@ def example_ssm():
         camera.snap()
     anim = camera.animate()
     anim.save("line.gif", dpi=150, writer="imagemagick")
+
+
 if False:
     example_ssm()
 
@@ -516,6 +518,7 @@ def log_step_initializer(dt_min=0.001, dt_max=0.1):
 # `decode` determines which path is used. In the case of RNN we cache the previous state
 # at each call in a Flax variable collection called `cache`.
 
+
 class SSMLayer(nn.Module):
     A: np.DeviceArray  # HiPPO
     N: int
@@ -577,6 +580,7 @@ def SSMInit(N):
 # Here we add a block that pairs a call to an SSM with
 # dropout and a linear projection.
 
+
 class SequenceBlock(nn.Module):
     layer: nn.Module
     l_max: int
@@ -604,7 +608,8 @@ class SequenceBlock(nn.Module):
 # We can then stack a bunch of these blocks on top of each other
 # to produce a stack of SSM layers. This can be used for
 # classification or generation in the standard way as a Transformer.
-    
+
+
 class StackedModel(nn.Module):
     layer: nn.Module
     d_output: int
@@ -639,6 +644,7 @@ class StackedModel(nn.Module):
             x = np.mean(x, axis=0)
         x = self.decoder(x)
         return nn.log_softmax(x, axis=-1)
+
 
 # In Flax we add the batch dimension as a lifted transformation.
 # We need to route through several variable collections which
@@ -682,12 +688,12 @@ BatchStackedModel = nn.vmap(
 
 # Specifically, recall this function here:
 
-
-def K_conv(Ab, Bb, Cb, L):
-    return np.array(
-        [(Cb @ matrix_power(Ab, l) @ Bb).reshape() for l in range(L)]
-    )
-
+# ```python
+# def K_conv(Ab, Bb, Cb, L):
+#    return np.array(
+#        [(Cb @ matrix_power(Ab, l) @ Bb).reshape() for l in range(L)]
+#    )
+# ```
 
 # The contribution of S4 is a stable method for speeding up this particular operation.
 # To do this we are going to focus on the case where the SSM
@@ -1246,15 +1252,13 @@ def init_from_checkpoint(model, checkpoint, init_x):
 
 # Putting this altogether we can sample from the model directly.
 
+
 def sample_checkpoint(path, model, length):
     start = np.zeros((1, length, 1))
-    print("[*] Initializing from checkpoint %s"%path) 
-    params, prime, cache = init_from_checkpoint(
-        model, path, start[:, :-1]
-    )
-    print("[*] Sampling output") 
+    print("[*] Initializing from checkpoint %s" % path)
+    params, prime, cache = init_from_checkpoint(model, path, start[:, :-1])
+    print("[*] Sampling output")
     return sample(model, params, prime, cache, start, 0, length - 1, rng)
-
 
 
 # <img src="images/sample.png" width="100%">
@@ -1280,9 +1284,7 @@ def sample_mnist_prefix(path, model, length):
     BATCH = 32
     START = 300
     start = np.zeros((BATCH, length, 1))
-    params, prime, init_cache = init_from_checkpoint(
-        model, path, start[:, :-1]
-    )
+    params, prime, init_cache = init_from_checkpoint(model, path, start[:, :-1])
 
     _, testloader, _, _, _ = Datasets["mnist"](bsz=BATCH)
     it = iter(testloader)
@@ -1300,9 +1302,7 @@ def sample_mnist_prefix(path, model, length):
             mutable=["cache"],
         )
         cache = vars["cache"].unfreeze()
-        out = sample(
-            model, params, prime, cache, cur, START, length - 1, rng
-        )
+        out = sample(model, params, prime, cache, cur, START, length - 1, rng)
         print(j)
 
         # Visualization
@@ -1328,7 +1328,6 @@ def sample_mnist_prefix(path, model, length):
             ax2.imshow(final2[k] / 256.0)
             fig.savefig("im%d.%d.png" % (j, k))
             print(j)
-
 
 
 # Next we tried training a model to generate drawings. For this we
