@@ -8,7 +8,7 @@ from flax import linen as nn
 from flax.training import checkpoints, train_state
 from tqdm import tqdm
 from .data import Datasets
-from .s4 import BatchStackedModel, S4LayerInit, SSMInit, make_NPLR_HiPPO, discretize
+from .s4 import BatchStackedModel, S4LayerInit, SSMInit
 
 
 # ## Baseline Models
@@ -93,11 +93,9 @@ def create_train_state(
         #
         #   > Solution: Use Optax.multi_transform!
         s4_fn = map_nested_fn(
-            lambda k, _: 
-            "s4"
+            lambda k, _: "s4"
             if k in ["B", "Ct", "D", "log_step"]
-            else ("none" if k in []
-                  else "regular")
+            else ("none" if k in [] else "regular")
         )
         tx = optax.multi_transform(
             {
