@@ -821,22 +821,23 @@ def test_gen_inverse(L=16, N=4):
 
 
 @partial(np.vectorize, signature="(c),(),(c)->()")
-def cauchy_dot(v, omega, lambd, unmat=False):
-    if not unmat:
-        # This is the function we are computing.
-        return (v / (omega - lambd)).sum()
-    else:
-        # Compute the same function in an
-        # unmaterialized/lazy way to save memory.
-        @jax.remat
-        def inner(v2, l):
-            return v2 / (omega - l)
+def cauchy_dot(v, omega, lambd):
+    return (v / (omega - lambd)).sum()
 
-        def s(carry, x):
-            v2, l = x
-            return carry + inner(v2, l), None
 
-        return jax.lax.scan(s, 0.0, (v, lambd))[0]
+@partial(np.vectorize, signature="(c),(),(c)->()")
+def cauchy_dot_unmat(v, omega, lambd):
+    # Compute the same function in an
+    # unmaterialized/lazy way to save memory.
+    @jax.remat
+    def inner(v2, l):
+        return v2 / (omega - l)
+    
+    def s(carry, x):
+        v2, l = x
+        return carry + inner(v2, l), None
+    
+    return jax.lax.scan(s, 0.0, (v, lambd))[0]
 
 
 # While not important for our implementation, it is worth noting
@@ -885,7 +886,10 @@ def K_gen_DPLR(Lambda, p, q, B, Ct, step, unmat=False):
         c = 2.0 / (1.0 + o)
 
         def k(a):
-            return cauchy_dot(a, g, Lambda, unmat)
+            if unmat:
+                return cauchy_dot_unmat(a, g, Lambda)
+            else:
+                return cauchy_dot(a, g, Lambda)
 
         k00 = k(aterm[0] * bterm[0])
         k01 = k(aterm[0] * bterm[1])

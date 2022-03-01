@@ -265,7 +265,7 @@ def create_sc_dataset(bsz=128):
     print("[*] Generating SC Dataset...")
 
     # Constants
-    SEQ_LENGTH, N_CLASSES, IN_DIM = 6400, 256, 1
+    SEQ_LENGTH, N_CLASSES, IN_DIM = 8000, 256, 1
     import os
     from torchaudio.datasets import SPEECHCOMMANDS
     from torchaudio.transforms import MuLawEncoding, Resample
@@ -273,7 +273,7 @@ def create_sc_dataset(bsz=128):
     # # Create a transformation pipeline to apply to the recordings
     tf = transforms.Compose(
         [
-            Resample(16000, 6400),
+            Resample(16000, SEQ_LENGTH),
             MuLawEncoding(quantization_channels=255),
             transforms.Lambda(
                 lambda x: torch.nn.functional.pad(
