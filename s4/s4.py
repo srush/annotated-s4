@@ -839,39 +839,6 @@ def cauchy_dot(v, omega, lambd):
     return (v / (omega - lambd)).sum()
 
 
-# While correct this implementation of the Cauchy Dot is memory intensive.
-# It needs to broadcast together all its components in order to apply the
-# sum reduction. This is analogous to doing a matrix multiply by first
-# broadcasting the product and then summing over the inner dimension.
-
-# In Jax, we can avoid this issue by instead writing it as a `scan`
-# with the sum as the inner loop. This will be slower but more memory
-# efficient.  Naively though, doing this will still require us to
-# materialize the array on the backward pass (gradient of scan). The
-# Jax `remat` keyword tells us to avoid doing that by recalculating
-# the inner term during this step.
-
-# (Note that in the PyTorch implementation of S4 this step is computed
-# using the wonderful [Keops
-# library](https://www.kernel-operations.io/keops/index.html)) which
-# requires an external kernel)
-
-
-@partial(np.vectorize, signature="(c),(),(c)->()")
-def cauchy_dot_unmat(v, omega, lambd):
-    # Compute the same function in an
-    # unmaterialized/lazy way to save memory.
-    @jax.remat
-    def inner(v2, l):
-        return v2 / (omega - l)
-
-    def s(carry, x):
-        v2, l = x
-        return carry + inner(v2, l), None
-
-    return jax.lax.scan(s, 0.0, (v, lambd))[0]
-
-
 # While not important for our implementation, it is worth noting that
 # this is a [Cauchy
 # kernel](https://en.wikipedia.org/wiki/Cauchy_matrix) and is the
@@ -919,8 +886,9 @@ def K_gen_DPLR(Lambda, p, q, B, Ct, step, unmat=False):
         c = 2.0 / (1.0 + o)
 
         def k(a):
+            # Checkpoint this calculation for memory efficiency.
             if unmat:
-                return cauchy_dot_unmat(a, g, Lambda)
+                return jax.remat(cauchy_dot)(a, g, Lambda)
             else:
                 return cauchy_dot(a, g, Lambda)
 
@@ -1149,6 +1117,9 @@ def test_conversion(N=8, L=16):
 # 3. `non_circular_convolution` → Run convolution
 # 4. `discretize_DPLR` → Convert SSM to discrete form for RNN.
 
+
+# ### S4 CNN / RNN Layer
+
 #  A full S4 Layer is very similar to the simple SSM layer above. The
 #  only difference is in the the computation of $\boldsymbol{K}$.
 #  Additionally instead of learning $\boldsymbol{C}$, we learn
@@ -1241,26 +1212,7 @@ def S4LayerInit(N):
     return partial(S4Layer, N=N, A=A, Lambda=Lambda, p=p, q=q, Vc=Vc)
 
 
-# ### Experiments
-
-# Now that we have the model, we can try it out on some MNIST experiments.
-# For these experiments we linearize MNIST and just treat each image as a sequence of
-# pixels.
-
-# The first experiments we ran were on MNIST classification. While
-# not in theory a hard problem, treating MNIST as a linear sequence
-# classification task is a bit strange. However in practice, the model
-# with $H=256$ and four layers seems to get up near 99% right away.
-
-# A more visually interesting task is generating MNIST digits, by predicting entire
-# sequences of pixels! Here, we simply feed in a sequence of pixels into the model and have it
-# predict the next one like language modeling. With a little
-# tweaking, we are able to get the model to an NLL of 0.52 on this
-# task with size 512 and 6 layers (~2m parameters).
-#
-# The metric usually used for this task is *[bits per
-# dimension](https://paperswithcode.com/sota/image-generation-on-mnist)* which is
-# NLL in base 2 for MNIST. A score of 0.52 is ~0.76 BPD which is near PixelCNN++.
+# ### Sampling and Caching
 
 # We can sample from the model using the RNN implementation. Here is
 # what the sampling code looks like. Note that we keep a running cache
@@ -1311,7 +1263,7 @@ def init_from_checkpoint(model, checkpoint, init_x):
     return vars["params"], prime_vars["prime"], vars["cache"]
 
 
-# Putting this altogether we can sample from the model directly.
+# Putting this altogether we can sample from a model directly.
 
 
 def sample_checkpoint(path, model, length):
@@ -1320,6 +1272,28 @@ def sample_checkpoint(path, model, length):
     params, prime, cache = init_from_checkpoint(model, path, start[:, :-1])
     print("[*] Sampling output")
     return sample(model, params, prime, cache, start, 0, length - 1, rng)
+
+
+# ### Experiments: MNIST
+
+# Now that we have the model, we can try it out on some MNIST experiments.
+# For these experiments we linearize MNIST and just treat each image as a sequence of
+# pixels.
+
+# The first experiments we ran were on MNIST classification. While
+# not in theory a hard problem, treating MNIST as a linear sequence
+# classification task is a bit strange. However in practice, the model
+# with $H=256$ and four layers seems to get up near 99% right away.
+
+# A more visually interesting task is generating MNIST digits, by predicting entire
+# sequences of pixels! Here, we simply feed in a sequence of pixels into the model and have it
+# predict the next one like language modeling. With a little
+# tweaking, we are able to get the model to an NLL of 0.52 on this
+# task with size 512 and 6 layers (~2m parameters).
+#
+# The metric usually used for this task is *[bits per
+# dimension](https://paperswithcode.com/sota/image-generation-on-mnist)* which is
+# NLL in base 2 for MNIST. A score of 0.52 is ~0.76 BPD which is near PixelCNN++.
 
 
 # <img src="images/sample.png" width="100%">
@@ -1391,6 +1365,9 @@ def sample_mnist_prefix(path, model, length):
             print(j)
 
 
+# ### Experiments: QuickDraw
+
+
 # Next we tried training a model to generate drawings. For this we
 # used the [QuickDraw
 # dataset](https://github.com/googlecreativelab/quickdraw-dataset).
@@ -1407,6 +1384,9 @@ def sample_mnist_prefix(path, model, length):
 # <img src="images/quickdraw/im4.png" width="45%">
 # <img src="images/quickdraw/im5.png" width="45%">
 # <img src="images/quickdraw/im6.png" width="45%">
+
+
+# ### Experiments: Spoken Digits
 
 # Finally we played with modeling sound waves directly. For these, we
 # use the
