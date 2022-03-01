@@ -481,6 +481,9 @@ def example_legendre(N=8):
     fig.savefig("images/leg.png")
 
 
+if False:
+    example_legendre()
+
 # The red line represents that curve we are approximating,
 # while the black bars represent the values of our hidden state.
 # Each is a coefficient for one element of the Legendre series
@@ -814,7 +817,7 @@ def test_gen_inverse(L=16, N=4):
 # where $c$ is a constant, and $g$ is a function of $z$.
 
 
-# We have effectively replaced an  inverse with a weighted dot product.
+# We have effectively replaced an inverse with a weighted dot product.
 # Let's make a small helper function to compute this weight dot product for use.
 # Here [vectorize](https://jax.readthedocs.io/en/latest/_autosummary/jax.numpy.vectorize.html)
 # is a decorator that let's us broadcast this function automatically,
@@ -825,6 +828,24 @@ def cauchy_dot(v, omega, lambd):
     return (v / (omega - lambd)).sum()
 
 
+# While correct this implementation of the Cauchy Dot is memory intensive.
+# It needs to broadcast together all its components in order to apply the
+# sum reduction. This is analogous to doing a matrix multiply by first
+# broadcasting the product and then summing over the inner dimension.
+
+# In Jax, we can avoid this issue by instead writing it as a `scan`
+# with the sum as the inner loop. This will be slower but more memory
+# efficient.  Naively though, doing this will still require us to
+# materialize the array on the backward pass (gradient of scan). The
+# Jax `remat` keyword tells us to avoid doing that by recalculating
+# the inner term during this step.
+
+# (Note that in the PyTorch implementation of S4 this step is computed
+# using the wonderful [Keops
+# library](https://www.kernel-operations.io/keops/index.html)) which
+# requires an external kernel)
+
+
 @partial(np.vectorize, signature="(c),(),(c)->()")
 def cauchy_dot_unmat(v, omega, lambd):
     # Compute the same function in an
@@ -832,18 +853,19 @@ def cauchy_dot_unmat(v, omega, lambd):
     @jax.remat
     def inner(v2, l):
         return v2 / (omega - l)
-    
+
     def s(carry, x):
         v2, l = x
         return carry + inner(v2, l), None
-    
+
     return jax.lax.scan(s, 0.0, (v, lambd))[0]
 
 
-# While not important for our implementation, it is worth noting
-# that this is a [Cauchy kernel](https://en.wikipedia.org/wiki/Cauchy_matrix)
-# and is the subject of many [fast implementations](https://en.wikipedia.org/wiki/Fast_multipole_method).
-# On a GPU though, it is efficient enough just to compute it directly.
+# While not important for our implementation, it is worth noting that
+# this is a [Cauchy
+# kernel](https://en.wikipedia.org/wiki/Cauchy_matrix) and is the
+# subject of many other [fast
+# implementations](https://en.wikipedia.org/wiki/Fast_multipole_method).
 
 
 # ### Step 3: Diagonal Plus Low-Rank
@@ -1159,7 +1181,7 @@ class S4Layer(nn.Module):
         else:
             # RNN mode, discretize
 
-            # Flax trick to cache discrete form.
+            # Flax trick to cache discrete form during decoding.
             def init_discrete():
                 return discrete_DPLR(
                     self.Lambda,
@@ -1263,14 +1285,17 @@ def sample(model, params, prime, cache, x, start, end, rng):
 def init_from_checkpoint(model, checkpoint, init_x):
     from flax.training import checkpoints
 
+    print("[*] Loading")
     state = checkpoints.restore_checkpoint(checkpoint, None)
     assert "params" in state
+    print("[*] Initializing")
     variables = model.init(rng, init_x)
     vars = {
         "params": state["params"],
         "cache": variables["cache"].unfreeze(),
         "prime": variables["prime"].unfreeze(),
     }
+    print("[*] Priming")
     _, prime_vars = model.apply(vars, init_x, mutable=["prime"])
     return vars["params"], prime_vars["prime"], vars["cache"]
 
@@ -1291,14 +1316,14 @@ def sample_checkpoint(path, model, length):
 # We can also do prefix-samples – given the first 300 pixels, try to complete the image.
 # S4 is on the left, true on the right.
 
-# <img src="images/im12.png" width="45%">
-# <img src="images/im13.png" width="45%">
-# <img src="images/im14.png" width="45%">
-# <img src="images/im15.png" width="45%">
-# <img src="images/im16.png" width="45%">
-# <img src="images/im17.png" width="45%">
-# <img src="images/im18.png" width="45%">
-# <img src="images/im19.png" width="45%">
+# <img src="images/im0.1.png" width="45%">
+# <img src="images/im0.2.png" width="45%">
+# <img src="images/im0.3.png" width="45%">
+# <img src="images/im0.4.png" width="45%">
+# <img src="images/im0.5.png" width="45%">
+# <img src="images/im0.6.png" width="45%">
+# <img src="images/im0.7.png" width="45%">
+# <img src="images/im0.8.png" width="45%">
 
 
 def sample_mnist_prefix(path, model, length):
@@ -1371,6 +1396,100 @@ def sample_mnist_prefix(path, model, length):
 # <img src="images/quickdraw/im4.png" width="45%">
 # <img src="images/quickdraw/im5.png" width="45%">
 # <img src="images/quickdraw/im6.png" width="45%">
+
+# Finally we played with modeling sound waves directly. For these, we
+# use the
+# [Free Spoken Digits Datasets](https://github.com/Jakobovski/free-spoken-digit-dataset)
+# an MNIST like dataset of various speakers reading off digits. We
+# first trained a classification model and found that the approach was
+# able to reach $97\%$ accuracy just from the raw soundwave. Next we
+# trained a generation model to produce the sound wave directly. With
+# $H=512$ the model seems to pick up the data relatively well. This
+# dataset only has around 3000 examples, but the model can produce
+# reasonably good (cherry-picked) continuations. Note these sequences are 6400 steps
+# long at an 8kHz sampling rate, discretized to 256 classes with
+# [Mu Law Encoding](https://en.wikipedia.org/wiki/%CE%9C-law_algorithm).
+
+#
+# <img src='images/speech3.1.png' width='80%'>
+# <audio controls>
+#  <source src='images/sample3.1.wav' type='audio/wav'>
+# </audio>
+# <audio controls>
+#  <source src='images/sample3.1.gold.wav' type='audio/wav'>
+# </audio>
+#
+# <img src='images/speech6.1.png' width='80%'>
+# <audio controls>
+#  <source src='images/sample6.1.wav' type='audio/wav'>
+# </audio>
+# <audio controls>
+#  <source src='images/sample6.1.gold.wav' type='audio/wav'>
+# </audio>
+#
+# <img src='images/speech7.0.png' width='80%'>
+# <audio controls>
+#  <source src='images/sample7.0.wav' type='audio/wav'>
+# </audio>
+# <audio controls>
+#  <source src='images/sample7.0.gold.wav' type='audio/wav'>
+# </audio>
+#
+# <img src='images/speech9.0.png' width='80%'>
+# <audio controls>
+#  <source src='images/sample9.0.wav' type='audio/wav'>
+# </audio>
+# <audio controls>
+#  <source src='images/sample9.0.gold.wav' type='audio/wav'>
+# </audio>
+#
+# <img src='images/speech10.0.png' width='80%'>
+# <audio controls>
+#  <source src='images/sample10.0.wav' type='audio/wav'>
+# </audio>
+# <audio controls>
+#  <source src='images/sample10.0.gold.wav' type='audio/wav'>
+# </audio>
+#
+# <img src='images/speech13.1.png' width='80%'>
+# <audio controls>
+#  <source src='images/sample13.1.wav' type='audio/wav'>
+# </audio>
+# <audio controls>
+#  <source src='images/sample13.1.gold.wav' type='audio/wav'>
+# </audio>
+#
+# <img src='images/speech23.0.png' width='80%'>
+# <audio controls>
+#  <source src='images/sample23.0.wav' type='audio/wav'>
+# </audio>
+# <audio controls>
+#  <source src='images/sample23.0.gold.wav' type='audio/wav'>
+# </audio>
+#
+# <img src='images/speech25.0.png' width='80%'>
+# <audio controls>
+#  <source src='images/sample25.0.wav' type='audio/wav'>
+# </audio>
+# <audio controls>
+#  <source src='images/sample25.0.gold.wav' type='audio/wav'>
+# </audio>
+#
+# <img src='images/speech26.0.png' width='80%'>
+# <audio controls>
+#  <source src='images/sample26.0.wav' type='audio/wav'>
+# </audio>
+# <audio controls>
+#  <source src='images/sample26.0.gold.wav' type='audio/wav'>
+# </audio>
+#
+# <img src='images/speech26.1.png' width='80%'>
+# <audio controls>
+#  <source src='images/sample26.1.wav' type='audio/wav'>
+# </audio>
+# <audio controls>
+#  <source src='images/sample26.1.gold.wav' type='audio/wav'>
+# </audio>
 
 
 # Our [full code base](https://github.com/srush/annotated-s4/) contains
