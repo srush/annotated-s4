@@ -11,10 +11,7 @@
 # <img src="images/hero.png" width="100%"/>
 
 
-# *Blog Post and [Library](https://github.com/srush/annotated-s4/) by [Sasha Rush](http://rush-nlp.com/) and [Sidd Karamcheti](https://www.siddkaramcheti.com/)*
-#
-#   * v1 - Initial working version released
-#   * v2 - Updated to include RNN code and speech
+# *Blog Post and [Library](https://github.com/srush/annotated-s4/) by [Sasha Rush](http://rush-nlp.com/) and [Sidd Karamcheti](https://www.siddkaramcheti.com/)*, v2
 
 #
 # The [Structured State Space for Sequence
@@ -27,22 +24,36 @@
 
 # <img src="images/table.png" width="100%"/>
 
-# The paper is also a refreshing departure from Transformers, taking
-# a very different approach to an important problem-space.  However,
-# several of our colleagues have also noted privately
-# the difficulty of gaining intuition for the model.  This blog post is a first
-# step towards this goal of gaining intuition, linking concrete code implementations
-# with explanations from the S4 paper – very much in the style of [the annotated
+# The paper is also a refreshing departure from Transformers, taking a
+# very different approach to an important problem-space.  However,
+# several of our colleagues have also noted privately the difficulty
+# of gaining intuition for the model.  This blog post is a first step
+# towards this goal of gaining intuition, linking concrete code
+# implementations with explanations from the S4 paper – very much in
+# the style of [the annotated
 # transformer](https://nlp.seas.harvard.edu/2018/04/03/attention.html).
-# Hopefully this combination of code and literate explanations helps you follow the
-# details of the model. By the end of the blog you will have an efficient working version of
-# S4 that can operate as a CNN for training, but then convert to an efficient RNN at test time.
+# Hopefully this combination of code and literate explanations helps
+# you follow the details of the model. By the end of the blog you will
+# have an efficient working version of S4 that can operate as a CNN
+# for training, but then convert to an efficient RNN at test time.  To
+# preview the results, you will be able to generate images from pixels
+# and sounds directly on sound waves on a standard GPU.
+#
+# <center> <img src="images/im0.4.png" width="70%">
+# <img src='images/speech25.0.png' width='80%'>
+# <audio controls>
+#  <source src='images/sample25.0.wav' type='audio/wav'>
+# </audio>
+# <audio controls>
+#  <source src='images/sample25.0.gold.wav' type='audio/wav'>
+# </audio>
+# </center>
 
 # ## Table of Contents
 
-# - Part 1: [State Space Models](#part-1-state-space-models)
-# - Part 2: [Implementing S4](#part-2-implementing-s4)
-# - Part 3: [S4 in Practice](#part-3-s4-in-practice)
+# - Part 1: [State Space Models](#part-1-state-space-models) (Core Idea)
+# - Part 2: [Implementing S4](#part-2-implementing-s4) (Advanced S4 Math for Efficiency)
+# - Part 3: [S4 in Practice](#part-3-s4-in-practice) (Neural Networks)
 
 # Note that this project uses [JAX](https://github.com/google/jax/)
 # with the [Flax](https://github.com/google/flax) NN library.  While
@@ -481,6 +492,9 @@ def example_legendre(N=8):
     fig.savefig("images/leg.png")
 
 
+if False:
+    example_legendre()
+
 # The red line represents that curve we are approximating,
 # while the black bars represent the values of our hidden state.
 # Each is a coefficient for one element of the Legendre series
@@ -814,7 +828,7 @@ def test_gen_inverse(L=16, N=4):
 # where $c$ is a constant, and $g$ is a function of $z$.
 
 
-# We have effectively replaced an  inverse with a weighted dot product.
+# We have effectively replaced an inverse with a weighted dot product.
 # Let's make a small helper function to compute this weight dot product for use.
 # Here [vectorize](https://jax.readthedocs.io/en/latest/_autosummary/jax.numpy.vectorize.html)
 # is a decorator that let's us broadcast this function automatically,
@@ -825,10 +839,44 @@ def cauchy_dot(v, omega, lambd):
     return (v / (omega - lambd)).sum()
 
 
-# While not important for our implementation, it is worth noting
-# that this is a [Cauchy kernel](https://en.wikipedia.org/wiki/Cauchy_matrix)
-# and is the subject of many [fast implementations](https://en.wikipedia.org/wiki/Fast_multipole_method).
-# On a GPU though, it is efficient enough just to compute it directly.
+# While correct this implementation of the Cauchy Dot is memory intensive.
+# It needs to broadcast together all its components in order to apply the
+# sum reduction. This is analogous to doing a matrix multiply by first
+# broadcasting the product and then summing over the inner dimension.
+
+# In Jax, we can avoid this issue by instead writing it as a `scan`
+# with the sum as the inner loop. This will be slower but more memory
+# efficient.  Naively though, doing this will still require us to
+# materialize the array on the backward pass (gradient of scan). The
+# Jax `remat` keyword tells us to avoid doing that by recalculating
+# the inner term during this step.
+
+# (Note that in the PyTorch implementation of S4 this step is computed
+# using the wonderful [Keops
+# library](https://www.kernel-operations.io/keops/index.html)) which
+# requires an external kernel)
+
+
+@partial(np.vectorize, signature="(c),(),(c)->()")
+def cauchy_dot_unmat(v, omega, lambd):
+    # Compute the same function in an
+    # unmaterialized/lazy way to save memory.
+    @jax.remat
+    def inner(v2, l):
+        return v2 / (omega - l)
+
+    def s(carry, x):
+        v2, l = x
+        return carry + inner(v2, l), None
+
+    return jax.lax.scan(s, 0.0, (v, lambd))[0]
+
+
+# While not important for our implementation, it is worth noting that
+# this is a [Cauchy
+# kernel](https://en.wikipedia.org/wiki/Cauchy_matrix) and is the
+# subject of many other [fast
+# implementations](https://en.wikipedia.org/wiki/Fast_multipole_method).
 
 
 # ### Step 3: Diagonal Plus Low-Rank
@@ -862,7 +910,7 @@ def cauchy_dot(v, omega, lambd):
 # The code consists of collecting up the terms and applying 4 weighted dot products,
 
 
-def K_gen_DPLR(Lambda, p, q, B, Ct, step):
+def K_gen_DPLR(Lambda, p, q, B, Ct, step, unmat=False):
     aterm = (Ct.conj().ravel(), q.conj().ravel())
     bterm = (B.ravel(), p.ravel())
 
@@ -871,7 +919,10 @@ def K_gen_DPLR(Lambda, p, q, B, Ct, step):
         c = 2.0 / (1.0 + o)
 
         def k(a):
-            return cauchy_dot(a, g, Lambda)
+            if unmat:
+                return cauchy_dot_unmat(a, g, Lambda)
+            else:
+                return cauchy_dot(a, g, Lambda)
 
         k00 = k(aterm[0] * bterm[0])
         k01 = k(aterm[0] * bterm[1])
@@ -1128,14 +1179,20 @@ class S4Layer(nn.Module):
         if not self.decode:
             # CNN mode, compute kernel.
             K_gen = K_gen_DPLR(
-                self.Lambda, self.p, self.q, self.B, self.Ct, self.step[0]
+                self.Lambda,
+                self.p,
+                self.q,
+                self.B,
+                self.Ct,
+                self.step[0],
+                unmat=self.l_max > 1000,
             )
             self.K = conv_from_gen(K_gen, self.l_max)
 
         else:
             # RNN mode, discretize
 
-            # Flax trick to cache discrete form.
+            # Flax trick to cache discrete form during decoding.
             def init_discrete():
                 return discrete_DPLR(
                     self.Lambda,
@@ -1239,14 +1296,17 @@ def sample(model, params, prime, cache, x, start, end, rng):
 def init_from_checkpoint(model, checkpoint, init_x):
     from flax.training import checkpoints
 
+    print("[*] Loading")
     state = checkpoints.restore_checkpoint(checkpoint, None)
     assert "params" in state
+    print("[*] Initializing")
     variables = model.init(rng, init_x)
     vars = {
         "params": state["params"],
         "cache": variables["cache"].unfreeze(),
         "prime": variables["prime"].unfreeze(),
     }
+    print("[*] Priming")
     _, prime_vars = model.apply(vars, init_x, mutable=["prime"])
     return vars["params"], prime_vars["prime"], vars["cache"]
 
@@ -1267,14 +1327,14 @@ def sample_checkpoint(path, model, length):
 # We can also do prefix-samples – given the first 300 pixels, try to complete the image.
 # S4 is on the left, true on the right.
 
-# <img src="images/im12.png" width="45%">
-# <img src="images/im13.png" width="45%">
-# <img src="images/im14.png" width="45%">
-# <img src="images/im15.png" width="45%">
-# <img src="images/im16.png" width="45%">
-# <img src="images/im17.png" width="45%">
-# <img src="images/im18.png" width="45%">
-# <img src="images/im19.png" width="45%">
+# <img src="images/im0.1.png" width="45%">
+# <img src="images/im0.2.png" width="45%">
+# <img src="images/im0.3.png" width="45%">
+# <img src="images/im0.4.png" width="45%">
+# <img src="images/im0.5.png" width="45%">
+# <img src="images/im0.6.png" width="45%">
+# <img src="images/im0.7.png" width="45%">
+# <img src="images/im0.8.png" width="45%">
 
 
 def sample_mnist_prefix(path, model, length):
@@ -1316,7 +1376,7 @@ def sample_mnist_prefix(path, model, length):
         f[:, :START, 1] = i[:, :START]
         f[:, :START, 2] = i[:, :START]
         f = final2.reshape(BATCH, 28 * 28, 3)
-        final2[:, :, :, 1] = i
+        f[:, :, 1] = i
         f[:, :START, 0] = i[:, :START]
         f[:, :START, 2] = i[:, :START]
         for k in range(BATCH):
@@ -1348,6 +1408,100 @@ def sample_mnist_prefix(path, model, length):
 # <img src="images/quickdraw/im5.png" width="45%">
 # <img src="images/quickdraw/im6.png" width="45%">
 
+# Finally we played with modeling sound waves directly. For these, we
+# use the
+# [Free Spoken Digits Datasets](https://github.com/Jakobovski/free-spoken-digit-dataset)
+# an MNIST like dataset of various speakers reading off digits. We
+# first trained a classification model and found that the approach was
+# able to reach $97\%$ accuracy just from the raw soundwave. Next we
+# trained a generation model to produce the sound wave directly. With
+# $H=512$ the model seems to pick up the data relatively well. This
+# dataset only has around 3000 examples, but the model can produce
+# reasonably good (cherry-picked) continuations. Note these sequences are 6400 steps
+# long at an 8kHz sampling rate, discretized to 256 classes with
+# [Mu Law Encoding](https://en.wikipedia.org/wiki/%CE%9C-law_algorithm).
+
+# <center>
+# <img src='images/speech3.1.png' width='100%'>
+# <audio controls>
+#  <source src='images/sample3.1.wav' type='audio/wav'>
+# </audio>
+# <audio controls>
+#  <source src='images/sample3.1.gold.wav' type='audio/wav'>
+# </audio>
+#
+# <img src='images/speech6.1.png' width='100%'>
+# <audio controls>
+#  <source src='images/sample6.1.wav' type='audio/wav'>
+# </audio>
+# <audio controls>
+#  <source src='images/sample6.1.gold.wav' type='audio/wav'>
+# </audio>
+#
+# <img src='images/speech7.0.png' width='100%'>
+# <audio controls>
+#  <source src='images/sample7.0.wav' type='audio/wav'>
+# </audio>
+# <audio controls>
+#  <source src='images/sample7.0.gold.wav' type='audio/wav'>
+# </audio>
+#
+# <img src='images/speech9.0.png' width='100%'>
+# <audio controls>
+#  <source src='images/sample9.0.wav' type='audio/wav'>
+# </audio>
+# <audio controls>
+#  <source src='images/sample9.0.gold.wav' type='audio/wav'>
+# </audio>
+#
+# <img src='images/speech10.0.png' width='100%'>
+# <audio controls>
+#  <source src='images/sample10.0.wav' type='audio/wav'>
+# </audio>
+# <audio controls>
+#  <source src='images/sample10.0.gold.wav' type='audio/wav'>
+# </audio>
+#
+# <img src='images/speech13.1.png' width='100%'>
+# <audio controls>
+#  <source src='images/sample13.1.wav' type='audio/wav'>
+# </audio>
+# <audio controls>
+#  <source src='images/sample13.1.gold.wav' type='audio/wav'>
+# </audio>
+#
+# <img src='images/speech23.0.png' width='100%'>
+# <audio controls>
+#  <source src='images/sample23.0.wav' type='audio/wav'>
+# </audio>
+# <audio controls>
+#  <source src='images/sample23.0.gold.wav' type='audio/wav'>
+# </audio>
+#
+# <img src='images/speech25.0.png' width='100%'>
+# <audio controls>
+#  <source src='images/sample25.0.wav' type='audio/wav'>
+# </audio>
+# <audio controls>
+#  <source src='images/sample25.0.gold.wav' type='audio/wav'>
+# </audio>
+#
+# <img src='images/speech26.0.png' width='100%'>
+# <audio controls>
+#  <source src='images/sample26.0.wav' type='audio/wav'>
+# </audio>
+# <audio controls>
+#  <source src='images/sample26.0.gold.wav' type='audio/wav'>
+# </audio>
+#
+# <img src='images/speech26.1.png' width='100%'>
+# <audio controls>
+#  <source src='images/sample26.1.wav' type='audio/wav'>
+# </audio>
+# <audio controls>
+#  <source src='images/sample26.1.gold.wav' type='audio/wav'>
+# </audio>
+# </center>
 
 # Our [full code base](https://github.com/srush/annotated-s4/) contains
 # more examples and infrastructure for training models for generations and
@@ -1372,5 +1526,6 @@ def sample_mnist_prefix(path, model, length):
 # [paper](https://arxiv.org/abs/2111.00396) and
 # [codebase](https://github.com/HazyResearch/state-spaces). We're also grateful for Conner Vercellino and
 # Laurel Orr for providing helpful feedback on this post.
+
 #
 # / Cheers – Sasha & Sidd
