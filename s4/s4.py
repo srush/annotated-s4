@@ -11,10 +11,7 @@
 # <img src="images/hero.png" width="100%"/>
 
 
-# *Blog Post and [Library](https://github.com/srush/annotated-s4/) by [Sasha Rush](http://rush-nlp.com/) and [Sidd Karamcheti](https://www.siddkaramcheti.com/)*
-#
-#   * v1 - Initial working version released
-#   * v2 - Updated to include RNN code and speech
+# *Blog Post and [Library](https://github.com/srush/annotated-s4/) by [Sasha Rush](http://rush-nlp.com/) and [Sidd Karamcheti](https://www.siddkaramcheti.com/)*, v2
 
 #
 # The [Structured State Space for Sequence
@@ -27,22 +24,36 @@
 
 # <img src="images/table.png" width="100%"/>
 
-# The paper is also a refreshing departure from Transformers, taking
-# a very different approach to an important problem-space.  However,
-# several of our colleagues have also noted privately
-# the difficulty of gaining intuition for the model.  This blog post is a first
-# step towards this goal of gaining intuition, linking concrete code implementations
-# with explanations from the S4 paper – very much in the style of [the annotated
+# The paper is also a refreshing departure from Transformers, taking a
+# very different approach to an important problem-space.  However,
+# several of our colleagues have also noted privately the difficulty
+# of gaining intuition for the model.  This blog post is a first step
+# towards this goal of gaining intuition, linking concrete code
+# implementations with explanations from the S4 paper – very much in
+# the style of [the annotated
 # transformer](https://nlp.seas.harvard.edu/2018/04/03/attention.html).
-# Hopefully this combination of code and literate explanations helps you follow the
-# details of the model. By the end of the blog you will have an efficient working version of
-# S4 that can operate as a CNN for training, but then convert to an efficient RNN at test time.
+# Hopefully this combination of code and literate explanations helps
+# you follow the details of the model. By the end of the blog you will
+# have an efficient working version of S4 that can operate as a CNN
+# for training, but then convert to an efficient RNN at test time.  To
+# preview the results, you will be able to generate images from pixels
+# and sounds directly on sound waves on a standard GPU.
+#
+# <center> <img src="images/im0.4.png" width="70%">
+# <img src='images/speech25.0.png' width='80%'>
+# <audio controls>
+#  <source src='images/sample25.0.wav' type='audio/wav'>
+# </audio>
+# <audio controls>
+#  <source src='images/sample25.0.gold.wav' type='audio/wav'>
+# </audio>
+# </center>
 
 # ## Table of Contents
 
-# - Part 1: [State Space Models](#part-1-state-space-models)
-# - Part 2: [Implementing S4](#part-2-implementing-s4)
-# - Part 3: [S4 in Practice](#part-3-s4-in-practice)
+# - Part 1: [State Space Models](#part-1-state-space-models) (Core Idea)
+# - Part 2: [Implementing S4](#part-2-implementing-s4) (Advanced S4 Math for Efficiency)
+# - Part 3: [S4 in Practice](#part-3-s4-in-practice) (Neural Networks)
 
 # Note that this project uses [JAX](https://github.com/google/jax/)
 # with the [Flax](https://github.com/google/flax) NN library.  While
@@ -1410,8 +1421,8 @@ def sample_mnist_prefix(path, model, length):
 # long at an 8kHz sampling rate, discretized to 256 classes with
 # [Mu Law Encoding](https://en.wikipedia.org/wiki/%CE%9C-law_algorithm).
 
-#
-# <img src='images/speech3.1.png' width='80%'>
+# <center>
+# <img src='images/speech3.1.png' width='100%'>
 # <audio controls>
 #  <source src='images/sample3.1.wav' type='audio/wav'>
 # </audio>
@@ -1419,7 +1430,7 @@ def sample_mnist_prefix(path, model, length):
 #  <source src='images/sample3.1.gold.wav' type='audio/wav'>
 # </audio>
 #
-# <img src='images/speech6.1.png' width='80%'>
+# <img src='images/speech6.1.png' width='100%'>
 # <audio controls>
 #  <source src='images/sample6.1.wav' type='audio/wav'>
 # </audio>
@@ -1427,7 +1438,7 @@ def sample_mnist_prefix(path, model, length):
 #  <source src='images/sample6.1.gold.wav' type='audio/wav'>
 # </audio>
 #
-# <img src='images/speech7.0.png' width='80%'>
+# <img src='images/speech7.0.png' width='100%'>
 # <audio controls>
 #  <source src='images/sample7.0.wav' type='audio/wav'>
 # </audio>
@@ -1435,7 +1446,7 @@ def sample_mnist_prefix(path, model, length):
 #  <source src='images/sample7.0.gold.wav' type='audio/wav'>
 # </audio>
 #
-# <img src='images/speech9.0.png' width='80%'>
+# <img src='images/speech9.0.png' width='100%'>
 # <audio controls>
 #  <source src='images/sample9.0.wav' type='audio/wav'>
 # </audio>
@@ -1443,7 +1454,7 @@ def sample_mnist_prefix(path, model, length):
 #  <source src='images/sample9.0.gold.wav' type='audio/wav'>
 # </audio>
 #
-# <img src='images/speech10.0.png' width='80%'>
+# <img src='images/speech10.0.png' width='100%'>
 # <audio controls>
 #  <source src='images/sample10.0.wav' type='audio/wav'>
 # </audio>
@@ -1451,7 +1462,7 @@ def sample_mnist_prefix(path, model, length):
 #  <source src='images/sample10.0.gold.wav' type='audio/wav'>
 # </audio>
 #
-# <img src='images/speech13.1.png' width='80%'>
+# <img src='images/speech13.1.png' width='100%'>
 # <audio controls>
 #  <source src='images/sample13.1.wav' type='audio/wav'>
 # </audio>
@@ -1459,7 +1470,7 @@ def sample_mnist_prefix(path, model, length):
 #  <source src='images/sample13.1.gold.wav' type='audio/wav'>
 # </audio>
 #
-# <img src='images/speech23.0.png' width='80%'>
+# <img src='images/speech23.0.png' width='100%'>
 # <audio controls>
 #  <source src='images/sample23.0.wav' type='audio/wav'>
 # </audio>
@@ -1467,7 +1478,7 @@ def sample_mnist_prefix(path, model, length):
 #  <source src='images/sample23.0.gold.wav' type='audio/wav'>
 # </audio>
 #
-# <img src='images/speech25.0.png' width='80%'>
+# <img src='images/speech25.0.png' width='100%'>
 # <audio controls>
 #  <source src='images/sample25.0.wav' type='audio/wav'>
 # </audio>
@@ -1475,7 +1486,7 @@ def sample_mnist_prefix(path, model, length):
 #  <source src='images/sample25.0.gold.wav' type='audio/wav'>
 # </audio>
 #
-# <img src='images/speech26.0.png' width='80%'>
+# <img src='images/speech26.0.png' width='100%'>
 # <audio controls>
 #  <source src='images/sample26.0.wav' type='audio/wav'>
 # </audio>
@@ -1483,14 +1494,14 @@ def sample_mnist_prefix(path, model, length):
 #  <source src='images/sample26.0.gold.wav' type='audio/wav'>
 # </audio>
 #
-# <img src='images/speech26.1.png' width='80%'>
+# <img src='images/speech26.1.png' width='100%'>
 # <audio controls>
 #  <source src='images/sample26.1.wav' type='audio/wav'>
 # </audio>
 # <audio controls>
 #  <source src='images/sample26.1.gold.wav' type='audio/wav'>
 # </audio>
-
+# </center>
 
 # Our [full code base](https://github.com/srush/annotated-s4/) contains
 # more examples and infrastructure for training models for generations and
@@ -1515,5 +1526,6 @@ def sample_mnist_prefix(path, model, length):
 # [paper](https://arxiv.org/abs/2111.00396) and
 # [codebase](https://github.com/HazyResearch/state-spaces). We're also grateful for Conner Vercellino and
 # Laurel Orr for providing helpful feedback on this post.
+
 #
 # / Cheers – Sasha & Sidd
