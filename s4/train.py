@@ -8,7 +8,7 @@ from flax import linen as nn
 from flax.training import checkpoints, train_state
 from tqdm import tqdm
 from .data import Datasets
-from .s4 import BatchSeqModel, S4LayerInit, SSMInit
+from .s4 import BatchStackedModel, S4LayerInit, SSMInit
 
 
 try:
@@ -84,7 +84,7 @@ def create_train_state(
             transition_steps=int(0.7 * total_steps),
         )
 
-    # S4 uses a Fixed LR = 1e-3 with NO weight decay for the S4 Matrices, higher LR elsewhere
+    # # S4 uses a Fixed LR = 1e-3 with NO weight decay for the S4 Matrices, higher LR elsewhere
     if "s4" in model_name:
         # Note for Debugging... this is all undocumented and so weird. The following links are helpful...
         #
@@ -101,11 +101,12 @@ def create_train_state(
         #   > Solution: Use Optax.multi_transform!
         s4_fn = map_nested_fn(
             lambda k, _: "s4"
-            if k in ["B", "C", "Ct", "D", "log_step"]
-            else "regular"
+            if k in ["B", "Ct", "D", "log_step"]
+            else ("none" if k in [] else "regular")
         )
         tx = optax.multi_transform(
             {
+                "none": optax.sgd(learning_rate=0.0),
                 "s4": optax.adam(learning_rate=1e-3),
                 "regular": optax.adamw(learning_rate=lr, weight_decay=0.01),
             },
@@ -309,7 +310,7 @@ def example_train(
     print(f"[*] Starting `{model}` Training on `{dataset}` =>> Initializing...")
 
     model_cls = partial(
-        BatchSeqModel,
+        BatchStackedModel,
         layer=model_cls,
         d_model=d_model,
         d_output=n_classes,

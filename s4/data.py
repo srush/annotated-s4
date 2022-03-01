@@ -106,7 +106,6 @@ def create_sin_ax_b_dataset(n_examples=20000, bsz=128):
 # ### MNIST Sequence Modeling
 # **Task**: Predict next pixel value given history, in an autoregressive fashion (784 pixels x 256 values).
 #
-# While we train on full sequences, generations should probably condition on first 10-25% of image.
 def create_mnist_dataset(bsz=128):
     print("[*] Generating MNIST Sequence Modeling Dataset...")
 
@@ -217,6 +216,48 @@ def create_quickdraw_dataset(bsz=128):
     return trainloader, testloader, N_CLASSES, SEQ_LENGTH, IN_DIM
 
 
+# ### FSDD Sequence Modeling
+# **Task**: Predict next wav value given history, in an autoregressive fashion (6400 pixels x 256 values).
+#
+def create_fsdd_dataset(bsz=128):
+    print("[*] Generating FSDD Dataset...")
+
+    # Constants
+    SEQ_LENGTH, N_CLASSES, IN_DIM = 6400, 256, 1
+
+    from torchaudio.transforms import MuLawEncoding
+    from torchfsdd import TorchFSDDGenerator, TrimSilence
+
+    # Create a transformation pipeline to apply to the recordings
+    tf = transforms.Compose(
+        [
+            TrimSilence(threshold=1e-6),
+            MuLawEncoding(quantization_channels=255),
+            transforms.Lambda(
+                lambda x: torch.nn.functional.pad(
+                    x.view(-1), (0, 6400 - x.shape[0]), "constant", 255
+                ).view(-1, 1)
+            ),
+        ]
+    )
+
+    # Fetch the latest version of FSDD and initialize a generator with those files
+    fsdd = TorchFSDDGenerator("local", "recordings/", transforms=tf)
+
+    # Create two Torch datasets for a train-test split from the generator
+    train, test = fsdd.train_test_split(test_size=0.1)
+
+    # Return data loaders, with the provided batch size
+    trainloader = torch.utils.data.DataLoader(
+        train, batch_size=bsz, shuffle=True
+    )
+    testloader = torch.utils.data.DataLoader(
+        test, batch_size=bsz, shuffle=False
+    )
+
+    return trainloader, testloader, N_CLASSES, SEQ_LENGTH, IN_DIM
+
+
 # ### MNIST Classification
 # **Task**: Predict MNIST class given sequence model over pixels (784 pixels => 10 classes).
 def create_mnist_classification_dataset(bsz=128):
@@ -286,11 +327,54 @@ def create_cifar_classification_dataset(bsz=128):
     return trainloader, testloader, N_CLASSES, SEQ_LENGTH, IN_DIM
 
 
+# ### FSDD Classification
+# **Task**: Predict FSDD class given sequence model over pixels (6400 wav => 10 classes).
+def create_fsdd_classification_dataset(bsz=128):
+    print("[*] Generating FSDD Classification Dataset...")
+
+    # Constants
+    SEQ_LENGTH, N_CLASSES, IN_DIM = 6400, 10, 1
+
+    from torchaudio.transforms import MuLawEncoding
+    from torchfsdd import TorchFSDDGenerator, TrimSilence
+
+    # Create a transformation pipeline to apply to the recordings
+    tf = transforms.Compose(
+        [
+            TrimSilence(threshold=1e-6),
+            MuLawEncoding(quantization_channels=512),
+            transforms.Lambda(
+                lambda x: torch.nn.functional.pad(
+                    x, (0, 6400 - x.shape[0])
+                ).view(-1, 1)
+            ),
+        ]
+    )
+
+    # Fetch the latest version of FSDD and initialize a generator with those files
+    fsdd = TorchFSDDGenerator(version="master", transforms=tf)
+
+    # Create two Torch datasets for a train-test split from the generator
+    train, test = fsdd.train_test_split(test_size=0.1)
+
+    # Return data loaders, with the provided batch size
+    trainloader = torch.utils.data.DataLoader(
+        train, batch_size=bsz, shuffle=True
+    )
+    testloader = torch.utils.data.DataLoader(
+        test, batch_size=bsz, shuffle=False
+    )
+
+    return trainloader, testloader, N_CLASSES, SEQ_LENGTH, IN_DIM
+
+
 Datasets = {
     "mnist": create_mnist_dataset,
     "quickdraw": create_quickdraw_dataset,
+    "fsdd": create_fsdd_dataset,
     "sin": create_sin_x_dataset,
     "sin_noise": create_sin_ax_b_dataset,
     "mnist-classification": create_mnist_classification_dataset,
+    "fsdd-classification": create_fsdd_classification_dataset,
     "cifar-classification": create_cifar_classification_dataset,
 }
