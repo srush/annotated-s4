@@ -821,8 +821,22 @@ def test_gen_inverse(L=16, N=4):
 
 
 @partial(np.vectorize, signature="(c),(),(c)->()")
-def cauchy_dot(v, omega, lambd):
-    return (v / (omega - lambd)).sum()
+def cauchy_dot(v, omega, lambd, unmat=False):
+    if not unmat:
+        # This is the function we are computing.
+        return (v / (omega - lambd)).sum()
+    else:
+        # Compute the same function in an
+        # unmaterialized/lazy way to save memory.
+        @jax.remat
+        def inner(v2, l):
+            return v2 / (omega - l)
+
+        def s(carry, x):
+            v2, l = x
+            return carry + inner(v2, l), None
+
+        return jax.lax.scan(s, 0.0, (v, lambd))[0]
 
 
 # While not important for our implementation, it is worth noting
@@ -862,7 +876,7 @@ def cauchy_dot(v, omega, lambd):
 # The code consists of collecting up the terms and applying 4 weighted dot products,
 
 
-def K_gen_DPLR(Lambda, p, q, B, Ct, step):
+def K_gen_DPLR(Lambda, p, q, B, Ct, step, unmat=False):
     aterm = (Ct.conj().ravel(), q.conj().ravel())
     bterm = (B.ravel(), p.ravel())
 
@@ -871,7 +885,7 @@ def K_gen_DPLR(Lambda, p, q, B, Ct, step):
         c = 2.0 / (1.0 + o)
 
         def k(a):
-            return cauchy_dot(a, g, Lambda)
+            return cauchy_dot(a, g, Lambda, unmat)
 
         k00 = k(aterm[0] * bterm[0])
         k01 = k(aterm[0] * bterm[1])
@@ -1128,7 +1142,13 @@ class S4Layer(nn.Module):
         if not self.decode:
             # CNN mode, compute kernel.
             K_gen = K_gen_DPLR(
-                self.Lambda, self.p, self.q, self.B, self.Ct, self.step[0]
+                self.Lambda,
+                self.p,
+                self.q,
+                self.B,
+                self.Ct,
+                self.step[0],
+                unmat=self.l_max > 1000,
             )
             self.K = conv_from_gen(K_gen, self.l_max)
 
@@ -1316,7 +1336,7 @@ def sample_mnist_prefix(path, model, length):
         f[:, :START, 1] = i[:, :START]
         f[:, :START, 2] = i[:, :START]
         f = final2.reshape(BATCH, 28 * 28, 3)
-        final2[:, :, :, 1] = i
+        f[:, :, 1] = i
         f[:, :START, 0] = i[:, :START]
         f[:, :START, 2] = i[:, :START]
         for k in range(BATCH):

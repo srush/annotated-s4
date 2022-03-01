@@ -235,7 +235,7 @@ def create_fsdd_dataset(bsz=128):
             MuLawEncoding(quantization_channels=255),
             transforms.Lambda(
                 lambda x: torch.nn.functional.pad(
-                    x.view(-1), (0, 6400 - x.shape[0]), "constant", 255
+                    x.view(-1), (0, SEQ_LENGTH - x.shape[0]), "constant", 255
                 ).view(-1, 1)
             ),
         ]
@@ -253,6 +253,103 @@ def create_fsdd_dataset(bsz=128):
     )
     testloader = torch.utils.data.DataLoader(
         test, batch_size=bsz, shuffle=False
+    )
+
+    return trainloader, testloader, N_CLASSES, SEQ_LENGTH, IN_DIM
+
+
+# ### Speech Commands Sequence Modeling
+# **Task**: Predict next wav value given history, in an autoregressive fashion (8000 samples x 256 values).
+#
+def create_sc_dataset(bsz=128):
+    print("[*] Generating SC Dataset...")
+
+    # Constants
+    SEQ_LENGTH, N_CLASSES, IN_DIM = 6400, 256, 1
+    import os
+    from torchaudio.datasets import SPEECHCOMMANDS
+    from torchaudio.transforms import MuLawEncoding, Resample
+
+    # # Create a transformation pipeline to apply to the recordings
+    tf = transforms.Compose(
+        [
+            Resample(16000, 6400),
+            MuLawEncoding(quantization_channels=255),
+            transforms.Lambda(
+                lambda x: torch.nn.functional.pad(
+                    x.view(-1),
+                    (0, SEQ_LENGTH - x.view(-1).shape[0]),
+                    "constant",
+                    255,
+                ).view(-1, 1)
+            ),
+        ]
+    )
+
+    class SubsetSC(SPEECHCOMMANDS):
+        def __init__(self, subset: str = None):
+            super().__init__("./", download=True)
+            digits = [
+                "zero",
+                "one",
+                "two",
+                "three",
+                "four",
+                "five",
+                "six",
+                "seven",
+                "eight",
+                "nine",
+            ]
+
+            def load_list(filename):
+                filepath = os.path.join(self._path, filename)
+                with open(filepath) as fileobj:
+                    return [
+                        os.path.join(self._path, line.strip())
+                        for line in fileobj
+                        if line.split("/")[0] in digits
+                    ]
+
+            if subset == "validation":
+                self._walker = load_list("validation_list.txt")
+            elif subset == "testing":
+                self._walker = load_list("testing_list.txt")
+            elif subset == "training":
+                excludes = load_list("validation_list.txt") + load_list(
+                    "testing_list.txt"
+                )
+                excludes = set(excludes)
+                self._walker = [
+                    w
+                    for w in self._walker
+                    if w not in excludes
+                    if w.split("/")[-2] in digits
+                ]
+
+        def __getitem__(self, n):
+            (
+                waveform,
+                sample_rate,
+                label,
+                speaker_id,
+                utterance_number,
+            ) = super().__getitem__(n)
+            out = tf(waveform)
+            return out, 0
+
+    # Create training and testing split of the data. We do not use validation in this tutorial.
+    train_set = SubsetSC("training")
+    test_set = SubsetSC("testing")
+
+    waveform, label = train_set[0]
+    print(waveform.shape, label)
+    # Return data loaders, with the provided batch size
+    trainloader = torch.utils.data.DataLoader(
+        train_set, batch_size=bsz, shuffle=True
+    )
+    testloader = torch.utils.data.DataLoader(
+        test_set, batch_size=bsz, shuffle=False
     )
 
     return trainloader, testloader, N_CLASSES, SEQ_LENGTH, IN_DIM
@@ -372,6 +469,7 @@ Datasets = {
     "mnist": create_mnist_dataset,
     "quickdraw": create_quickdraw_dataset,
     "fsdd": create_fsdd_dataset,
+    "sc": create_sc_dataset,
     "sin": create_sin_x_dataset,
     "sin_noise": create_sin_ax_b_dataset,
     "mnist-classification": create_mnist_classification_dataset,
