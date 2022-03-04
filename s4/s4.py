@@ -961,7 +961,7 @@ def test_gen_dplr(L=16, N=4):
     # Compare to the DPLR generating function approach.
     Ct = (I - matrix_power(Ab, L)).conj().T @ Cb.ravel()
     b = conv_from_gen(K_gen_DPLR(Lambda, p, q, B, Ct, step=1.0 / L), L)
-    assert np.allclose(a, b)
+    assert np.allclose(a.real, b.real)
 
 
 # ### Diagonal Plus Low-Rank RNN.
