@@ -372,8 +372,8 @@ def K_conv(Ab, Bb, Cb, L):
 
 
 # We can compute the result of applying this filter either with a standard direct convolution or
-# with a padded (non-circular) [Fast Fourier Transform (FFT)](https://en.wikipedia.org/wiki/Convolution_theorem).
-# As the length gets longer the second method will be more efficient,
+# by using convolution theorem with [Fast Fourier Transform (FFT)](https://en.wikipedia.org/wiki/Convolution_theorem). The discrete convolution theorem - for circular convolution of two sequences - allows us to efficiently calculate the output of convolution by first multiplying FFTs of the input sequences and then applying an inverse FFT. To utilize this theorem for non-circular convolutions as in our case, we need to pad the input sequences with zeros, and then unpad the output sequence.
+# As the length gets longer this FFT method will be more efficient than the direct convolution,
 
 
 def non_circular_convolution(u, K, nofft=False):
