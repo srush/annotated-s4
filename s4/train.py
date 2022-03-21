@@ -8,8 +8,15 @@ from flax import linen as nn
 from flax.training import checkpoints, train_state
 from tqdm import tqdm
 from .data import Datasets
-from .s4 import NaiveSSMInit, S4LayerInit
+from .s4 import BatchStackedModel, S4LayerInit, SSMInit
 
+
+try:
+    import wandb
+
+    assert hasattr(wandb, "__version__")  # verify package import not local dir
+except (ImportError, AssertionError):
+    wandb = None
 
 # ## Baseline Models
 #
@@ -62,7 +69,7 @@ def create_train_state(
     init_rng, dropout_rng = jax.random.split(rng, num=2)
     params = model.init(
         {"params": init_rng, "dropout": dropout_rng},
-        np.ones((bsz, seq_len - 1, in_dim)),
+        np.ones((bsz, seq_len, in_dim)),
     )[
         "params"
     ].unfreeze()  # Note: Added immediate `unfreeze()` to play well w/ Optax. See below!
@@ -77,7 +84,7 @@ def create_train_state(
             transition_steps=int(0.7 * total_steps),
         )
 
-    # S4 uses a Fixed LR = 1e-3 with NO weight decay for the S4 Matrices, higher LR elsewhere
+    # # S4 uses a Fixed LR = 1e-3 with NO weight decay for the S4 Matrices, higher LR elsewhere
     if "s4" in model_name:
         # Note for Debugging... this is all undocumented and so weird. The following links are helpful...
         #
@@ -93,10 +100,13 @@ def create_train_state(
         #
         #   > Solution: Use Optax.multi_transform!
         s4_fn = map_nested_fn(
-            lambda k, _: "s4" if k in ["B", "C", "Ct", "D", "log_step"] else "regular"
+            lambda k, _: "s4"
+            if k in ["B", "Ct", "D", "log_step"]
+            else ("none" if k in [] else "regular")
         )
         tx = optax.multi_transform(
             {
+                "none": optax.sgd(learning_rate=0.0),
                 "s4": optax.adam(learning_rate=1e-3),
                 "regular": optax.adamw(learning_rate=lr, weight_decay=0.01),
             },
@@ -106,7 +116,9 @@ def create_train_state(
     else:
         tx = optax.adamw(learning_rate=lr, weight_decay=0.01)
 
-    return train_state.TrainState.create(apply_fn=model.apply, params=params, tx=tx)
+    return train_state.TrainState.create(
+        apply_fn=model.apply, params=params, tx=tx
+    )
 
 
 # We also use this opportunity to write generic train_epoch and validation functions. These functions generally
@@ -123,7 +135,12 @@ def train_epoch(state, rng, model, trainloader, classification=False):
         labels = np.array(labels.numpy())  # Not the most efficient...
         rng, drop_rng = jax.random.split(rng)
         state, loss = train_step(
-            state, drop_rng, inputs, labels, model, classification=classification
+            state,
+            drop_rng,
+            inputs,
+            labels,
+            model,
+            classification=classification,
         )
         batch_losses.append(loss)
 
@@ -173,17 +190,25 @@ class FeedForwardModel(nn.Module):
 
 
 @partial(jax.jit, static_argnums=(4, 5))
-def train_step(state, rng, batch_inputs, batch_labels, model, classification=False):
+def train_step(
+    state, rng, batch_inputs, batch_labels, model, classification=False
+):
     def loss_fn(params):
-        logits, mod_vars = model.apply(
-            {"params": params},
-            batch_inputs[:, :-1],
-            rngs={"dropout": rng},
-            mutable=["intermediates"],
-        )
         if classification:
+            logits, mod_vars = model.apply(
+                {"params": params},
+                batch_inputs,
+                rngs={"dropout": rng},
+                mutable=["intermediates"],
+            )
             loss = np.mean(cross_entropy_loss(logits, batch_labels))
         else:
+            logits, mod_vars = model.apply(
+                {"params": params},
+                batch_inputs[:, :-1],
+                rngs={"dropout": rng},
+                mutable=["intermediates"],
+            )
             loss = np.mean(cross_entropy_loss(logits, batch_inputs[:, 1:, 0]))
         return loss, logits
 
@@ -195,11 +220,12 @@ def train_step(state, rng, batch_inputs, batch_labels, model, classification=Fal
 
 @partial(jax.jit, static_argnums=(3, 4))
 def eval_step(batch_inputs, batch_labels, params, model, classification=False):
-    logits = model.apply({"params": params}, batch_inputs[:, :-1])
     if classification:
+        logits = model.apply({"params": params}, batch_inputs)
         loss = np.mean(cross_entropy_loss(logits, batch_labels))
         acc = np.mean(compute_accuracy(logits, batch_labels))
     else:
+        logits = model.apply({"params": params}, batch_inputs[:, :-1])
         loss = np.mean(cross_entropy_loss(logits, batch_inputs[:, 1:, 0]))
         acc = np.mean(compute_accuracy(logits, batch_inputs[:, 1:, 0]))
     return loss, acc
@@ -223,104 +249,14 @@ class LSTMRecurrentModel(nn.Module):
             split_rngs={"params": False},
         )
         dummy_rng = jax.random.PRNGKey(0)
-        self.init_h = nn.OptimizedLSTMCell.initialize_carry(dummy_rng, (), self.d_model)
+        self.init_h = nn.OptimizedLSTMCell.initialize_carry(
+            dummy_rng, (), self.d_model
+        )
         self.LSTM = LSTM(name="lstm_cell")
 
     def __call__(self, xs):
         return self.LSTM(self.init_h, xs)[1]
 
-
-class SeqInternal(nn.Module):
-    layer: nn.Module
-    d_model: int
-    l_max: int
-    dropout: float = 0.2
-    training: bool = True
-
-    def setup(self):
-        self.seq = self.layer(d_model=self.d_model, l_max=self.l_max)
-        self.norm = nn.LayerNorm()
-        self.out = nn.Dense(self.d_model)
-
-        # Dropout2D is critical... we want to drop entire channels --> so share mask over 0th (L) dim
-        self.drop1 = nn.Dropout(
-            self.dropout,
-            broadcast_dims=[0],
-            deterministic=not self.training,
-        )
-        self.drop2 = nn.Dropout(
-            self.dropout,
-            broadcast_dims=[0],
-            deterministic=not self.training,
-        )
-
-    def __call__(self, x, blank):
-        x2 = self.seq(x)
-        z = self.drop1(self.out(self.drop2(nn.gelu(x2))))
-        return self.norm(z + x), None
-
-
-# General Skeleton for residual Sequence model with  --> takes an sequence layer
-class SeqModel(nn.Module):
-    layer: nn.Module
-    d_output: int
-    d_model: int
-    l_max: int
-    n_layers: int
-    dropout: float = 0.2
-    training: bool = True
-    sampling: bool = False
-    classification: bool = False
-
-    def setup(self):
-        self.encoder = nn.Dense(self.d_model)
-        self.decoder = nn.Dense(self.d_output)
-        # SeqInternalStack = nn.scan(nn.remat(SeqInternal),
-        #                            split_rngs={"params" : True, "dropout": True},
-        #                            variable_axes={"params": 0},
-        #                            length=self.n_layers,
-        #                            in_axes=nn.broadcast
-        # )
-        # self.layers = SeqInternalStack(layer=self.layer,
-        #                                dropout=self.dropout,
-        #                                training=self.training,
-        #                                d_model=self.d_model,
-        #                                l_max=self.l_max)
-
-        self.layers = [
-            SeqInternal(
-                layer=self.layer,
-                dropout=self.dropout,
-                training=self.training,
-                d_model=self.d_model,
-                l_max=self.l_max,
-            )
-            for _ in range(self.n_layers)
-        ]
-
-    def __call__(self, x):
-        # x - L x H
-        x = self.encoder(x)
-
-        for layer in self.layers:
-            x = layer(x, None)[0]
-            # x = layer(x, np.zeros(self.n_layers))[0]
-
-        # If classifying, mean pool of sequence-length dimension (axis 0)...
-        if self.classification:
-            x = np.mean(x, axis=0)
-
-        x = self.decoder(x)
-        return nn.log_softmax(x, axis=-1)
-
-
-BatchSeqModel = nn.vmap(
-    SeqModel,
-    in_axes=0,
-    out_axes=0,
-    variable_axes={"params": None, "dropout": None},
-    split_rngs={"params": False, "dropout": True},
-)
 
 # ## Sanity Checks
 # Here we provide examples for training & evaluation our baseline models on the various datasets.
@@ -328,7 +264,7 @@ BatchSeqModel = nn.vmap(
 Models = {
     "ff": FeedForwardModel,
     "lstm": LSTMRecurrentModel,
-    "ssm-naive": NaiveSSMInit,
+    "ssm-naive": SSMInit,
     "s4": S4LayerInit,
 }
 
@@ -345,11 +281,17 @@ def example_train(
     n_layers=4,
     p_dropout=0.2,
     suffix=None,
+    use_wandb=True,
+    wandb_project="s4",
+    wandb_entity=None,
 ):
     # Set randomness...
     print("[*] Setting Randomness...")
     key = jax.random.PRNGKey(0)
     key, rng, train_rng = jax.random.split(key, num=3)
+
+    if use_wandb:
+        wandb.init(project=wandb_project, entity=wandb_entity)
 
     # Get model class and dataset creation function
     create_dataset_fn = Datasets[dataset]
@@ -362,11 +304,13 @@ def example_train(
     classification = "classification" in dataset
 
     # Create dataset...
-    trainloader, testloader, n_classes, seq_len, in_dim = create_dataset_fn(bsz=bsz)
+    trainloader, testloader, n_classes, seq_len, in_dim = create_dataset_fn(
+        bsz=bsz
+    )
     print(f"[*] Starting `{model}` Training on `{dataset}` =>> Initializing...")
 
     model_cls = partial(
-        BatchSeqModel,
+        BatchStackedModel,
         layer=model_cls,
         d_model=d_model,
         d_output=n_classes,
@@ -381,7 +325,7 @@ def example_train(
         rng,
         in_dim=in_dim,
         bsz=bsz,
-        seq_len=seq_len,
+        seq_len=seq_len if classification else seq_len - 1,
         lr=lr,
         lr_schedule=lr_schedule,
         total_steps=len(trainloader) * epochs,
@@ -392,7 +336,11 @@ def example_train(
     for epoch in range(epochs):
         print(f"[*] Starting Training Epoch {epoch + 1}...")
         state, train_loss = train_epoch(
-            state, train_rng, model_cls, trainloader, classification=classification
+            state,
+            train_rng,
+            model_cls,
+            trainloader,
+            classification=classification,
         )
 
         print(f"[*] Running Epoch {epoch + 1} Validation...")
@@ -402,8 +350,8 @@ def example_train(
 
         print(f"\n=>> Epoch {epoch + 1} Metrics ===")
         print(
-            f"\tTrain Loss: {train_loss:.5f} -- Test Loss: {test_loss:.5f} -- Test"
-            f" Accuracy: {test_acc:.4f}"
+            f"\tTrain Loss: {train_loss:.5f} -- Test Loss: {test_loss:.5f} --"
+            f" Test Accuracy: {test_acc:.4f}"
         )
 
         # Save a checkpoint each epoch & handle best (test loss... not "copacetic" but ehh)
@@ -432,13 +380,29 @@ def example_train(
             f" {best_acc:.4f} at Epoch {best_epoch + 1}\n"
         )
 
+        if use_wandb:
+            wandb.log(
+                {
+                    "Training Loss": train_loss,
+                    "Test Loss": test_loss,
+                    "Test Accuracy": test_acc,
+                }
+            )
+            wandb.run.summary["Best Test Loss"] = best_loss
+            wandb.run.summary["Best Test Accuracy"] = best_acc
+            wandb.run.summary["Best Epoch"] = best_epoch
+
 
 if __name__ == "__main__":
     import argparse
 
     parser = argparse.ArgumentParser()
-    parser.add_argument("--dataset", type=str, choices=Datasets.keys(), required=True)
-    parser.add_argument("--model", type=str, choices=Models.keys(), required=True)
+    parser.add_argument(
+        "--dataset", type=str, choices=Datasets.keys(), required=True
+    )
+    parser.add_argument(
+        "--model", type=str, choices=Models.keys(), required=True
+    )
     parser.add_argument("--epochs", type=int, default=10)
     parser.add_argument("--bsz", type=int, default=128)
     parser.add_argument("--suffix", type=str, default=None)
@@ -455,6 +419,26 @@ if __name__ == "__main__":
     parser.add_argument("--lr", type=float, default=1e-3)
     parser.add_argument("--lr_schedule", default=False, action="store_true")
 
+    # Weights and Biases Parameters
+    parser.add_argument(
+        "--use_wandb",
+        default=True,
+        type=bool,
+        help="Whether to use W&B for metric logging",
+    )
+    parser.add_argument(
+        "--wandb_project",
+        default="s4",
+        type=str,
+        help="Name of the W&B Project",
+    )
+    parser.add_argument(
+        "--wandb_entity",
+        default=None,
+        type=str,
+        help="entity to use for W&B logging",
+    )
+
     args = parser.parse_args()
 
     example_train(
@@ -469,4 +453,7 @@ if __name__ == "__main__":
         n_layers=args.n_layers,
         p_dropout=args.p_dropout,
         suffix=args.suffix,
+        use_wandb=args.use_wandb,
+        wandb_project=args.wandb_project,
+        wandb_entity=args.wandb_entity,
     )

@@ -16,3 +16,4 @@ tensorflow
 tqdm
 seaborn
 celluloid
+wandb

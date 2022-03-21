@@ -1,4 +1,10 @@
-# S4
+
+* **[Link To The Blog Post](https://srush.github.io/annotated-s4)**
+
+
+<a href="https://srush.github.io/annotated-s4"><img src="https://user-images.githubusercontent.com/35882/149201164-1723a44a-f34b-467c-94b0-ffda5ebcabbb.png"></a>
+
+
 
 ## Experiments
 
@@ -14,6 +20,9 @@ python -m s4.train --dataset mnist --model s4 --epochs 100 --bsz 128 --d_model 1
 ```bash
 # Default arguments
 python -m s4.train --dataset quickdraw --model s4 --epochs 10 --bsz 128 --d_model 128 --ssm_n 64
+
+# "Run in a day" variant
+python -m s4.train --dataset quickdraw --model s4 --epochs 1 --bsz 512 --d_model 256 --ssm_n 64 --p_dropout 0.05
 ```
 
 #### MNIST Classification

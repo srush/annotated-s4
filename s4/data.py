@@ -20,13 +20,15 @@ def create_sin_x_dataset(n_examples=1024, bsz=128):
     print("[*] Generating Toy Dataset: sin(x)...")
 
     # Constants
-    SEQ_LENGTH, N_CLASSES, IN_DIM = 200, 8, 1
+    SEQ_LENGTH, N_CLASSES, IN_DIM = 16, 8, 1
     x = np.linspace(0, 2 * np.pi, num=SEQ_LENGTH)
     y = np.digitize(np.sin(x), np.linspace(-1, 1, num=N_CLASSES))
 
     # Tile this `n_examples` times...
     data = torch.Tensor(
-        np.tile(np.expand_dims(np.expand_dims(y, -1), 0), reps=[n_examples, 1, 1])
+        np.tile(
+            np.expand_dims(np.expand_dims(y, -1), 0), reps=[n_examples, 1, 1]
+        )
     )
 
     # Build Datasets -- Two entries to match (inputs, targets) structure
@@ -34,8 +36,12 @@ def create_sin_x_dataset(n_examples=1024, bsz=128):
     test = TensorDataset(data[:1], data[:1])
 
     # Return data loaders, with the provided batch size
-    trainloader = torch.utils.data.DataLoader(train, batch_size=bsz, shuffle=True)
-    testloader = torch.utils.data.DataLoader(test, batch_size=bsz, shuffle=False)
+    trainloader = torch.utils.data.DataLoader(
+        train, batch_size=bsz, shuffle=True
+    )
+    testloader = torch.utils.data.DataLoader(
+        test, batch_size=bsz, shuffle=False
+    )
 
     return trainloader, testloader, N_CLASSES, SEQ_LENGTH, IN_DIM
 
@@ -60,9 +66,9 @@ def create_sin_ax_b_dataset(n_examples=20000, bsz=128):
         data_key, a_rng, b_rng = jax.random.split(data_key, num=3)
 
         # Compute a, b
-        a, b = jax.random.uniform(a_rng, minval=1.0, maxval=A_MAX), jax.random.uniform(
-            b_rng, maxval=B_MAX
-        )
+        a, b = jax.random.uniform(
+            a_rng, minval=1.0, maxval=A_MAX
+        ), jax.random.uniform(b_rng, maxval=B_MAX)
         train_data.append(
             np.digitize(np.sin(a * x + b), np.linspace(-1, 1, num=N_CLASSES))
         )
@@ -73,9 +79,9 @@ def create_sin_ax_b_dataset(n_examples=20000, bsz=128):
         data_key, a_rng, b_rng = jax.random.split(data_key, num=3)
 
         # Compute a, b
-        a, b = jax.random.uniform(a_rng, minval=1.0, maxval=A_MAX), jax.random.uniform(
-            b_rng, maxval=B_MAX
-        )
+        a, b = jax.random.uniform(
+            a_rng, minval=1.0, maxval=A_MAX
+        ), jax.random.uniform(b_rng, maxval=B_MAX)
         test_data.append(
             np.digitize(np.sin(a * x + b), np.linspace(-1, 1, num=N_CLASSES))
         )
@@ -87,8 +93,12 @@ def create_sin_ax_b_dataset(n_examples=20000, bsz=128):
     test = TensorDataset(test_data, test_data)
 
     # Return data loaders, with the provided batch size
-    trainloader = torch.utils.data.DataLoader(train, batch_size=bsz, shuffle=True)
-    testloader = torch.utils.data.DataLoader(test, batch_size=bsz, shuffle=False)
+    trainloader = torch.utils.data.DataLoader(
+        train, batch_size=bsz, shuffle=True
+    )
+    testloader = torch.utils.data.DataLoader(
+        test, batch_size=bsz, shuffle=False
+    )
 
     return trainloader, testloader, N_CLASSES, SEQ_LENGTH, IN_DIM
 
@@ -96,7 +106,6 @@ def create_sin_ax_b_dataset(n_examples=20000, bsz=128):
 # ### MNIST Sequence Modeling
 # **Task**: Predict next pixel value given history, in an autoregressive fashion (784 pixels x 256 values).
 #
-# While we train on full sequences, generations should probably condition on first 10-25% of image.
 def create_mnist_dataset(bsz=128):
     print("[*] Generating MNIST Sequence Modeling Dataset...")
 
@@ -106,7 +115,9 @@ def create_mnist_dataset(bsz=128):
     tf = transforms.Compose(
         [
             transforms.ToTensor(),
-            transforms.Lambda(lambda x: (x.view(1, SEQ_LENGTH).t() * 256).int()),
+            transforms.Lambda(
+                lambda x: (x.view(1, SEQ_LENGTH).t() * 256).int()
+            ),
         ]
     )
 
@@ -118,8 +129,12 @@ def create_mnist_dataset(bsz=128):
     )
 
     # Return data loaders, with the provided batch size
-    trainloader = torch.utils.data.DataLoader(train, batch_size=bsz, shuffle=True)
-    testloader = torch.utils.data.DataLoader(test, batch_size=bsz, shuffle=False)
+    trainloader = torch.utils.data.DataLoader(
+        train, batch_size=bsz, shuffle=True
+    )
+    testloader = torch.utils.data.DataLoader(
+        test, batch_size=bsz, shuffle=False
+    )
 
     return trainloader, testloader, N_CLASSES, SEQ_LENGTH, IN_DIM
 
@@ -146,7 +161,8 @@ def create_quickdraw_dataset(bsz=128):
 
         # Download all of the .npy "simplified" drawings...
         print(
-            "\tDownloading Simplified Drawings from Google Cloud (will take a while)..."
+            "\tDownloading Simplified Drawings from Google Cloud (will take a"
+            " while)..."
         )
         client = storage.Client.create_anonymous_client()
         bucket = client.get_bucket("quickdraw_dataset")
@@ -170,7 +186,9 @@ def create_quickdraw_dataset(bsz=128):
             labels.append(np.ones(len(class_data)) * i)
 
         # Create "full" dataset & labels
-        data, labels = np.concatenate(data, axis=0), np.concatenate(labels, axis=0)
+        data, labels = np.concatenate(data, axis=0), np.concatenate(
+            labels, axis=0
+        )
 
         # Save Dataset
         np.savez("data/quickdraw/data.npz", data=data, labels=labels)
@@ -188,8 +206,151 @@ def create_quickdraw_dataset(bsz=128):
     )
 
     # Return data loaders with the provided batch size
-    trainloader = torch.utils.data.DataLoader(train, batch_size=bsz, shuffle=True)
-    testloader = torch.utils.data.DataLoader(test, batch_size=bsz, shuffle=False)
+    trainloader = torch.utils.data.DataLoader(
+        train, batch_size=bsz, shuffle=True
+    )
+    testloader = torch.utils.data.DataLoader(
+        test, batch_size=bsz, shuffle=False
+    )
+
+    return trainloader, testloader, N_CLASSES, SEQ_LENGTH, IN_DIM
+
+
+# ### FSDD Sequence Modeling
+# **Task**: Predict next wav value given history, in an autoregressive fashion (6400 pixels x 256 values).
+#
+def create_fsdd_dataset(bsz=128):
+    print("[*] Generating FSDD Dataset...")
+
+    # Constants
+    SEQ_LENGTH, N_CLASSES, IN_DIM = 6400, 256, 1
+
+    from torchaudio.transforms import MuLawEncoding
+    from torchfsdd import TorchFSDDGenerator, TrimSilence
+
+    # Create a transformation pipeline to apply to the recordings
+    tf = transforms.Compose(
+        [
+            TrimSilence(threshold=1e-6),
+            MuLawEncoding(quantization_channels=255),
+            transforms.Lambda(
+                lambda x: torch.nn.functional.pad(
+                    x.view(-1), (0, SEQ_LENGTH - x.shape[0]), "constant", 255
+                ).view(-1, 1)
+            ),
+        ]
+    )
+
+    # Fetch the latest version of FSDD and initialize a generator with those files
+    fsdd = TorchFSDDGenerator("local", "recordings/", transforms=tf)
+
+    # Create two Torch datasets for a train-test split from the generator
+    train, test = fsdd.train_test_split(test_size=0.1)
+
+    # Return data loaders, with the provided batch size
+    trainloader = torch.utils.data.DataLoader(
+        train, batch_size=bsz, shuffle=True
+    )
+    testloader = torch.utils.data.DataLoader(
+        test, batch_size=bsz, shuffle=False
+    )
+
+    return trainloader, testloader, N_CLASSES, SEQ_LENGTH, IN_DIM
+
+
+# ### Speech Commands Sequence Modeling
+# **Task**: Predict next wav value given history, in an autoregressive fashion (8000 samples x 256 values).
+#
+def create_sc_dataset(bsz=128):
+    print("[*] Generating SC Dataset...")
+
+    # Constants
+    SEQ_LENGTH, N_CLASSES, IN_DIM = 8000, 256, 1
+    import os
+    from torchaudio.datasets import SPEECHCOMMANDS
+    from torchaudio.transforms import MuLawEncoding, Resample
+
+    # # Create a transformation pipeline to apply to the recordings
+    tf = transforms.Compose(
+        [
+            Resample(16000, SEQ_LENGTH),
+            MuLawEncoding(quantization_channels=255),
+            transforms.Lambda(
+                lambda x: torch.nn.functional.pad(
+                    x.view(-1),
+                    (0, SEQ_LENGTH - x.view(-1).shape[0]),
+                    "constant",
+                    255,
+                ).view(-1, 1)
+            ),
+        ]
+    )
+
+    class SubsetSC(SPEECHCOMMANDS):
+        def __init__(self, subset: str = None):
+            super().__init__("./", download=True)
+            digits = [
+                "zero",
+                "one",
+                "two",
+                "three",
+                "four",
+                "five",
+                "six",
+                "seven",
+                "eight",
+                "nine",
+            ]
+
+            def load_list(filename):
+                filepath = os.path.join(self._path, filename)
+                with open(filepath) as fileobj:
+                    return [
+                        os.path.join(self._path, line.strip())
+                        for line in fileobj
+                        if line.split("/")[0] in digits
+                    ]
+
+            if subset == "validation":
+                self._walker = load_list("validation_list.txt")
+            elif subset == "testing":
+                self._walker = load_list("testing_list.txt")
+            elif subset == "training":
+                excludes = load_list("validation_list.txt") + load_list(
+                    "testing_list.txt"
+                )
+                excludes = set(excludes)
+                self._walker = [
+                    w
+                    for w in self._walker
+                    if w not in excludes
+                    if w.split("/")[-2] in digits
+                ]
+
+        def __getitem__(self, n):
+            (
+                waveform,
+                sample_rate,
+                label,
+                speaker_id,
+                utterance_number,
+            ) = super().__getitem__(n)
+            out = tf(waveform)
+            return out, 0
+
+    # Create training and testing split of the data. We do not use validation in this tutorial.
+    train_set = SubsetSC("training")
+    test_set = SubsetSC("testing")
+
+    waveform, label = train_set[0]
+    print(waveform.shape, label)
+    # Return data loaders, with the provided batch size
+    trainloader = torch.utils.data.DataLoader(
+        train_set, batch_size=bsz, shuffle=True
+    )
+    testloader = torch.utils.data.DataLoader(
+        test_set, batch_size=bsz, shuffle=False
+    )
 
     return trainloader, testloader, N_CLASSES, SEQ_LENGTH, IN_DIM
 
@@ -204,7 +365,9 @@ def create_mnist_classification_dataset(bsz=128):
     tf = transforms.Compose(
         [
             transforms.ToTensor(),
-            transforms.Lambda(lambda x: (x.view(1, SEQ_LENGTH).t() * 256).int()),
+            transforms.Lambda(
+                lambda x: (x.view(1, SEQ_LENGTH).t() * 256).int()
+            ),
         ]
     )
 
@@ -216,8 +379,12 @@ def create_mnist_classification_dataset(bsz=128):
     )
 
     # Return data loaders, with the provided batch size
-    trainloader = torch.utils.data.DataLoader(train, batch_size=bsz, shuffle=True)
-    testloader = torch.utils.data.DataLoader(test, batch_size=bsz, shuffle=False)
+    trainloader = torch.utils.data.DataLoader(
+        train, batch_size=bsz, shuffle=True
+    )
+    testloader = torch.utils.data.DataLoader(
+        test, batch_size=bsz, shuffle=False
+    )
 
     return trainloader, testloader, N_CLASSES, SEQ_LENGTH, IN_DIM
 
@@ -232,7 +399,9 @@ def create_cifar_classification_dataset(bsz=128):
     tf = transforms.Compose(
         [
             transforms.ToTensor(),
-            transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
+            transforms.Normalize(
+                (0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)
+            ),
             transforms.Lambda(lambda x: x.view(3, 1024).t()),
         ]
     )
@@ -245,8 +414,53 @@ def create_cifar_classification_dataset(bsz=128):
     )
 
     # Return data loaders, with the provided batch size
-    trainloader = torch.utils.data.DataLoader(train, batch_size=bsz, shuffle=True)
-    testloader = torch.utils.data.DataLoader(test, batch_size=bsz, shuffle=False)
+    trainloader = torch.utils.data.DataLoader(
+        train, batch_size=bsz, shuffle=True
+    )
+    testloader = torch.utils.data.DataLoader(
+        test, batch_size=bsz, shuffle=False
+    )
+
+    return trainloader, testloader, N_CLASSES, SEQ_LENGTH, IN_DIM
+
+
+# ### FSDD Classification
+# **Task**: Predict FSDD class given sequence model over pixels (6400 wav => 10 classes).
+def create_fsdd_classification_dataset(bsz=128):
+    print("[*] Generating FSDD Classification Dataset...")
+
+    # Constants
+    SEQ_LENGTH, N_CLASSES, IN_DIM = 6400, 10, 1
+
+    from torchaudio.transforms import MuLawEncoding
+    from torchfsdd import TorchFSDDGenerator, TrimSilence
+
+    # Create a transformation pipeline to apply to the recordings
+    tf = transforms.Compose(
+        [
+            TrimSilence(threshold=1e-6),
+            MuLawEncoding(quantization_channels=512),
+            transforms.Lambda(
+                lambda x: torch.nn.functional.pad(
+                    x, (0, 6400 - x.shape[0])
+                ).view(-1, 1)
+            ),
+        ]
+    )
+
+    # Fetch the latest version of FSDD and initialize a generator with those files
+    fsdd = TorchFSDDGenerator(version="master", transforms=tf)
+
+    # Create two Torch datasets for a train-test split from the generator
+    train, test = fsdd.train_test_split(test_size=0.1)
+
+    # Return data loaders, with the provided batch size
+    trainloader = torch.utils.data.DataLoader(
+        train, batch_size=bsz, shuffle=True
+    )
+    testloader = torch.utils.data.DataLoader(
+        test, batch_size=bsz, shuffle=False
+    )
 
     return trainloader, testloader, N_CLASSES, SEQ_LENGTH, IN_DIM
 
@@ -254,8 +468,11 @@ def create_cifar_classification_dataset(bsz=128):
 Datasets = {
     "mnist": create_mnist_dataset,
     "quickdraw": create_quickdraw_dataset,
+    "fsdd": create_fsdd_dataset,
+    "sc": create_sc_dataset,
     "sin": create_sin_x_dataset,
     "sin_noise": create_sin_ax_b_dataset,
     "mnist-classification": create_mnist_classification_dataset,
+    "fsdd-classification": create_fsdd_classification_dataset,
     "cifar-classification": create_cifar_classification_dataset,
 }
