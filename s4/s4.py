@@ -776,22 +776,20 @@ def K_gen_simple(Ab, Bb, Cb, L):
 
 
 # > The generating function essentially converts the SSM convolution filter from the time domain to
-# > frequency domain. Importantly, it preserves the same information, and the desired SSM convolution filter
-# > can be recovered from evaluations of its
-# > [generating function at the roots of unity](https://math.stackexchange.com/questions/3213142/root-of-unity-filter )
-# $\Omega = \{ \exp(2\pi \frac{k}{L} : k \in [L] \}$ stably in $O(L \log L)$ operations by applying an
-# [FFT](https://en.wikipedia.org/wiki/Fast_Fourier_transform),
+# > frequency domain. This transformation is also called [z-transform](https://en.wikipedia.org/wiki/Z-transform) (up to a minus sign) in control engineering literature. Importantly, it preserves the same information, and the desired SSM convolution filter
+# > can be recovered. Once the z-transform of a discrete sequence known, we can obtain the filter's discrete fourier transform from evaluations of its
+# > [z-transform at the roots of unity](https://en.wikipedia.org/wiki/Z-transform#Inverse_Z-transform)
+# $\Omega = \{ \exp(2\pi \frac{k}{L} : k \in [L] \}$. Then, we can apply inverse fourier transformation, stably in $O(L \log L)$ operations by applying an [FFT](https://en.wikipedia.org/wiki/Fast_Fourier_transform), to recover the filter.
 
 
 def conv_from_gen(gen, L):
     # Evaluate at roots of unity
-    Omega_L = np.exp((2j * np.pi) * (np.arange(L) / L))
+    # Generating function is (-)z-transform, so we evaluate at (-)root
+    Omega_L = np.exp((-2j * np.pi) * (np.arange(L) / L))
     atRoots = jax.vmap(gen)(Omega_L)
     # Inverse FFT
     out = np.fft.ifft(atRoots, L).reshape(L)
-    # Numpy returns the values out of order.
-    order = np.array([i if i == 0 else L - i for i in range(L)])
-    return out[order].real
+    return out.real
 
 
 # More importantly, in the generating function we can replace the matrix power with an inverse!
