@@ -161,8 +161,6 @@ def validate(params, model, testloader, classification=False):
         losses.append(loss)
         accuracies.append(acc)
 
-    # Sampling autoregressively prompted w/ first 100 "tokens"...
-    #   => TODO @Sidd
     return np.mean(np.array(losses)), np.mean(np.array(accuracies))
 
 
@@ -355,7 +353,7 @@ def example_train(
         )
 
         # Save a checkpoint each epoch & handle best (test loss... not "copacetic" but ehh)
-        run_id = f"checkpoints/{dataset}/{model}-d_model={d_model}" + (
+        run_id = f"checkpoints/{dataset}/{model}-d_model={d_model}-lr={lr}-bsz={bsz}" + (
             f"-{suffix}" if suffix is not None else ""
         )
         ckpt_path = checkpoints.save_checkpoint(
@@ -422,7 +420,7 @@ if __name__ == "__main__":
     # Weights and Biases Parameters
     parser.add_argument(
         "--use_wandb",
-        default=True,
+        default=False,
         type=bool,
         help="Whether to use W&B for metric logging",
     )

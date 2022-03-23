@@ -12,6 +12,7 @@ google-cloud-storage
 ipython
 isort
 pre-commit
+torchfsdd
 tensorflow
 tqdm
 seaborn

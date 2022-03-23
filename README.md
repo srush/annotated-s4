@@ -78,6 +78,29 @@ Before Fixing S4 Optimization -- AdamW w/ LR 1e-3 for ALL Parameters:
 - (Default Arguments): Gets "best" 63.51% accuracy @ 46s/epoch on a TitanRTX
 - (S4 Arguments): Gets "best" 66.44% accuracy @ 3m11s on a TitanRTX
     + Possible reasons for failure to meet replication: LR Schedule (Decay on Plateau), Custom LR per Parameter.
+    
+**CIFAR Results -- v2**
+
+```
+# Following @frederick0329's comment: https://github.com/srush/annotated-s4/pull/43#issuecomment-1065444261
+python -m s4.train --dataset cifar-classification --model s4 --epoch 100 --bsz 64 --n_layers 6 --p_dropout 0.25 --lr 1e-2 --d_model 1024
+
+# After @albertfgu's follow-up: https://github.com/srush/annotated-s4/pull/43#issuecomment-1067046738
+python -m s4.train --dataset cifar-classification --model s4 --epoch 100 --bsz 64 --n_layers 6 --p_dropout 0.25 --lr 5e-3 --d_model 512
+
+# `n_layers` seems to help, bumping to 8?
+python -m s4.train --dataset cifar-classification --model s4 --epoch 100 --bsz 1 --n_layers 8 --p_dropout 0.25 --lr 5e-3 --d_model 512
+```
+
+V2 with @frederick0329's comment:
+- (`n_layers=6, d_model=1024`) Gets "best" 84.12% accuracy after 100 epochs @ 7m3s/epoch on a TitanRTX
+
+V2 w/ @albertfgu's advice:
+- (`n_layers=6, d_model=512, lr=5e-3`) Gets "best" 85.81% accuracy after 100 epochs @ 3m8s/epoch on a TitanRTX
+
+V2 w/ `n_layers=8`:
+- (`n_layers=8, d_model=512, lr=5e-3`) Gets "best" 86.35% accuracy after 100 epochs @ 3m41s/epoch on a TitanRTX
+
 
 ## Quickstart (Development)
 
