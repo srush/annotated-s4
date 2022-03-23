@@ -353,8 +353,11 @@ def example_train(
         )
 
         # Save a checkpoint each epoch & handle best (test loss... not "copacetic" but ehh)
-        run_id = f"checkpoints/{dataset}/{model}-d_model={d_model}-lr={lr}-bsz={bsz}" + (
-            f"-{suffix}" if suffix is not None else ""
+        run_id = (
+            f"checkpoints/{dataset}/{model}-d_model={d_model}-lr={lr}-bsz={bsz}"
+            f"-{suffix}"
+            if suffix is not None
+            else ""
         )
         ckpt_path = checkpoints.save_checkpoint(
             run_id,
