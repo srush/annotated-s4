@@ -1,15 +1,14 @@
-import os
-import shutil
 from functools import partial
+
 import jax
 import jax.numpy as np
 import optax
 from flax import linen as nn
-from flax.training import checkpoints, train_state
+from flax.training import train_state
 from tqdm import tqdm
+
 from .data import Datasets
 from .s4 import BatchStackedModel, S4LayerInit, SSMInit
-
 
 try:
     import wandb
@@ -17,6 +16,7 @@ try:
     assert hasattr(wandb, "__version__")  # verify package import not local dir
 except (ImportError, AssertionError):
     wandb = None
+
 
 # ## Baseline Models
 #
@@ -54,25 +54,51 @@ def map_nested_fn(fn):
     return map_fn
 
 
+# def ReduceLROnPlateau_schedule(
+#     init_value: chex.Scalar,
+# ) -> base.Schedule:
+#   """Reduce learning rate when a metric has stopped improving.
+#     Models often benefit from reducing the learning rate by a factor
+#     of 2-10 once learning stagnates. This scheduler reads a metrics
+#     quantity and if no improvement is seen for a 'patience' number
+#     of epochs, the learning rate is reduced.
+#   Args:
+#
+#   Returns:
+#     schedule: A function that maps metrics and step counts to values.
+#   """
+#
+#   def schedule(metrics, epoch):
+#     count = jnp.clip(count - transition_begin, 0, transition_steps)
+#     frac = 1 - count / transition_steps
+#     return (init_value - end_value) * (frac**power) + end_value
+#   return schedule
+
 def create_train_state(
-    model_name,
-    model_cls,
-    rng,
-    in_dim=1,
-    bsz=128,
-    seq_len=784,
-    lr=1e-3,
-    lr_schedule=False,
-    total_steps=-1,
+        model_name,
+        model_cls,
+        rng,
+        in_dim=1,
+        bsz=128,
+        seq_len=784,
+        lr=1e-3,
+        lr_schedule=False,
+        total_steps=-1,
 ):
     model = model_cls(training=True)
     init_rng, dropout_rng = jax.random.split(rng, num=2)
     params = model.init(
         {"params": init_rng, "dropout": dropout_rng},
-        np.ones((bsz, seq_len, in_dim)),
-    )[
-        "params"
-    ].unfreeze()  # Note: Added immediate `unfreeze()` to play well w/ Optax. See below!
+        np.ones((bsz, seq_len, in_dim))
+    ).unfreeze()
+
+    print("vars params:")
+    print(jax.tree_map(lambda x: x.shape, params))
+
+    # model_params = params[
+    #     "params"
+    # ].unfreeze()  # Note: Added immediate `unfreeze()` to play well w/ Optax. See below!
+    # batch_stats = params["batch_stats"]
 
     # Implement LR Schedule (No change for first 30% of training, then decay w/ cubic polynomial to 0 for last 70%)
     if lr_schedule:
@@ -161,6 +187,8 @@ def validate(params, model, testloader, classification=False):
         losses.append(loss)
         accuracies.append(acc)
 
+    # Sampling autoregressively prompted w/ first 100 "tokens"...
+    #   => TODO @Sidd
     return np.mean(np.array(losses)), np.mean(np.array(accuracies))
 
 
@@ -186,44 +214,47 @@ class FeedForwardModel(nn.Module):
 # each wrapped in a call to `@jax.jit` which fuses operations, generally leading to high performance gains. These @jit
 # calls will become increasingly important as we optimize S4.
 
-
 @partial(jax.jit, static_argnums=(4, 5))
 def train_step(
-    state, rng, batch_inputs, batch_labels, model, classification=False
+        state, rng, batch_inputs, batch_labels, model, classification=False
 ):
-    def loss_fn(params):
+    def loss_fn(model_params):
         if classification:
             logits, mod_vars = model.apply(
-                {"params": params},
+                {"params": model_params["params"], "batch_stats": model_params["batch_stats"]},
                 batch_inputs,
                 rngs={"dropout": rng},
-                mutable=["intermediates"],
+                mutable=["batch_stats", "intermediates"],
             )
+            print("logits:", logits.shape)
+            print("batch_labels:", batch_labels.shape)
             loss = np.mean(cross_entropy_loss(logits, batch_labels))
         else:
             logits, mod_vars = model.apply(
-                {"params": params},
+                {"params": model_params["params"], "batch_stats": model_params["batch_stats"]},
                 batch_inputs[:, :-1],
                 rngs={"dropout": rng},
-                mutable=["intermediates"],
+                mutable=["batch_stats", "intermediates"],
             )
             loss = np.mean(cross_entropy_loss(logits, batch_inputs[:, 1:, 0]))
         return loss, logits
 
     grad_fn = jax.value_and_grad(loss_fn, has_aux=True)
+    print("state.params", jax.tree_map(jax.numpy.shape, state.params))
     (loss, logits), grads = grad_fn(state.params)
+    print("loss:", loss, "logits:", logits.shape)
     state = state.apply_gradients(grads=grads)
+    # print("state:", state)
     return state, loss
-
 
 @partial(jax.jit, static_argnums=(3, 4))
 def eval_step(batch_inputs, batch_labels, params, model, classification=False):
     if classification:
-        logits = model.apply({"params": params}, batch_inputs)
+        logits = model.apply({"params": params["params"], "batch_stats": params["batch_stats"]}, batch_inputs)
         loss = np.mean(cross_entropy_loss(logits, batch_labels))
         acc = np.mean(compute_accuracy(logits, batch_labels))
     else:
-        logits = model.apply({"params": params}, batch_inputs[:, :-1])
+        logits = model.apply({"params": params["params"], "batch_stats": params["batch_stats"]}, batch_inputs[:, :-1])
         loss = np.mean(cross_entropy_loss(logits, batch_inputs[:, 1:, 0]))
         acc = np.mean(compute_accuracy(logits, batch_inputs[:, 1:, 0]))
     return loss, acc
@@ -268,20 +299,20 @@ Models = {
 
 
 def example_train(
-    model,
-    dataset,
-    d_model=128,
-    bsz=128,
-    epochs=10,
-    ssm_n=64,
-    lr=1e-3,
-    lr_schedule=False,
-    n_layers=4,
-    p_dropout=0.2,
-    suffix=None,
-    use_wandb=True,
-    wandb_project="s4",
-    wandb_entity=None,
+        model,
+        dataset,
+        d_model=128,
+        bsz=128,
+        epochs=10,
+        ssm_n=64,
+        lr=1e-3,
+        lr_schedule=False,
+        n_layers=4,
+        p_dropout=0.2,
+        suffix=None,
+        use_wandb=True,
+        wandb_project="s4",
+        wandb_entity=None,
 ):
     # Set randomness...
     print("[*] Setting Randomness...")
@@ -353,25 +384,22 @@ def example_train(
         )
 
         # Save a checkpoint each epoch & handle best (test loss... not "copacetic" but ehh)
-        run_id = (
-            f"checkpoints/{dataset}/{model}-d_model={d_model}-lr={lr}-bsz={bsz}"
-            f"-{suffix}"
-            if suffix is not None
-            else ""
+        run_id = f"checkpoints/{dataset}/{model}-d_model={d_model}" + (
+            f"-{suffix}" if suffix is not None else ""
         )
-        ckpt_path = checkpoints.save_checkpoint(
-            run_id,
-            state,
-            epoch,
-            keep=epochs,
-        )
+        # ckpt_path = checkpoints.save_checkpoint(
+        #     run_id,
+        #     state,
+        #     epoch,
+        #     keep=epochs,
+        # )
         if (classification and test_acc > best_acc) or (
-            not classification and test_loss < best_loss
+                not classification and test_loss < best_loss
         ):
             # Create new "best-{step}.ckpt and remove old one
-            shutil.copy(ckpt_path, f"{run_id}/best_{epoch}")
-            if os.path.exists(f"{run_id}/best_{best_epoch}"):
-                os.remove(f"{run_id}/best_{best_epoch}")
+            # shutil.copy(ckpt_path, f"{run_id}/best_{epoch}")
+            # if os.path.exists(f"{run_id}/best_{best_epoch}"):
+            #     os.remove(f"{run_id}/best_{best_epoch}")
 
             best_loss, best_acc, best_epoch = test_loss, test_acc, epoch
 
@@ -423,7 +451,7 @@ if __name__ == "__main__":
     # Weights and Biases Parameters
     parser.add_argument(
         "--use_wandb",
-        default=False,
+        default=True,
         type=bool,
         help="Whether to use W&B for metric logging",
     )

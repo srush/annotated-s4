@@ -92,13 +92,13 @@
 # to compile fast and efficient S4 layers.
 
 from functools import partial
+
 import jax
 import jax.numpy as np
 from flax import linen as nn
 from jax.nn.initializers import lecun_normal, uniform
 from jax.numpy.linalg import eig, inv, matrix_power
 from jax.scipy.signal import convolve
-
 
 rng = jax.random.PRNGKey(1)
 
@@ -308,6 +308,7 @@ def example_ssm():
 if False:
     example_ssm()
 
+
 # <img src="line.gif" width="100%">
 
 # Neat! And that it was just 1 SSM, with 2 hidden states over 100 steps.
@@ -372,8 +373,8 @@ def K_conv(Ab, Bb, Cb, L):
 
 
 # We can compute the result of applying this filter either with a standard direct convolution or
-# by using convolution theorem with [Fast Fourier Transform (FFT)](https://en.wikipedia.org/wiki/Convolution_theorem). The discrete convolution theorem - for circular convolution of two sequences - allows us to efficiently calculate the output of convolution by first multiplying FFTs of the input sequences and then applying an inverse FFT. To utilize this theorem for non-circular convolutions as in our case, we need to pad the input sequences with zeros, and then unpad the output sequence.
-# As the length gets longer this FFT method will be more efficient than the direct convolution,
+# with a padded (non-circular) [Fast Fourier Transform (FFT)](https://en.wikipedia.org/wiki/Convolution_theorem).
+# As the length gets longer the second method will be more efficient,
 
 
 def non_circular_convolution(u, K, nofft=False):
@@ -381,6 +382,7 @@ def non_circular_convolution(u, K, nofft=False):
         return convolve(u, K, mode="full")[: u.shape[0]]
     else:
         assert K.shape[0] == u.shape[0]
+        print("ushape:", u.shape, "kshape", K.shape)
         ud = np.fft.rfft(np.pad(u, (0, K.shape[0])))
         Kd = np.fft.rfft(np.pad(K, (0, u.shape[0])))
         out = ud * Kd
@@ -519,6 +521,7 @@ def example_legendre(N=8):
 if False:
     example_legendre()
 
+
 # The red line represents that curve we are approximating,
 # while the black bars represent the values of our hidden state.
 # Each is a coefficient for one element of the Legendre series
@@ -540,7 +543,7 @@ if False:
 def log_step_initializer(dt_min=0.001, dt_max=0.1):
     def init(key, shape):
         return jax.random.uniform(key, shape) * (
-            np.log(dt_max) - np.log(dt_min)
+                np.log(dt_max) - np.log(dt_min)
         ) + np.log(dt_min)
 
     return init
@@ -582,7 +585,6 @@ class SSMLayer(nn.Module):
 
     def __call__(self, u):
         if not self.decode:
-            # CNN Mode
             return non_circular_convolution(u, self.K) + self.D * u
         else:
             # RNN Mode
@@ -601,11 +603,18 @@ class SSMLayer(nn.Module):
 def cloneLayer(layer):
     return nn.vmap(
         layer,
-        in_axes=1,
-        out_axes=1,
+        in_axes=2,
+        out_axes=2,
         variable_axes={"params": 1, "cache": 1, "prime": 1},
         split_rngs={"params": True},
     )
+    # return nn.vmap(
+    #     layer,
+    #     in_axes=1,
+    #     out_axes=1,
+    #     variable_axes={"params": 1, "cache": 1, "prime": 1},
+    #     split_rngs={"params": True},
+    # )
 
 
 # We then initialize $A$ with the HiPPO matrix, and pass it into the stack of modules above,
@@ -614,6 +623,13 @@ def cloneLayer(layer):
 def SSMInit(N):
     return partial(cloneLayer(SSMLayer), A=make_HiPPO(N), N=N)
 
+# def batchLayer(seq):
+#     return nn.vmap(seq,
+#         in_axes=0,
+#         out_axes=0,
+#         variable_axes={"params": None, "dropout": None, "cache": 0, "prime": None},
+#         split_rngs={"params": True},
+#     )
 
 # This SSM Layer can then be put into a standard NN.
 # Here we add a block that pairs a call to an SSM with
@@ -629,8 +645,14 @@ class SequenceBlock(nn.Module):
     decode: bool = False
 
     def setup(self):
+        # self.prenorm = True
+        # self.batchnorm = True
+        # if self.batchnorm:
+        #     self.norm = nn.BatchNorm(axis_name='batch')
+        # else:
+        #     self.norm = nn.LayerNorm()
+        self.norm = nn.BatchNorm(use_running_average=not self.training)
         self.seq = self.layer(l_max=self.l_max, decode=self.decode)
-        self.norm = nn.LayerNorm()
         self.out = nn.Dense(self.d_model)
         self.drop = nn.Dropout(
             self.dropout,
@@ -639,17 +661,29 @@ class SequenceBlock(nn.Module):
         )
 
     def __call__(self, x):
-        x2 = self.seq(x)
+        x1 = self.norm(x)
+        # print("xxxx:", jax.numpy.array_equal(x, x1))
+        # print("x1 shape:", x1.shape)
+        x2 = self.seq(x1)
+        # print("x2 later:", x.shape)
         z = self.drop(self.out(self.drop(nn.gelu(x2))))
-        return self.norm(z + x)
+        # print("z later:", x.shape)
+        return z + x
 
 
 # We can then stack a bunch of these blocks on top of each other
 # to produce a stack of SSM layers. This can be used for
 # classification or generation in the standard way as a Transformer.
 
+# @partial(
+#     nn.vmap,
+#     variable_axes={"params": None, 'batch_stats': 0, "dropout": None, "cache": 0, "prime": None},
+#     split_rngs={"params": False, "dropout": True},
+#     in_axes=0,
+#     out_axes=0,
+# )
 
-class StackedModel(nn.Module):
+class BatchStackedModel(nn.Module):
     layer: nn.Module
     d_output: int
     d_model: int
@@ -676,13 +710,20 @@ class StackedModel(nn.Module):
         ]
 
     def __call__(self, x):
-        x = self.encoder(x)
+        # print("x:", x.shape)
+        x = self.encoder(x)  # shape batch size x sequence len x hidden dimension
+        # print("x en:", x.shape)
         for layer in self.layers:
+            # print("x la:", x.shape)
             x = layer(x)
+        # print("x la later:", x.shape)
         if self.classification:
-            x = np.mean(x, axis=0)
+            x = np.mean(x, axis=1)
         x = self.decoder(x)
-        return nn.log_softmax(x, axis=-1)
+        # print("x decoder later:", x.shape)
+        s = nn.log_softmax(x, axis=-1)
+        # print("s la later:", s.shape)
+        return s
 
 
 # In Flax we add the batch dimension as a lifted transformation.
@@ -690,13 +731,15 @@ class StackedModel(nn.Module):
 # handle RNN and parameter caching (described below).
 
 
-BatchStackedModel = nn.vmap(
-    StackedModel,
-    in_axes=0,
-    out_axes=0,
-    variable_axes={"params": None, "dropout": None, "cache": 0, "prime": None},
-    split_rngs={"params": False, "dropout": True},
-)
+# BatchStackedModel = nn.vmap(
+#     StackedModel,
+#     # in_axes=(0, None),
+#     in_axes=0,
+#     out_axes=0,
+#     # axis_name="batch",
+#     variable_axes={"params": None, 'batch_stats': 0, "dropout": None, "cache": 0, "prime": None},
+#     split_rngs={"params": False, "dropout": True},
+# )
 
 
 # Overall, this defines a sequence-to-sequence map of shape (batch size, sequence length, hidden dimension),
@@ -776,20 +819,22 @@ def K_gen_simple(Ab, Bb, Cb, L):
 
 
 # > The generating function essentially converts the SSM convolution filter from the time domain to
-# > frequency domain. This transformation is also called [z-transform](https://en.wikipedia.org/wiki/Z-transform) (up to a minus sign) in control engineering literature. Importantly, it preserves the same information, and the desired SSM convolution filter
-# > can be recovered. Once the z-transform of a discrete sequence known, we can obtain the filter's discrete fourier transform from evaluations of its
-# > [z-transform at the roots of unity](https://en.wikipedia.org/wiki/Z-transform#Inverse_Z-transform)
-# $\Omega = \{ \exp(2\pi \frac{k}{L} : k \in [L] \}$. Then, we can apply inverse fourier transformation, stably in $O(L \log L)$ operations by applying an [FFT](https://en.wikipedia.org/wiki/Fast_Fourier_transform), to recover the filter.
+# > frequency domain. Importantly, it preserves the same information, and the desired SSM convolution filter
+# > can be recovered from evaluations of its
+# > [generating function at the roots of unity](https://math.stackexchange.com/questions/3213142/root-of-unity-filter )
+# $\Omega = \{ \exp(2\pi \frac{k}{L} : k \in [L] \}$ stably in $O(L \log L)$ operations by applying an
+# [FFT](https://en.wikipedia.org/wiki/Fast_Fourier_transform),
 
 
 def conv_from_gen(gen, L):
     # Evaluate at roots of unity
-    # Generating function is (-)z-transform, so we evaluate at (-)root
-    Omega_L = np.exp((-2j * np.pi) * (np.arange(L) / L))
+    Omega_L = np.exp((2j * np.pi) * (np.arange(L) / L))
     atRoots = jax.vmap(gen)(Omega_L)
     # Inverse FFT
     out = np.fft.ifft(atRoots, L).reshape(L)
-    return out.real
+    # Numpy returns the values out of order.
+    order = np.array([i if i == 0 else L - i for i in range(L)])
+    return out[order].real
 
 
 # More importantly, in the generating function we can replace the matrix power with an inverse!
@@ -1211,9 +1256,18 @@ class S4Layer(nn.Module):
         # This is identical to SSM Layer
         if not self.decode:
             # CNN Mode
-            return non_circular_convolution(u, self.K) + self.D * u
+            print("u shape:", u.shape)
+            print("K shape:", self.K.shape)
+            # u batch size * max seq length
+            res = jax.vmap(non_circular_convolution, in_axes=(0, None), out_axes=0)(u, self.K)
+            print("res:", res.shape)
+            print("D:", self.D.shape)
+            return res + self.D * u
         else:
             # RNN Mode
+            print("RNN Mode")
+            print("u shape:", u.shape)
+            print("u[:, np.newaxis]:", u[:, np.newaxis].shape)
             x_k, y_s = scan_SSM(*self.ssm, u[:, np.newaxis], self.x_k_1.value)
             if self.is_mutable_collection("cache"):
                 self.x_k_1.value = x_k
@@ -1221,6 +1275,7 @@ class S4Layer(nn.Module):
 
 
 S4Layer = cloneLayer(S4Layer)
+
 
 # We initialize the model by computing a HiPPO DPLR initializer
 
@@ -1349,7 +1404,7 @@ def sample_mnist_prefix(path, model, length):
         image = im[0].numpy()
 
         cur = onp.array(image)
-        cur[:, START + 1 :, 0] = 0
+        cur[:, START + 1:, 0] = 0
         cur = np.array(cur)
 
         # Cache the first `start` inputs.
@@ -1385,7 +1440,6 @@ def sample_mnist_prefix(path, model, length):
             ax2.imshow(final2[k] / 256.0)
             fig.savefig("im%d.%d.png" % (j, k))
             print(j)
-
 
 # ### Experiments: QuickDraw
 
