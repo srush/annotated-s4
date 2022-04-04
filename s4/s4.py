@@ -961,7 +961,7 @@ def test_gen_dplr(L=16, N=4):
     # Compare to the DPLR generating function approach.
     Ct = (I - matrix_power(Ab, L)).conj().T @ Cb.ravel()
     b = conv_from_gen(K_gen_DPLR(Lambda, p, q, B, Ct, step=1.0 / L), L)
-    assert np.allclose(a, b)
+    assert np.allclose(a.real, b.real)
 
 
 # ### Diagonal Plus Low-Rank RNN.
@@ -1065,7 +1065,7 @@ def discrete_DPLR(Lambda, p, q, B, Ct, step, L):
 
 
 def make_NPLR_HiPPO(N):
-    # Make -HiPPO
+    # Make HiPPO
     nhippo = -make_HiPPO(N)
 
     # Add in a rank 1 term. Makes it Normal.
@@ -1099,6 +1099,7 @@ def test_nplr(N=8):
 
 
 def test_conversion(N=8, L=16):
+    rng = jax.random.PRNGKey(1)
     step = 1.0 / L
     # Compute a HiPPO NPLR matrix.
     _, Lambda, p, q, V = make_NPLR_HiPPO(N)
