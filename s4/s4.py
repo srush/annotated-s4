@@ -1161,10 +1161,9 @@ class S4Layer(nn.Module):
     decode: bool = False
 
     def setup(self):
-        # Learned Parameters
-        self.Ct = self.param(
-            "Ct", lecun_normal(dtype=np.complex64), (1, self.N)
-        )
+        # Learned Parameters (Ct is complex!)
+        self.Ct = self.param("Ct", lecun_normal(), (1, self.N, 2))
+        self.Ct = self.Ct[..., 0] + 1j * self.Ct[..., 1]
         self.B = self.Vc @ self.param("B", lecun_normal(), (self.N, 1))
         self.D = self.param("D", uniform(), (1,))
         self.step = np.exp(self.param("log_step", log_step_initializer(), (1,)))
