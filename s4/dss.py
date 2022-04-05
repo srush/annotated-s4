@@ -14,14 +14,6 @@ def complex_softmax(x, eps=1e-7):
     e = np.exp(x2)
     return e * reciprocal(np.sum(e))
 
-
-def test_softmax():
-    x = np.array([1, 2, 3, 4])
-    a = np.exp(x) / np.exp(x).sum()
-    b = complex_softmax(x)
-    assert np.isclose(a, b).all()
-
-
 def dss_kernel(W, Lambda, L, step):
     P = (step * Lambda)[:, None] * np.arange(L)
     S = jax.vmap(complex_softmax)(P)
@@ -55,26 +47,3 @@ def DSSLayerInit(N):
     _, Lambda, _, _, _ = s4.make_NPLR_HiPPO(2 * N)
     Lambda = Lambda[np.nonzero(Lambda.imag > 0, size=N)]
     return partial(DSSLayer, N=N, Lambda=Lambda)
-
-
-# def make_normal(N):
-#     def v(i, j):
-#         if i > j:
-#             return np.sqrt(2 * i + 1) * np.sqrt(2 * j + 1)
-#         elif i == j:
-#             return -1
-#         else:
-#             return -np.sqrt(2 * i+1) * np.sqrt(2 * j + 1)
-
-#     # Do it slow so we don't mess it up :)
-#     mat = [[v(n, k) for k in range(1, N + 1)] for n in range(1, N + 1)]
-#     return np.array(mat) / 2.0
-
-
-# def test_normal():
-#     n = make_normal(4)
-#     Lambda, V = jax.jit(s4.eig, backend="cpu")(n)
-#     _, L2, _, _, _ = s4.make_NPLR_HiPPO(4)
-#     print(Lambda)
-#     print(L2)
-#     assert np.isclose(Lambda, L2).all()
