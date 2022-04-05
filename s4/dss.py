@@ -6,24 +6,27 @@ import jax.numpy as np
 from flax import linen as nn
 
 
-
 def complex_softmax(x, eps=1e-7):
     def reciprocal(x):
         return x.conj() / (x * x.conj() + eps)
+
     x2 = x - x[np.argmax(x.real)]
     e = np.exp(x2)
     return e * reciprocal(np.sum(e))
 
+
 def test_softmax():
-    x = np.array([1,2,3,4])
+    x = np.array([1, 2, 3, 4])
     a = np.exp(x) / np.exp(x).sum()
     b = complex_softmax(x)
-    assert np.isclose(a, b).all()    
+    assert np.isclose(a, b).all()
+
 
 def dss_kernel(W, Lambda, L, step):
     P = (step * Lambda)[:, None] * np.arange(L)
     S = jax.vmap(complex_softmax)(P)
     return ((W / Lambda) @ S).ravel().real
+
 
 class DSSLayer(nn.Module):
     Lambda: np.DeviceArray
@@ -36,7 +39,9 @@ class DSSLayer(nn.Module):
         self.W = self.param("W", s4.lecun_normal(), (1, self.N, 2))
         self.W = self.W[..., 0] + 1j * self.W[..., 1]
         self.D = self.param("D", nn.initializers.ones, (1,))
-        self.step = np.exp(self.param("log_step", s4.log_step_initializer(), (1,)))
+        self.step = np.exp(
+            self.param("log_step", s4.log_step_initializer(), (1,))
+        )
         self.K = dss_kernel(self.W, self.Lambda, self.l_max, self.step)
 
     def __call__(self, u):
@@ -44,12 +49,12 @@ class DSSLayer(nn.Module):
 
 
 DSSLayer = s4.cloneLayer(DSSLayer)
-    
+
+
 def DSSLayerInit(N):
-    _, Lambda, _, _, _ = s4.make_NPLR_HiPPO(2*N)
+    _, Lambda, _, _, _ = s4.make_NPLR_HiPPO(2 * N)
     Lambda = Lambda[np.nonzero(Lambda.imag > 0, size=N)]
     return partial(DSSLayer, N=N, Lambda=Lambda)
-
 
 
 # def make_normal(N):
@@ -73,4 +78,3 @@ def DSSLayerInit(N):
 #     print(Lambda)
 #     print(L2)
 #     assert np.isclose(Lambda, L2).all()
-
