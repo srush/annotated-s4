@@ -458,7 +458,7 @@ def make_HiPPO(N):
 
     # Do it slow so we don't mess it up :)
     mat = [[v(n, k) for k in range(1, N + 1)] for n in range(1, N + 1)]
-    return np.array(mat)
+    return -np.array(mat)
 
 
 # Diving a bit deeper, the intuitive explanation of this matrix is
@@ -1064,7 +1064,7 @@ def discrete_DPLR(Lambda, p, q, B, Ct, step, L):
 
 def make_NPLR_HiPPO(N):
     # Make -HiPPO
-    nhippo = -make_HiPPO(N)
+    nhippo = make_HiPPO(N)
 
     # Add in a rank 1 term. Makes it Normal.
     p = 0.5 * np.sqrt(2 * np.arange(1, N + 1) + 1.0)

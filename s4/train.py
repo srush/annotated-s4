@@ -9,6 +9,7 @@ from flax.training import checkpoints, train_state
 from tqdm import tqdm
 from .data import Datasets
 from .s4 import BatchStackedModel, S4LayerInit, SSMInit
+from .dss import DSSLayerInit
 
 
 try:
@@ -85,7 +86,7 @@ def create_train_state(
         )
 
     # # S4 uses a Fixed LR = 1e-3 with NO weight decay for the S4 Matrices, higher LR elsewhere
-    if "s4" in model_name:
+    if "s4" in model_name or "dss" in model_name:
         # Note for Debugging... this is all undocumented and so weird. The following links are helpful...
         #
         #   > Flax "Recommended" interplay w/ Optax (this bridge needs ironing):
@@ -101,7 +102,7 @@ def create_train_state(
         #   > Solution: Use Optax.multi_transform!
         s4_fn = map_nested_fn(
             lambda k, _: "s4"
-            if k in ["B", "Ct", "D", "log_step"]
+            if k in ["B", "Ct", "D", "log_step", "W"]
             else ("none" if k in [] else "regular")
         )
         tx = optax.multi_transform(
@@ -264,6 +265,7 @@ Models = {
     "lstm": LSTMRecurrentModel,
     "ssm-naive": SSMInit,
     "s4": S4LayerInit,
+    "dss": DSSLayerInit,
 }
 
 
@@ -293,7 +295,7 @@ def example_train(
 
     # Get model class and dataset creation function
     create_dataset_fn = Datasets[dataset]
-    if model in ["ssm-naive", "s4"]:
+    if model in ["ssm-naive", "s4", "dss"]:
         model_cls = Models[model](N=ssm_n)
     else:
         model_cls = Models[model]
@@ -354,10 +356,10 @@ def example_train(
 
         # Save a checkpoint each epoch & handle best (test loss... not "copacetic" but ehh)
         run_id = (
-            f"checkpoints/{dataset}/{model}-d_model={d_model}-lr={lr}-bsz={bsz}"
-            f"-{suffix}"
+            f"checkpoints/{dataset}/{model}-d_model={d_model}-lr={lr}-bsz={bsz}" + 
+            (f"-{suffix}"
             if suffix is not None
-            else ""
+            else "")
         )
         ckpt_path = checkpoints.save_checkpoint(
             run_id,
