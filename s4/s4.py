@@ -458,7 +458,7 @@ def make_HiPPO(N):
 
     # Do it slow so we don't mess it up :)
     mat = [[v(n, k) for k in range(1, N + 1)] for n in range(1, N + 1)]
-    return np.array(mat)
+    return -np.array(mat)
 
 
 # Diving a bit deeper, the intuitive explanation of this matrix is
@@ -1064,7 +1064,7 @@ def discrete_DPLR(Lambda, p, q, B, Ct, step, L):
 
 def make_NPLR_HiPPO(N):
     # Make -HiPPO
-    nhippo = -make_HiPPO(N)
+    nhippo = make_HiPPO(N)
 
     # Add in a rank 1 term. Makes it Normal.
     p = 0.5 * np.sqrt(2 * np.arange(1, N + 1) + 1.0)
@@ -1161,10 +1161,9 @@ class S4Layer(nn.Module):
     decode: bool = False
 
     def setup(self):
-        # Learned Parameters
-        self.Ct = self.param(
-            "Ct", lecun_normal(dtype=np.complex64), (1, self.N)
-        )
+        # Learned Parameters (Ct is complex!)
+        self.Ct = self.param("Ct", lecun_normal(), (1, self.N, 2))
+        self.Ct = self.Ct[..., 0] + 1j * self.Ct[..., 1]
         self.B = self.Vc @ self.param("B", lecun_normal(), (self.N, 1))
         self.D = self.param("D", uniform(), (1,))
         self.step = np.exp(self.param("log_step", log_step_initializer(), (1,)))
