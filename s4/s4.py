@@ -382,7 +382,6 @@ def non_circular_convolution(u, K, nofft=False):
         return convolve(u, K, mode="full")[: u.shape[0]]
     else:
         assert K.shape[0] == u.shape[0]
-        print("ushape:", u.shape, "kshape", K.shape)
         ud = np.fft.rfft(np.pad(u, (0, K.shape[0])))
         Kd = np.fft.rfft(np.pad(K, (0, u.shape[0])))
         out = ud * Kd
@@ -603,18 +602,11 @@ class SSMLayer(nn.Module):
 def cloneLayer(layer):
     return nn.vmap(
         layer,
-        in_axes=2,
-        out_axes=2,
+        in_axes=1,
+        out_axes=1,
         variable_axes={"params": 1, "cache": 1, "prime": 1},
         split_rngs={"params": True},
     )
-    # return nn.vmap(
-    #     layer,
-    #     in_axes=1,
-    #     out_axes=1,
-    #     variable_axes={"params": 1, "cache": 1, "prime": 1},
-    #     split_rngs={"params": True},
-    # )
 
 
 # We then initialize $A$ with the HiPPO matrix, and pass it into the stack of modules above,
@@ -623,18 +615,10 @@ def cloneLayer(layer):
 def SSMInit(N):
     return partial(cloneLayer(SSMLayer), A=make_HiPPO(N), N=N)
 
-# def batchLayer(seq):
-#     return nn.vmap(seq,
-#         in_axes=0,
-#         out_axes=0,
-#         variable_axes={"params": None, "dropout": None, "cache": 0, "prime": None},
-#         split_rngs={"params": True},
-#     )
 
 # This SSM Layer can then be put into a standard NN.
 # Here we add a block that pairs a call to an SSM with
 # dropout and a linear projection.
-
 
 class SequenceBlock(nn.Module):
     layer: nn.Module
@@ -643,14 +627,9 @@ class SequenceBlock(nn.Module):
     d_model: int
     training: bool = True
     decode: bool = False
+    pre_norm: bool = True
 
     def setup(self):
-        # self.prenorm = True
-        # self.batchnorm = True
-        # if self.batchnorm:
-        #     self.norm = nn.BatchNorm(axis_name='batch')
-        # else:
-        #     self.norm = nn.LayerNorm()
         self.norm = nn.BatchNorm(use_running_average=not self.training)
         self.seq = self.layer(l_max=self.l_max, decode=self.decode)
         self.out = nn.Dense(self.d_model)
@@ -661,30 +640,25 @@ class SequenceBlock(nn.Module):
         )
 
     def __call__(self, x):
-        x1 = self.norm(x)
-        # print("xxxx:", jax.numpy.array_equal(x, x1))
-        # print("x1 shape:", x1.shape)
-        x2 = self.seq(x1)
-        # print("x2 later:", x.shape)
-        z = self.drop(self.out(self.drop(nn.gelu(x2))))
-        # print("z later:", x.shape)
-        return z + x
+        @jax.vmap
+        def run(x):
+            x = self.seq(x)
+            return self.drop(self.out(self.drop(nn.gelu(x))))
+
+        # the best hyperparameters in s4 uses pre-norm for LRA IMDB and post-norm for LRA ListOps
+        if self.pre_norm:
+            return x + run(self.norm(x))
+        else:
+            return self.norm(x + run(x))
 
 
 # We can then stack a bunch of these blocks on top of each other
 # to produce a stack of SSM layers. This can be used for
 # classification or generation in the standard way as a Transformer.
 
-# @partial(
-#     nn.vmap,
-#     variable_axes={"params": None, 'batch_stats': 0, "dropout": None, "cache": 0, "prime": None},
-#     split_rngs={"params": False, "dropout": True},
-#     in_axes=0,
-#     out_axes=0,
-# )
-
 class BatchStackedModel(nn.Module):
     layer: nn.Module
+    n_embed: int
     d_output: int
     d_model: int
     l_max: int
@@ -695,7 +669,7 @@ class BatchStackedModel(nn.Module):
     decode: bool = False
 
     def setup(self):
-        self.encoder = nn.Dense(self.d_model)
+        self.encoder = nn.Embed(num_embeddings=self.n_embed, features=self.d_model)
         self.decoder = nn.Dense(self.d_output)
         self.layers = [
             SequenceBlock(
@@ -710,37 +684,18 @@ class BatchStackedModel(nn.Module):
         ]
 
     def __call__(self, x):
-        # print("x:", x.shape)
         x = self.encoder(x)  # shape batch size x sequence len x hidden dimension
-        # print("x en:", x.shape)
         for layer in self.layers:
-            # print("x la:", x.shape)
             x = layer(x)
-        # print("x la later:", x.shape)
         if self.classification:
             x = np.mean(x, axis=1)
         x = self.decoder(x)
-        # print("x decoder later:", x.shape)
         s = nn.log_softmax(x, axis=-1)
-        # print("s la later:", s.shape)
         return s
-
 
 # In Flax we add the batch dimension as a lifted transformation.
 # We need to route through several variable collections which
 # handle RNN and parameter caching (described below).
-
-
-# BatchStackedModel = nn.vmap(
-#     StackedModel,
-#     # in_axes=(0, None),
-#     in_axes=0,
-#     out_axes=0,
-#     # axis_name="batch",
-#     variable_axes={"params": None, 'batch_stats': 0, "dropout": None, "cache": 0, "prime": None},
-#     split_rngs={"params": False, "dropout": True},
-# )
-
 
 # Overall, this defines a sequence-to-sequence map of shape (batch size, sequence length, hidden dimension),
 # exactly the signature exposed by related sequence models such as Transformers, RNNs, and CNNs.
@@ -1256,18 +1211,9 @@ class S4Layer(nn.Module):
         # This is identical to SSM Layer
         if not self.decode:
             # CNN Mode
-            print("u shape:", u.shape)
-            print("K shape:", self.K.shape)
-            # u batch size * max seq length
-            res = jax.vmap(non_circular_convolution, in_axes=(0, None), out_axes=0)(u, self.K)
-            print("res:", res.shape)
-            print("D:", self.D.shape)
-            return res + self.D * u
+            return non_circular_convolution(u, self.K) + self.D * u
         else:
             # RNN Mode
-            print("RNN Mode")
-            print("u shape:", u.shape)
-            print("u[:, np.newaxis]:", u[:, np.newaxis].shape)
             x_k, y_s = scan_SSM(*self.ssm, u[:, np.newaxis], self.x_k_1.value)
             if self.is_mutable_collection("cache"):
                 self.x_k_1.value = x_k

@@ -1,5 +1,7 @@
 from functools import partial
+from typing import Any, Callable
 
+from flax import core
 import jax
 import jax.numpy as np
 import optax
@@ -74,6 +76,9 @@ def map_nested_fn(fn):
 #     return (init_value - end_value) * (frac**power) + end_value
 #   return schedule
 
+class NormTrain(train_state.TrainState):
+    batch_stats : core.FrozenDict[str, Any]
+
 def create_train_state(
         model_name,
         model_cls,
@@ -89,11 +94,11 @@ def create_train_state(
     init_rng, dropout_rng = jax.random.split(rng, num=2)
     params = model.init(
         {"params": init_rng, "dropout": dropout_rng},
-        np.ones((bsz, seq_len, in_dim))
+        np.ones((bsz, seq_len), dtype=np.int8)
     ).unfreeze()
 
-    print("vars params:")
-    print(jax.tree_map(lambda x: x.shape, params))
+    # print("vars params:")
+    # print(jax.tree_map(lambda x: x.shape, params))
 
     # model_params = params[
     #     "params"
@@ -142,8 +147,8 @@ def create_train_state(
     else:
         tx = optax.adamw(learning_rate=lr, weight_decay=0.01)
 
-    return train_state.TrainState.create(
-        apply_fn=model.apply, params=params, tx=tx
+    return NormTrain.create(
+        apply_fn=model.apply, params=params['params'], tx=tx, batch_stats=params["batch_stats"]
     )
 
 
@@ -174,7 +179,7 @@ def train_epoch(state, rng, model, trainloader, classification=False):
     return state, np.mean(np.array(batch_losses))
 
 
-def validate(params, model, testloader, classification=False):
+def validate(state, model, testloader, classification=False):
     # Compute average loss & accuracy
     model = model(training=False)
     losses, accuracies = [], []
@@ -182,7 +187,7 @@ def validate(params, model, testloader, classification=False):
         inputs = np.array(inputs.numpy())
         labels = np.array(labels.numpy())  # Not the most efficient...
         loss, acc = eval_step(
-            inputs, labels, params, model, classification=classification
+            inputs, labels, state, model, classification=classification
         )
         losses.append(loss)
         accuracies.append(acc)
@@ -218,43 +223,39 @@ class FeedForwardModel(nn.Module):
 def train_step(
         state, rng, batch_inputs, batch_labels, model, classification=False
 ):
-    def loss_fn(model_params):
+    def loss_fn(model_params, batch_stats):
         if classification:
             logits, mod_vars = model.apply(
-                {"params": model_params["params"], "batch_stats": model_params["batch_stats"]},
+                {"params": model_params, "batch_stats": batch_stats},
                 batch_inputs,
                 rngs={"dropout": rng},
                 mutable=["batch_stats", "intermediates"],
             )
-            print("logits:", logits.shape)
-            print("batch_labels:", batch_labels.shape)
             loss = np.mean(cross_entropy_loss(logits, batch_labels))
         else:
             logits, mod_vars = model.apply(
-                {"params": model_params["params"], "batch_stats": model_params["batch_stats"]},
+                {"params": model_params, "batch_stats": batch_stats},
                 batch_inputs[:, :-1],
                 rngs={"dropout": rng},
                 mutable=["batch_stats", "intermediates"],
             )
             loss = np.mean(cross_entropy_loss(logits, batch_inputs[:, 1:, 0]))
-        return loss, logits
+        return loss, (logits, mod_vars['batch_stats'])
 
-    grad_fn = jax.value_and_grad(loss_fn, has_aux=True)
-    print("state.params", jax.tree_map(jax.numpy.shape, state.params))
-    (loss, logits), grads = grad_fn(state.params)
-    print("loss:", loss, "logits:", logits.shape)
+    grad_fn = jax.value_and_grad(loss_fn, argnums=0, has_aux=True)
+    (loss, (logits, new_batch_stats)), grads = grad_fn(state.params, state.batch_stats)
     state = state.apply_gradients(grads=grads)
-    # print("state:", state)
+    state = state.replace(batch_stats=new_batch_stats)
     return state, loss
 
 @partial(jax.jit, static_argnums=(3, 4))
-def eval_step(batch_inputs, batch_labels, params, model, classification=False):
+def eval_step(batch_inputs, batch_labels, state, model, classification=False):
     if classification:
-        logits = model.apply({"params": params["params"], "batch_stats": params["batch_stats"]}, batch_inputs)
+        logits = model.apply({"params": state.params, "batch_stats": state.batch_stats}, batch_inputs)
         loss = np.mean(cross_entropy_loss(logits, batch_labels))
         acc = np.mean(compute_accuracy(logits, batch_labels))
     else:
-        logits = model.apply({"params": params["params"], "batch_stats": params["batch_stats"]}, batch_inputs[:, :-1])
+        logits = model.apply({"params": state.params, "batch_stats": state.batch_stats}, batch_inputs[:, :-1])
         loss = np.mean(cross_entropy_loss(logits, batch_inputs[:, 1:, 0]))
         acc = np.mean(compute_accuracy(logits, batch_inputs[:, 1:, 0]))
     return loss, acc
@@ -297,13 +298,13 @@ Models = {
     "s4": S4LayerInit,
 }
 
-
 def example_train(
         model,
         dataset,
         d_model=128,
         bsz=128,
         epochs=10,
+        n_embed=135,
         ssm_n=64,
         lr=1e-3,
         lr_schedule=False,
@@ -341,6 +342,7 @@ def example_train(
     model_cls = partial(
         BatchStackedModel,
         layer=model_cls,
+        n_embed=n_embed,
         d_model=d_model,
         d_output=n_classes,
         dropout=p_dropout,
@@ -448,6 +450,10 @@ if __name__ == "__main__":
     parser.add_argument("--lr", type=float, default=1e-3)
     parser.add_argument("--lr_schedule", default=False, action="store_true")
 
+    # Max Vocab Length
+    # S4 set max vocab 20 for ListOps, and 135 for IMDB
+    parser.add_argument("--max_vocab", type=int, default=135)
+
     # Weights and Biases Parameters
     parser.add_argument(
         "--use_wandb",
@@ -474,6 +480,7 @@ if __name__ == "__main__":
         args.model,
         args.dataset,
         epochs=args.epochs,
+        n_embed=args.max_vocab,
         d_model=args.d_model,
         bsz=args.bsz,
         ssm_n=args.ssm_n,
