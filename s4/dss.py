@@ -54,7 +54,7 @@ class DSSLayer(nn.Module):
             # FLAX code to ensure that we only compute discrete once
             # during decoding.
             def init_discrete():
-                return dss_ssm(self.self.Lambda, self.l_max, self.step)
+                return dss_ssm(self.W, self.Lambda, self.l_max, self.step)
             ssm_var = self.variable("prime", "ssm", init_discrete)
             if self.is_mutable_collection("prime"):
                 ssm_var.value = init_discrete()
