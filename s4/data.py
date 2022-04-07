@@ -369,7 +369,7 @@ def create_listops_classification_dataset(bsz):
     list_dir = "listops-1000"
     APPEND_BOS = False
     APPEND_EOS = True
-    LOAD_WORDER = 4
+    LOAD_WORDER = 20
     SEQ_LENGTH, N_CLASSES, IN_DIM = 2048, 10, 20
 
     #  tokenizer
@@ -431,17 +431,17 @@ def create_listops_classification_dataset(bsz):
     # print("Check the numerical results:", len(dataset['train']['input_ids']), dataset['train']['input_ids'][0])
 
     # training and test formats here
-    dataset['train'].set_format(type='torch', columns=['input_ids', 'label'])
-    dataset['test'].set_format(type='torch', columns=['input_ids', 'label'])
+    dataset['train'].set_format(type='torch', columns=['input_ids', 'Target'])
+    dataset['test'].set_format(type='torch', columns=['input_ids', 'Target'])
 
     # batchfy for training
     def listops_collate(batch):
         batchfy_input_ids = [data["input_ids"] for data in batch]
-        batchfy_labels = torch.cat([data["label"].unsqueeze(0) for data in batch], dim=0)
+        batchfy_labels = torch.cat([data["Target"].unsqueeze(0) for data in batch], dim=0)
         batchfy_input_ids = torch.nn.utils.rnn.pad_sequence(
             batchfy_input_ids + [torch.zeros(SEQ_LENGTH)], padding_value=vocab["<pad>"], batch_first=True
         )
-        batchfy_input_ids = torch.nn.functional.one_hot(batchfy_input_ids[:-1], IN_DIM)
+        batchfy_input_ids = torch.nn.functional.one_hot(batchfy_input_ids[:-1], IN_DIM) # convert to one-hot encoding
         return batchfy_input_ids, batchfy_labels
 
     trainloader = torch.utils.data.DataLoader(
