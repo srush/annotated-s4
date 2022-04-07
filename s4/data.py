@@ -2,11 +2,12 @@ import os
 import jax
 import numpy as np
 import torch
+import torchtext
 import torchvision
 import torchvision.transforms as transforms
+from datasets import load_dataset, DatasetDict
 from torch.utils.data import TensorDataset, random_split
 from tqdm import tqdm
-
 
 # ### $sin(x)$
 # **Task**: Overfit to a 8-bit quantized sin(x) from 0 - 2*Pi -- sampled 360 times.
@@ -106,6 +107,7 @@ def create_sin_ax_b_dataset(n_examples=20000, bsz=128):
 # ### MNIST Sequence Modeling
 # **Task**: Predict next pixel value given history, in an autoregressive fashion (784 pixels x 256 values).
 #
+# While we train on full sequences, generations should probably condition on first 10-25% of image.
 def create_mnist_dataset(bsz=128):
     print("[*] Generating MNIST Sequence Modeling Dataset...")
 
@@ -216,145 +218,6 @@ def create_quickdraw_dataset(bsz=128):
     return trainloader, testloader, N_CLASSES, SEQ_LENGTH, IN_DIM
 
 
-# ### FSDD Sequence Modeling
-# **Task**: Predict next wav value given history, in an autoregressive fashion (6400 pixels x 256 values).
-#
-def create_fsdd_dataset(bsz=128):
-    print("[*] Generating FSDD Dataset...")
-
-    # Constants
-    SEQ_LENGTH, N_CLASSES, IN_DIM = 6400, 256, 1
-
-    from torchaudio.transforms import MuLawEncoding
-    from torchfsdd import TorchFSDDGenerator, TrimSilence
-
-    # Create a transformation pipeline to apply to the recordings
-    tf = transforms.Compose(
-        [
-            TrimSilence(threshold=1e-6),
-            MuLawEncoding(quantization_channels=255),
-            transforms.Lambda(
-                lambda x: torch.nn.functional.pad(
-                    x.view(-1), (0, SEQ_LENGTH - x.shape[0]), "constant", 255
-                ).view(-1, 1)
-            ),
-        ]
-    )
-
-    # Fetch the latest version of FSDD and initialize a generator with those files
-    fsdd = TorchFSDDGenerator("local", "recordings/", transforms=tf)
-
-    # Create two Torch datasets for a train-test split from the generator
-    train, test = fsdd.train_test_split(test_size=0.1)
-
-    # Return data loaders, with the provided batch size
-    trainloader = torch.utils.data.DataLoader(
-        train, batch_size=bsz, shuffle=True
-    )
-    testloader = torch.utils.data.DataLoader(
-        test, batch_size=bsz, shuffle=False
-    )
-
-    return trainloader, testloader, N_CLASSES, SEQ_LENGTH, IN_DIM
-
-
-# ### Speech Commands Sequence Modeling
-# **Task**: Predict next wav value given history, in an autoregressive fashion (8000 samples x 256 values).
-#
-def create_sc_dataset(bsz=128):
-    print("[*] Generating SC Dataset...")
-
-    # Constants
-    SEQ_LENGTH, N_CLASSES, IN_DIM = 8000, 256, 1
-    import os
-    from torchaudio.datasets import SPEECHCOMMANDS
-    from torchaudio.transforms import MuLawEncoding, Resample
-
-    # # Create a transformation pipeline to apply to the recordings
-    tf = transforms.Compose(
-        [
-            Resample(16000, SEQ_LENGTH),
-            MuLawEncoding(quantization_channels=255),
-            transforms.Lambda(
-                lambda x: torch.nn.functional.pad(
-                    x.view(-1),
-                    (0, SEQ_LENGTH - x.view(-1).shape[0]),
-                    "constant",
-                    255,
-                ).view(-1, 1)
-            ),
-        ]
-    )
-
-    class SubsetSC(SPEECHCOMMANDS):
-        def __init__(self, subset: str = None):
-            super().__init__("./", download=True)
-            digits = [
-                "zero",
-                "one",
-                "two",
-                "three",
-                "four",
-                "five",
-                "six",
-                "seven",
-                "eight",
-                "nine",
-            ]
-
-            def load_list(filename):
-                filepath = os.path.join(self._path, filename)
-                with open(filepath) as fileobj:
-                    return [
-                        os.path.join(self._path, line.strip())
-                        for line in fileobj
-                        if line.split("/")[0] in digits
-                    ]
-
-            if subset == "validation":
-                self._walker = load_list("validation_list.txt")
-            elif subset == "testing":
-                self._walker = load_list("testing_list.txt")
-            elif subset == "training":
-                excludes = load_list("validation_list.txt") + load_list(
-                    "testing_list.txt"
-                )
-                excludes = set(excludes)
-                self._walker = [
-                    w
-                    for w in self._walker
-                    if w not in excludes
-                    if w.split("/")[-2] in digits
-                ]
-
-        def __getitem__(self, n):
-            (
-                waveform,
-                sample_rate,
-                label,
-                speaker_id,
-                utterance_number,
-            ) = super().__getitem__(n)
-            out = tf(waveform)
-            return out, 0
-
-    # Create training and testing split of the data. We do not use validation in this tutorial.
-    train_set = SubsetSC("training")
-    test_set = SubsetSC("testing")
-
-    waveform, label = train_set[0]
-    print(waveform.shape, label)
-    # Return data loaders, with the provided batch size
-    trainloader = torch.utils.data.DataLoader(
-        train_set, batch_size=bsz, shuffle=True
-    )
-    testloader = torch.utils.data.DataLoader(
-        test_set, batch_size=bsz, shuffle=False
-    )
-
-    return trainloader, testloader, N_CLASSES, SEQ_LENGTH, IN_DIM
-
-
 # ### MNIST Classification
 # **Task**: Predict MNIST class given sequence model over pixels (784 pixels => 10 classes).
 def create_mnist_classification_dataset(bsz=128):
@@ -423,56 +286,179 @@ def create_cifar_classification_dataset(bsz=128):
 
     return trainloader, testloader, N_CLASSES, SEQ_LENGTH, IN_DIM
 
+def create_imdb_classification_dataset(bsz=128):
+    # Constants, the default max length is 4096
+    APPEND_BOS = False
+    APPEND_EOS = True
+    LOAD_WORDER = 20
+    MIN_FREQ = 15
 
-# ### FSDD Classification
-# **Task**: Predict FSDD class given sequence model over pixels (6400 wav => 10 classes).
-def create_fsdd_classification_dataset(bsz=128):
-    print("[*] Generating FSDD Classification Dataset...")
+    SEQ_LENGTH, N_CLASSES, IN_DIM = 2048, 2, 135
 
-    # Constants
-    SEQ_LENGTH, N_CLASSES, IN_DIM = 6400, 10, 1
+    # load data using huggingface datasets
+    dataset = load_dataset("imdb")
+    dataset = DatasetDict(train=dataset["train"], test=dataset["test"])
 
-    from torchaudio.transforms import MuLawEncoding
-    from torchfsdd import TorchFSDDGenerator, TrimSilence
-
-    # Create a transformation pipeline to apply to the recordings
-    tf = transforms.Compose(
-        [
-            TrimSilence(threshold=1e-6),
-            MuLawEncoding(quantization_channels=512),
-            transforms.Lambda(
-                lambda x: torch.nn.functional.pad(
-                    x, (0, 6400 - x.shape[0])
-                ).view(-1, 1)
-            ),
-        ]
+    l_max = SEQ_LENGTH - int(APPEND_BOS) - int(APPEND_EOS)
+    # step one, byte level tokenization
+    tokenize = lambda example: {"tokens": list(example["text"])[:l_max]}
+    dataset = dataset.map(
+        tokenize,
+        remove_columns=["text"],
+        keep_in_memory=True,
+        load_from_cache_file=False,
+        num_proc=max(LOAD_WORDER, 1),
     )
 
-    # Fetch the latest version of FSDD and initialize a generator with those files
-    fsdd = TorchFSDDGenerator(version="master", transforms=tf)
+    # print("byte characters for first example:", dataset['train']['tokens'][0])
 
-    # Create two Torch datasets for a train-test split from the generator
-    train, test = fsdd.train_test_split(test_size=0.1)
+    # step two, build vocabulary based on the byte characters, each character appear at least MIN_FREQ times
+    vocab = torchtext.vocab.build_vocab_from_iterator(
+        dataset["train"]["tokens"],
+        min_freq=MIN_FREQ,
+        specials=(
+                ["<pad>", "<unk>"]
+                + (["<bos>"] if APPEND_BOS else [])
+                + (["<eos>"] if APPEND_EOS else [])
+        ),
+    )
 
-    # Return data loaders, with the provided batch size
+    # step three, numericalize the tokens
+    vocab.set_default_index(vocab["<unk>"])
+
+    numericalize = lambda example: {
+        "input_ids": vocab(
+            (["<bos>"] if APPEND_BOS else [])
+            + example["tokens"]
+            + (["<eos>"] if APPEND_EOS else [])
+        )
+    }
+    dataset = dataset.map(
+        numericalize,
+        remove_columns=["tokens"],
+        keep_in_memory=True,
+        load_from_cache_file=False,
+        num_proc=max(LOAD_WORDER, 1),
+    )
+
+    # print("numericalize result for first example:", dataset['train']['input_ids'][0])
+
+    dataset['train'].set_format(type='torch', columns=['input_ids', 'label'])
+    dataset['test'].set_format(type='torch', columns=['input_ids', 'label'])
+
+    def imdb_collate(batch):
+        batchfy_input_ids = [data["input_ids"] for data in batch]
+        batchfy_labels = torch.cat([data["label"].unsqueeze(0) for data in batch], dim=0)
+        batchfy_input_ids = torch.nn.utils.rnn.pad_sequence(
+            batchfy_input_ids + [torch.zeros(SEQ_LENGTH)], padding_value=vocab["<pad>"], batch_first=True
+        )
+        batchfy_input_ids = torch.nn.functional.one_hot(batchfy_input_ids[:-1], IN_DIM)
+        return batchfy_input_ids, batchfy_labels
+
     trainloader = torch.utils.data.DataLoader(
-        train, batch_size=bsz, shuffle=True
-    )
+        dataset['train'], batch_size=bsz, shuffle=True, collate_fn=imdb_collate)
+
     testloader = torch.utils.data.DataLoader(
-        test, batch_size=bsz, shuffle=False
-    )
+        dataset['test'], batch_size=bsz, shuffle=True, collate_fn=imdb_collate)
 
     return trainloader, testloader, N_CLASSES, SEQ_LENGTH, IN_DIM
 
+# listops
+def create_listops_classification_dataset(bsz):
+    # global constants, default maximal length is 2048
+    list_dir = "listops-1000"
+    APPEND_BOS = False
+    APPEND_EOS = True
+    LOAD_WORDER = 4
+    SEQ_LENGTH, N_CLASSES, IN_DIM = 2048, 10, 20
+
+    #  tokenizer
+    def listops_tokenizer(s):
+        return s.translate({ord("]"): ord("X"), ord("("): None, ord(")"): None}).split()
+
+    # step 1, load and build datasets
+    dataset = load_dataset(
+        "csv",
+        data_files={
+            "train": str(f"{list_dir}/basic_train.tsv"),
+            "val": str(f"{list_dir}/basic_val.tsv"),
+            "test": str(f"{list_dir}/basic_test.tsv"),
+        },
+        delimiter="\t",
+        keep_in_memory=True,
+    )
+
+    tokenizer = listops_tokenizer
+    l_max = SEQ_LENGTH - int(APPEND_BOS) - int(APPEND_EOS)
+    tokenize = lambda example: {"tokens": tokenizer(example["Source"])[:l_max]}
+
+    dataset = dataset.map(
+        tokenize,
+        remove_columns=["Source"],
+        keep_in_memory=True,
+        load_from_cache_file=False,
+        num_proc=max(LOAD_WORDER, 1),
+    )
+
+    # step 2, build vocabulary
+    vocab = torchtext.vocab.build_vocab_from_iterator(
+        dataset["train"]["tokens"],
+        specials=(
+                ["<pad>", "<unk>"]
+                + (["<bos>"] if APPEND_BOS else [])
+                + (["<eos>"] if APPEND_EOS else [])
+        ),
+    )
+
+    # step 3, numerialize
+    vocab.set_default_index(vocab["<unk>"])
+
+    numericalize = lambda example: {
+        "input_ids": vocab(
+            (["<bos>"] if APPEND_BOS else [])
+            + example["tokens"]
+            + (["<eos>"] if APPEND_EOS else [])
+        )
+    }
+    dataset = dataset.map(
+        numericalize,
+        remove_columns=["tokens"],
+        keep_in_memory=True,
+        load_from_cache_file=False,
+        num_proc=max(LOAD_WORDER, 1),
+    )
+
+    # print("Check the numerical results:", len(dataset['train']['input_ids']), dataset['train']['input_ids'][0])
+
+    # training and test formats here
+    dataset['train'].set_format(type='torch', columns=['input_ids', 'label'])
+    dataset['test'].set_format(type='torch', columns=['input_ids', 'label'])
+
+    # batchfy for training
+    def listops_collate(batch):
+        batchfy_input_ids = [data["input_ids"] for data in batch]
+        batchfy_labels = torch.cat([data["label"].unsqueeze(0) for data in batch], dim=0)
+        batchfy_input_ids = torch.nn.utils.rnn.pad_sequence(
+            batchfy_input_ids + [torch.zeros(SEQ_LENGTH)], padding_value=vocab["<pad>"], batch_first=True
+        )
+        batchfy_input_ids = torch.nn.functional.one_hot(batchfy_input_ids[:-1], IN_DIM)
+        return batchfy_input_ids, batchfy_labels
+
+    trainloader = torch.utils.data.DataLoader(
+        dataset['train'], batch_size=bsz, shuffle=True, collate_fn=listops_collate)
+
+    testloader = torch.utils.data.DataLoader(
+        dataset['test'], batch_size=bsz, shuffle=True, collate_fn=listops_collate)
+
+    return trainloader, testloader, N_CLASSES, SEQ_LENGTH, IN_DIM
 
 Datasets = {
     "mnist": create_mnist_dataset,
     "quickdraw": create_quickdraw_dataset,
-    "fsdd": create_fsdd_dataset,
-    "sc": create_sc_dataset,
     "sin": create_sin_x_dataset,
     "sin_noise": create_sin_ax_b_dataset,
     "mnist-classification": create_mnist_classification_dataset,
-    "fsdd-classification": create_fsdd_classification_dataset,
     "cifar-classification": create_cifar_classification_dataset,
+    "imdb-classification": create_imdb_classification_dataset,
+    "listops-classification": create_listops_classification_dataset
 }
