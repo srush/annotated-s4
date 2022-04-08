@@ -5,9 +5,10 @@ import torch
 import torchtext
 import torchvision
 import torchvision.transforms as transforms
-from datasets import load_dataset, DatasetDict
+from datasets import DatasetDict, load_dataset
 from torch.utils.data import TensorDataset, random_split
 from tqdm import tqdm
+
 
 # ### $sin(x)$
 # **Task**: Overfit to a 8-bit quantized sin(x) from 0 - 2*Pi -- sampled 360 times.
@@ -465,73 +466,6 @@ def create_fsdd_classification_dataset(bsz=128):
 
     return trainloader, testloader, N_CLASSES, SEQ_LENGTH, IN_DIM
 
-# ### MNIST Classification
-# **Task**: Predict MNIST class given sequence model over pixels (784 pixels => 10 classes).
-def create_mnist_classification_dataset(bsz=128):
-    print("[*] Generating MNIST Classification Dataset...")
-
-    # Constants
-    SEQ_LENGTH, N_CLASSES, IN_DIM = 784, 10, 1
-    tf = transforms.Compose(
-        [
-            transforms.ToTensor(),
-            transforms.Lambda(
-                lambda x: (x.view(1, SEQ_LENGTH).t() * 256).int()
-            ),
-        ]
-    )
-
-    train = torchvision.datasets.MNIST(
-        "./data", train=True, download=True, transform=tf
-    )
-    test = torchvision.datasets.MNIST(
-        "./data", train=False, download=True, transform=tf
-    )
-
-    # Return data loaders, with the provided batch size
-    trainloader = torch.utils.data.DataLoader(
-        train, batch_size=bsz, shuffle=True
-    )
-    testloader = torch.utils.data.DataLoader(
-        test, batch_size=bsz, shuffle=False
-    )
-
-    return trainloader, testloader, N_CLASSES, SEQ_LENGTH, IN_DIM
-
-
-# ### CIFAR-10 Classification
-# **Task**: Predict CIFAR-10 class given sequence model over pixels (32 x 32 x 3 RGB image => 10 classes).
-def create_cifar_classification_dataset(bsz=128):
-    print("[*] Generating CIFAR-10 Classification Dataset")
-
-    # Constants
-    SEQ_LENGTH, N_CLASSES, IN_DIM = 32 * 32, 10, 3
-    tf = transforms.Compose(
-        [
-            transforms.ToTensor(),
-            transforms.Normalize(
-                (0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)
-            ),
-            transforms.Lambda(lambda x: x.view(3, 1024).t()),
-        ]
-    )
-
-    train = torchvision.datasets.CIFAR10(
-        "./data", train=True, download=True, transform=tf
-    )
-    test = torchvision.datasets.CIFAR10(
-        "./data", train=False, download=True, transform=tf
-    )
-
-    # Return data loaders, with the provided batch size
-    trainloader = torch.utils.data.DataLoader(
-        train, batch_size=bsz, shuffle=True
-    )
-    testloader = torch.utils.data.DataLoader(
-        test, batch_size=bsz, shuffle=False
-    )
-
-    return trainloader, testloader, N_CLASSES, SEQ_LENGTH, IN_DIM
 
 def create_imdb_classification_dataset(bsz=128):
     # Constants, the default max length is 4096
@@ -547,10 +481,10 @@ def create_imdb_classification_dataset(bsz=128):
     dataset = DatasetDict(train=dataset["train"], test=dataset["test"])
 
     l_max = SEQ_LENGTH - int(APPEND_BOS) - int(APPEND_EOS)
+
     # step one, byte level tokenization
-    tokenize = lambda example: {"tokens": list(example["text"])[:l_max]}
     dataset = dataset.map(
-        tokenize,
+        lambda example: {"tokens": list(example["text"])[:l_max]},
         remove_columns=["text"],
         keep_in_memory=True,
         load_from_cache_file=False,
@@ -564,24 +498,23 @@ def create_imdb_classification_dataset(bsz=128):
         dataset["train"]["tokens"],
         min_freq=MIN_FREQ,
         specials=(
-                ["<pad>", "<unk>"]
-                + (["<bos>"] if APPEND_BOS else [])
-                + (["<eos>"] if APPEND_EOS else [])
+            ["<pad>", "<unk>"]
+            + (["<bos>"] if APPEND_BOS else [])
+            + (["<eos>"] if APPEND_EOS else [])
         ),
     )
 
     # step three, numericalize the tokens
     vocab.set_default_index(vocab["<unk>"])
 
-    numericalize = lambda example: {
-        "input_ids": vocab(
-            (["<bos>"] if APPEND_BOS else [])
-            + example["tokens"]
-            + (["<eos>"] if APPEND_EOS else [])
-        )
-    }
     dataset = dataset.map(
-        numericalize,
+        lambda example: {
+            "input_ids": vocab(
+                (["<bos>"] if APPEND_BOS else [])
+                + example["tokens"]
+                + (["<eos>"] if APPEND_EOS else [])
+            )
+        },
         remove_columns=["tokens"],
         keep_in_memory=True,
         load_from_cache_file=False,
@@ -590,25 +523,34 @@ def create_imdb_classification_dataset(bsz=128):
 
     # print("numericalize result for first example:", dataset['train']['input_ids'][0])
 
-    dataset['train'].set_format(type='torch', columns=['input_ids', 'label'])
-    dataset['test'].set_format(type='torch', columns=['input_ids', 'label'])
+    dataset["train"].set_format(type="torch", columns=["input_ids", "label"])
+    dataset["test"].set_format(type="torch", columns=["input_ids", "label"])
 
     def imdb_collate(batch):
         batchfy_input_ids = [data["input_ids"] for data in batch]
-        batchfy_labels = torch.cat([data["label"].unsqueeze(0) for data in batch], dim=0)
-        batchfy_input_ids = torch.nn.utils.rnn.pad_sequence(
-            batchfy_input_ids + [torch.zeros(SEQ_LENGTH)], padding_value=vocab["<pad>"], batch_first=True
+        batchfy_labels = torch.cat(
+            [data["label"].unsqueeze(0) for data in batch], dim=0
         )
-        batchfy_input_ids = torch.nn.functional.one_hot(batchfy_input_ids[:-1], IN_DIM)
+        batchfy_input_ids = torch.nn.utils.rnn.pad_sequence(
+            batchfy_input_ids + [torch.zeros(SEQ_LENGTH)],
+            padding_value=vocab["<pad>"],
+            batch_first=True,
+        )
+        batchfy_input_ids = torch.nn.functional.one_hot(
+            batchfy_input_ids[:-1], IN_DIM
+        )
         return batchfy_input_ids, batchfy_labels
 
     trainloader = torch.utils.data.DataLoader(
-        dataset['train'], batch_size=bsz, shuffle=True, collate_fn=imdb_collate)
+        dataset["train"], batch_size=bsz, shuffle=True, collate_fn=imdb_collate
+    )
 
     testloader = torch.utils.data.DataLoader(
-        dataset['test'], batch_size=bsz, shuffle=True, collate_fn=imdb_collate)
+        dataset["test"], batch_size=bsz, shuffle=True, collate_fn=imdb_collate
+    )
 
     return trainloader, testloader, N_CLASSES, SEQ_LENGTH, IN_DIM
+
 
 # listops
 def create_listops_classification_dataset(bsz):
@@ -621,7 +563,9 @@ def create_listops_classification_dataset(bsz):
 
     #  tokenizer
     def listops_tokenizer(s):
-        return s.translate({ord("]"): ord("X"), ord("("): None, ord(")"): None}).split()
+        return s.translate(
+            {ord("]"): ord("X"), ord("("): None, ord(")"): None}
+        ).split()
 
     # step 1, load and build datasets
     dataset = load_dataset(
@@ -637,10 +581,9 @@ def create_listops_classification_dataset(bsz):
 
     tokenizer = listops_tokenizer
     l_max = SEQ_LENGTH - int(APPEND_BOS) - int(APPEND_EOS)
-    tokenize = lambda example: {"tokens": tokenizer(example["Source"])[:l_max]}
 
     dataset = dataset.map(
-        tokenize,
+        lambda example: {"tokens": tokenizer(example["Source"])[:l_max]},
         remove_columns=["Source"],
         keep_in_memory=True,
         load_from_cache_file=False,
@@ -651,24 +594,23 @@ def create_listops_classification_dataset(bsz):
     vocab = torchtext.vocab.build_vocab_from_iterator(
         dataset["train"]["tokens"],
         specials=(
-                ["<pad>", "<unk>"]
-                + (["<bos>"] if APPEND_BOS else [])
-                + (["<eos>"] if APPEND_EOS else [])
+            ["<pad>", "<unk>"]
+            + (["<bos>"] if APPEND_BOS else [])
+            + (["<eos>"] if APPEND_EOS else [])
         ),
     )
 
     # step 3, numerialize
     vocab.set_default_index(vocab["<unk>"])
 
-    numericalize = lambda example: {
-        "input_ids": vocab(
-            (["<bos>"] if APPEND_BOS else [])
-            + example["tokens"]
-            + (["<eos>"] if APPEND_EOS else [])
-        )
-    }
     dataset = dataset.map(
-        numericalize,
+        lambda example: {
+            "input_ids": vocab(
+                (["<bos>"] if APPEND_BOS else [])
+                + example["tokens"]
+                + (["<eos>"] if APPEND_EOS else [])
+            )
+        },
         remove_columns=["tokens"],
         keep_in_memory=True,
         load_from_cache_file=False,
@@ -678,24 +620,38 @@ def create_listops_classification_dataset(bsz):
     # print("Check the numerical results:", len(dataset['train']['input_ids']), dataset['train']['input_ids'][0])
 
     # training and test formats here
-    dataset['train'].set_format(type='torch', columns=['input_ids', 'Target'])
-    dataset['test'].set_format(type='torch', columns=['input_ids', 'Target'])
+    dataset["train"].set_format(type="torch", columns=["input_ids", "Target"])
+    dataset["test"].set_format(type="torch", columns=["input_ids", "Target"])
 
     # batchfy for training
     def listops_collate(batch):
         batchfy_input_ids = [data["input_ids"] for data in batch]
-        batchfy_labels = torch.cat([data["Target"].unsqueeze(0) for data in batch], dim=0)
-        batchfy_input_ids = torch.nn.utils.rnn.pad_sequence(
-            batchfy_input_ids + [torch.zeros(SEQ_LENGTH)], padding_value=vocab["<pad>"], batch_first=True
+        batchfy_labels = torch.cat(
+            [data["Target"].unsqueeze(0) for data in batch], dim=0
         )
-        batchfy_input_ids = torch.nn.functional.one_hot(batchfy_input_ids[:-1], IN_DIM) # one hot encoding for the input
+        batchfy_input_ids = torch.nn.utils.rnn.pad_sequence(
+            batchfy_input_ids + [torch.zeros(SEQ_LENGTH)],
+            padding_value=vocab["<pad>"],
+            batch_first=True,
+        )
+        batchfy_input_ids = torch.nn.functional.one_hot(
+            batchfy_input_ids[:-1], IN_DIM
+        )  # one hot encoding for the input
         return batchfy_input_ids, batchfy_labels
 
     trainloader = torch.utils.data.DataLoader(
-        dataset['train'], batch_size=bsz, shuffle=True, collate_fn=listops_collate)
+        dataset["train"],
+        batch_size=bsz,
+        shuffle=True,
+        collate_fn=listops_collate,
+    )
 
     testloader = torch.utils.data.DataLoader(
-        dataset['test'], batch_size=bsz, shuffle=True, collate_fn=listops_collate)
+        dataset["test"],
+        batch_size=bsz,
+        shuffle=True,
+        collate_fn=listops_collate,
+    )
 
     return trainloader, testloader, N_CLASSES, SEQ_LENGTH, IN_DIM
 
@@ -710,6 +666,6 @@ Datasets = {
     "mnist-classification": create_mnist_classification_dataset,
     "fsdd-classification": create_fsdd_classification_dataset,
     "cifar-classification": create_cifar_classification_dataset,
-    "imdb-classification": create_imdb_classification_dataset
-    "listops-classification": create_listops_classification_dataset
+    "imdb-classification": create_imdb_classification_dataset,
+    "listops-classification": create_listops_classification_dataset,
 }
