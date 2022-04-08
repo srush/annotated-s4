@@ -6,6 +6,7 @@ ignore =
     E266,   # Too many leading #s for block comment -- conflicts with jupytext
     E501,   # Line length issues... black takes care of code, but comments/markdown are not handled
     E741,   # Ambiguous one-character variable names -- e.g., `I` or `l`
+    W503
 
 per-file-ignores =
     */__init__.py: F401
