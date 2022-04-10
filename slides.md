@@ -24,9 +24,12 @@ img {
 [Sasha Rush](http://rush-nlp.com/) (@srush_nlp) with [Sidd Karamcheti](https://www.siddkaramcheti.com/)
 
 
+
 [https://github.com/srush/annotated-s4](https://github.com/srush/annotated-s4)
 
 Based on research by Albert Gu, Karan Goel, and Christopher Ré.
+
+![h:100px](https://raw.githubusercontent.com/google/jax/main/images/jax_logo_250px.png)
 
 
 
@@ -41,6 +44,8 @@ Based on research by Albert Gu, Karan Goel, and Christopher Ré.
 ## Intro
 
 
+
+
 - Professor at Cornell / Researcher at Hugging Face
 - Open source projects
 
@@ -52,7 +57,7 @@ Based on research by Albert Gu, Karan Goel, and Christopher Ré.
 
 ## Talk Goals
 
-Caveat: Not a research talk, there will be bugs 🧑‍🔬
+Caveat: Not a research talk, there will be bugs.
 
 
 * 
@@ -744,7 +749,7 @@ jax.remat(cauchy_dot)
 ![](https://miro.medium.com/max/1400/1*UkI9za9zTR-HL8uM15Wmzw.png)
 
 
-- Expreriments on MNIST, QuickDraw, SpeechCommands
+- Experiments on MNIST, QuickDraw, SpeechCommands
 
 --- 
 
