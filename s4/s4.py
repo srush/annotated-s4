@@ -546,7 +546,7 @@ def log_step_initializer(dt_min=0.001, dt_max=0.1):
     return init
 
 
-# For the SMM layer most of the work is to build the filter.
+# For the SSM layer most of the work is to build the filter.
 # The actual call to the network is just the (huge) convolution we specified above.
 #
 # Note for Torch users: `setup` in Flax is called each time the parameters are updated.
