@@ -8,99 +8,30 @@
 
 ## Experiments
 
-#### MNIST Sequence Modeling
+### ListOps
 
-```bash
-python -m s4.train --dataset mnist --model s4 --epochs 100 --bsz 128 --d_model 128 --ssm_n 64
-```
-
-#### QuickDraw Sequence Modeling
-
-```bash
-# Default arguments
-python -m s4.train --dataset quickdraw --model s4 --epochs 10 --bsz 128 --d_model 128 --ssm_n 64
-
-# "Run in a day" variant
-python -m s4.train --dataset quickdraw --model s4 --epochs 1 --bsz 512 --d_model 256 --ssm_n 64 --p_dropout 0.05
-```
-
-#### MNIST Classification
-
-```bash
-python -m s4.train --dataset mnist-classification --model s4 --epochs 10 --bsz 128 --d_model 128 --ssm_n 64
-```
-
-Gets "best" 97.76% accuracy in 10 epochs @ 40s/epoch on a TitanRTX.
-
-#### CIFAR-10 Classification
+Downolad dataset in [GitHub page](https://github.com/google-research/long-range-arena). Unzip the downloaded dataset, and move it to the project folder.
 
 ```
-# Following @frederick0329's/@albertgu's results: https://github.com/srush/annotated-s4/pull/43#issuecomment-1065444261
-python -m s4.train --dataset cifar-classification --model s4 --epoch 100 --bsz 64 --n_layers 6 --p_dropout 0.25 --lr 5e-3 --d_model 512
+python -m s4.train --dataset listops-classification --model s4 --epochs 100 --bsz 50 --d_model 128 --n_layers 4 --ssm_n 64 --lr 1e-2 --p_dropout 0 --lr_schedule
 ```
 
-Gets "best" 85.81% accuracy after 100 epochs @ 3m8s/epoch on a TitanRTX
+Training with the previously defined hyper-parameters yields the test accuracy 54.3% on the test set.
 
----
+Here is the training curve for ListOps Review.
 
-## Quickstart (Development)
+<img width="1356" alt="jax-imdb" src="https://user-images.githubusercontent.com/13411557/162068429-a62ee0b1-baad-4342-9484-7207e39378f7.jpg">
 
-We have two `requirements.txt` files that hold dependencies for the current project: one that is tailored to CPUs,
-the other that installs for GPU.
+### IMDB
 
-### CPU-Only (MacOS, Linux)
+We used the huggingface datasets for LRA IMDB review task.
 
-```bash
-# Set up virtual/conda environment of your choosing & activate...
-pip install -r requirements-cpu.txt
-
-# Set up pre-commit
-pre-commit install
+```
+python -m s4.train --dataset imdb-classification --model s4 --epochs 100 --bsz 50 --d_model 64 --n_layers 4 --ssm_n 64 --lr 1e-2 --p_dropout 0
 ```
 
-### GPU (CUDA > 11 & CUDNN > 8.2)
+Training with the previously defined hyper-parameters yields the test accuracy 80.7% on the test set.
 
-```bash
-# Set up virtual/conda environment of your choosing & activate...
-pip install -r requirements-gpu.txt
+Here is the training curve for IMDB Review.
 
-# Set up pre-commit
-pre-commit install
-```
-
-## Dependencies from Scratch
-
-In case the above `requirements.txt` don't work, here are the commands used to download dependencies.
-
-### CPU-Only
-
-```bash
-# Set up virtual/conda environment of your choosing & activate... then install the following:
-pip install --upgrade "jax[cpu]"
-pip install flax
-pip install torch torchvision torchaudio
-
-# Defaults
-pip install black celluloid flake8 google-cloud-storage isort ipython matplotlib pre-commit seaborn tensorflow tqdm
-
-# Set up pre-commit
-pre-commit install
-```
-
-### GPU (CUDA > 11, CUDNN > 8.2)
-
-Note - CUDNN > 8.2 is critical for compilation without warnings, and GPU w/ at least Turing architecture for full
-efficiency.
-
-```bash
-# Set up virtual/conda environment of your choosing & activate... then install the following:
-pip install jax[cuda11_cudnn82] -f https://storage.googleapis.com/jax-releases/jax_releases.html
-pip install flax
-pip install torch==1.10.1+cpu torchvision==0.11.2+cpu torchaudio==0.10.1+cpu -f https://download.pytorch.org/whl/cpu/torch_stable.html
-
-# Defaults
-pip install black celluloid flake8 google-cloud-storage isort ipython matplotlib pre-commit seaborn tensorflow tqdm
-
-# Set up pre-commit
-pre-commit install
-```
+<img width="1356" alt="jax-imdb" src="https://user-images.githubusercontent.com/16102460/162067502-f03809c0-0842-4718-a404-859f8d5a1a27.png">
