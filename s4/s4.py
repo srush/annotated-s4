@@ -875,24 +875,25 @@ def cauchy_dot(v, omega, lambd):
 # $\boldsymbol{p}, \boldsymbol{q} \in \mathbb{C}^{N\times 1}$ such that:
 
 # $$
-# \boldsymbol{A} = \boldsymbol{\Lambda} + \boldsymbol{p}  \boldsymbol{q}^*
+# \boldsymbol{A} = \boldsymbol{\Lambda} - \boldsymbol{p}  \boldsymbol{q}^*
 # $$
 
 # The [Woodbury identity](https://en.wikipedia.org/wiki/Woodbury_matrix_identity)
 # tells us that the inverse of a diagonal plus rank-1 term is equal to the
-# inverse of the diagonal plus a rank-1 term. Or in math:
+# inverse of the diagonal plus a rank-1 term. We write it out here
+# adding the low-rank term.
 
 # $$ \begin{aligned}
-# (\boldsymbol{\Lambda} + \boldsymbol{p}  \boldsymbol{q}^*)^{-1} &= \boldsymbol{\Lambda}^{-1} - \boldsymbol{\Lambda}^{-1} \boldsymbol{p} (1 + \boldsymbol{q}^* \boldsymbol{p})^{-1} \boldsymbol{q}^* \boldsymbol{\Lambda}^{-1}
+# (\boldsymbol{\Lambda} + \boldsymbol{p}  \boldsymbol{q}^*)^{-1} &= \boldsymbol{\Lambda}^{-1} - \boldsymbol{\Lambda}^{-1} \boldsymbol{p} (1 + \boldsymbol{q}^* \boldsymbol{\Lambda}^{-1} \boldsymbol{p})^{-1} \boldsymbol{q}^* \boldsymbol{\Lambda}^{-1}
 #  \end{aligned}
 # $$
 
-#  There is a bunch of algebra not shown. But it mostly consists of substituting this component in for A,
+#  There is a bunch of algebra in the appendix. It mostly consists of substituting this component in for A,
 #  applying the Woodbury identity and distributing terms. We end up with 4 terms that
 #  all look like Step 2 above:
 
 # $$ \begin{aligned}
-# \boldsymbol{\hat{K}}_{DPLR}(z) & = c(z) [k_{z, \Lambda}(\boldsymbol{\tilde{C}}, \boldsymbol{\boldsymbol{B}}) - k_{z, \Lambda}(\boldsymbol{\tilde{C}}, \boldsymbol{\boldsymbol{p}}) (1 - k_{z, \Lambda}(\boldsymbol{q^*}, \boldsymbol{\boldsymbol{p}}) )^{-1} k_{z, \Lambda}(\boldsymbol{q^*}, \boldsymbol{\boldsymbol{B}}) ]
+# \boldsymbol{\hat{K}}_{DPLR}(z) & = c(z) [k_{z, \Lambda}(\boldsymbol{\tilde{C}}, \boldsymbol{\boldsymbol{B}}) - k_{z, \Lambda}(\boldsymbol{\tilde{C}}, \boldsymbol{\boldsymbol{p}}) (1 + k_{z, \Lambda}(\boldsymbol{q^*}, \boldsymbol{\boldsymbol{p}}) )^{-1} k_{z, \Lambda}(\boldsymbol{q^*}, \boldsymbol{\boldsymbol{B}}) ]
 #  \end{aligned}$$
 
 
@@ -1525,7 +1526,10 @@ def sample_mnist_prefix(path, model, length):
 # [Karan Goel](https://krandiash.github.io/), who were super helpful in
 # putting this together, and pointing you again to their
 # [paper](https://arxiv.org/abs/2111.00396) and
-# [codebase](https://github.com/HazyResearch/state-spaces). We're also grateful for Conner Vercellino and
+# [codebase](https://github.com/HazyResearch/state-spaces).
+# Thanks to Ankit Gupta, Ekin Akyürek, Qinsheng Zhang, Nathan Yan, and Junxiong Wang for
+# contributions. 
+# We're also grateful for Conner Vercellino and
 # Laurel Orr for providing helpful feedback on this post.
 
 #
