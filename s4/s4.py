@@ -1528,7 +1528,7 @@ def sample_mnist_prefix(path, model, length):
 # [paper](https://arxiv.org/abs/2111.00396) and
 # [codebase](https://github.com/HazyResearch/state-spaces).
 # Thanks to Ankit Gupta, Ekin Akyürek, Qinsheng Zhang, Nathan Yan, and Junxiong Wang for
-# contributions. 
+# contributions.
 # We're also grateful for Conner Vercellino and
 # Laurel Orr for providing helpful feedback on this post.
 
