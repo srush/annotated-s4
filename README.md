@@ -37,9 +37,13 @@ Gets "best" 97.76% accuracy in 10 epochs @ 40s/epoch on a TitanRTX.
 ```
 # Following @frederick0329's/@albertgu's results: https://github.com/srush/annotated-s4/pull/43#issuecomment-1065444261
 python -m s4.train --dataset cifar-classification --model s4 --epoch 100 --bsz 64 --n_layers 6 --p_dropout 0.25 --lr 5e-3 --d_model 512
+
+# DSS Model
+python -m s4.train --dataset cifar-classification --model dss --epoch 100 --bsz 64 --n_layers 6 --p_dropout 0.25 --lr 5e-3 --d_model 512
 ```
 
-Gets "best" 85.81% accuracy after 100 epochs @ 3m8s/epoch on a TitanRTX
+S4 gets "best" 87.05% accuracy after 100 epochs @ 3m8s/epoch on a TitanRTX
+DSS gets "best" 88.90% accuracy after 100 epochs @ 3m11s/epoch on a TitanRTX
 
 ---
 
