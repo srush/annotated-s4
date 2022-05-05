@@ -7,30 +7,24 @@
 #
 # <center>
 # <p> Ankit Gupta</p>
-#
+# </center>
 # ---
 #
-# *Note: This page is meant as a standalone complement to Section 2 [TODO Link] of the original
-# blog post.*
 #
-# The months following the release of S4 paper by Gu et. al. were characterized by a wave of excitement around the new
-# model, it's ability to handle extremely long sequences, and generally, what such a departure from Transformer-based
-# architectures could mean. The original authors came out with a
-# [follow-up paper applying S4 to audio generation](https://arxiv.org/abs/2202.09729), and weeks later, a [completely
-# different group applied S4 to long-range movie clip classification](https://arxiv.org/abs/2204.01692).
+# *Blog Post and [Library](https://github.com/srush/annotated-s4/) by [Sidd Karamcheti](https://www.siddkaramcheti.com/) and  [Sasha Rush](http://rush-nlp.com/)*
 #
-# Yet, aspects of the implementation remain hard to parse, especially the derivation of the diagonal plus low rank
-# constraint on $\boldsymbol{A}$. Not only is this math fairly complex, but in the original PyTorch code base, requires
-# the use of custom CUDA kernels -- further obfuscating the implementation (and why this blog uses Jax to efficiently
-# compile the relevant operations).
 #
-# However, at the end of March 2022 -- an alternative construction for state space models was proposed in [Diagonal
-# State Spaces are as Effective as Structured State Spaces](https://arxiv.org/abs/2203.14343). This short paper derives
-# an alternative construction of learnable state space models that is both 1) simple, 2) requires no custom kernels, and
-# 3) can be efficiently implemented in Jax or PyTorch in just a dozen lines. The rest of this post steps through this
-# alternative derivation, **a complete standalone for Section 2** of the original Annotated S4 post.
 #
-# We'll still be using Jax with the Flax NN Library for consistency with the original post, though this Diagonal State
+# The [S4 model](https://arxiv.org/abs/2111.00396) continues to show successful applications in handling extremely long sequences, with recent application to 
+# [audio generation](https://arxiv.org/abs/2202.09729) and  [movie clip classification](https://arxiv.org/abs/2204.01692).
+# The model itself though is a bit daunting to understand and implement. 
+#
+# The [DSS model](https://arxiv.org/abs/2203.14343) proposes an alternative construction of a learnable state space models. DSS is significantly simpler while maintaining similar performance as the original S4 model.
+#
+# This blog is a standalone complement to [The Annotated S4](https://srush.github.io/annotated-s4/) covering the DSS model. Section 1 (SSMs) and Section 3 (SSM NNs) can be read as background. This blog 
+# acts as standalong a simplification of [Section 2](https://srush.github.io/annotated-s4/#part-2-implementing-s4), the challenging part of the original post. 
+#
+# We will using Jax with the Flax NN Library for consistency with the original post, though this Diagonal State
 # Space (DSS) variant can be easily implemented in PyTorch with some minor changes.
 
 # import s4.s4 as s4  TODO -- For some reason breaks streamlit...
@@ -45,36 +39,36 @@ rng = jax.random.PRNGKey(1)
 
 # ## Table of Contents
 # <nav id="TOC">
-# <ul>
-#   <li>I. The Problem with the SSM Kernel
+# <ol>
+#   <li> The Problem with the SSM Kernel
 #       <ul>
 #           <li>Rethinking Discretization</li>
 #           <li>Rewriting the SSM Kernel</li>
 #           <li>Diagonalization & Efficient Matrix Powers</li>
-#       <ul>
+#       </ul>
 #   </li>
-#   <li>II. Deriving Diagonal State Spaces
+#   <li> Deriving Diagonal State Spaces
 #       <ul>
 #           <li>The Annotated Proposition 1</li>
 #           <li>Secret Sauce – Part 1: Handling the Complex Softmax</li>
 #           <li>Secret Sauce – Part 2: Initializing with HiPPO</li>
 #       </ul>
 #   </li>
-#   <li>III. Putting the DSS Layer Together
+#   <li> Putting the DSS Layer Together
 #       <ul>
 #           <li>The DSS Block</li>
 #           <li>Limitations</li>
 #       </ul>
 #   </li>
-# </ul>
+# </ol>
+# </nav>
 
 
 # ## I. The Problem with the SSM Kernel
 #
-# We're going to start by taking a step back – back to the original State Space Model (SSM) itself. The original
-# SSM is defined over *continuous* time inputs, as follows (from the original S4 paper)
-#
-# **[TODO: Link to original post]**
+# Recall from [Section 1](https://srush.github.io/annotated-s4/#part-1-state-space-models),
+# that our goal is to utilize  state-space models (SSMs).
+# SSMs are defined over *continuous* time inputs.
 
 # > The [state space model](https://en.wikipedia.org/wiki/State-space_representation) is defined by this simple equation.
 # > It maps a 1-D input signal $u(t)$ to an $N$-D latent state $x(t)$
@@ -93,17 +87,35 @@ rng = jax.random.PRNGKey(1)
 # > For simplicity, we assume the input and output are one-dimensional, and the state representation
 # > is $N$-dimensional. The first equation defines the change in $x(t)$ over time.
 
-# However, when actually training or running inference with this model, we don't take continuous inputs! Instead,
-# we usually have a need to *discretize* turning the above differential equation, into a discrete sequence-to-sequence
-# map! The key question: how do we discretize?
+# However, when working with sequence inputs, 
+# we need to *discretize* the above differential equation.
+# A key decision is, how do we discretize?
 
 # ### Rethinking Discretization
+# 
+# Our goal is to find discretized parameters $\boldsymbol{\overline{A}}, \boldsymbol{\overline{B}}, \boldsymbol{\overline{C}}$ to work with discrete sequences, i.e. 
 #
-# One way to discretize the state space model with with the [bilinear method](https://en.wikipedia.org/wiki/Bilinear_transform)
-# as described in the original S4 work. This has certain advantages such as **[TODO: advantages of bilinear?]**.
+# > A sequence-to-sequence map from $(u_0,\ldots,u_{L-1}) = u \in \R^L$ to $(y_0,\ldots,y_{L-1}) = y \in \R^L$
+# $$
+# \begin{aligned}
+#   x_{k} &= \boldsymbol{\overline{A}} x_{k-1} + \boldsymbol{\overline{B}} u_k\\
+#   y_k &= \boldsymbol{\overline{C}} x_k \\
+# \end{aligned}
+# $$
+
 #
-# However, a simpler approach to discretizing the SSM is by directly writing each equation in terms of a fixed
-# sampling interval $\Delta$, and a discrete index $k$. Doing so results in the following simple system of equations:
+# In S4, the SSM is discretized a with a [bilinear transform](https://en.wikipedia.org/wiki/Bilinear_transform), with step-size $\Delta$ and  as follows:
+# $$
+# \begin{aligned}
+#   \boldsymbol{\overline{A}} &= (\boldsymbol{I} - \Delta/2 \cdot \boldsymbol{A})^{-1}(\boldsymbol{I} + \Delta/2 \cdot \boldsymbol{A}) \\
+#   \boldsymbol{\overline{B}} &= (\boldsymbol{I} - \Delta/2 \cdot \boldsymbol{A})^{-1} \Delta \boldsymbol{B} \\
+#   \boldsymbol{\overline{C}} &= \boldsymbol{C}\\
+# \end{aligned}
+# $$
+
+# In DSS, an alternative approach is used to directly write each equation in terms
+# of a discrete index $k$. Doing so results in the following
+# system of equations:
 
 # $$
 #   \begin{aligned}
@@ -112,45 +124,28 @@ rng = jax.random.PRNGKey(1)
 #   \end{aligned}
 # $$
 
-# Solving this system is a simple matter of solving the original ODE and plugging in the results. For solving the
-# original SSM equation, [here's a nice reference](https://faculty.washington.edu/chx/teaching/me547/1-7_ss_sol.pdf).
-# Then, [this resource provides a nice derivation of the discrete time SSM components](https://users.wpi.edu/~zli11/teaching/rbe595_2017/LectureSlide_PDF/discretization.pdf).
+# We can [solve this as an ODE](https://faculty.washington.edu/chx/teaching/me547/1-7_ss_sol.pdf) and plug in the results.
+# This leads to a new set of [discrete-time SSM parameters](https://users.wpi.edu/~zli11/teaching/rbe595_2017/LectureSlide_PDF/discretization.pdf). We can then rewrite the SSM:
 
-# The punchline of the above derivation is that we can rewrite our SSM -- similar to how we rewrote our SSM for the
-# original S4 -- as the following (from the DSS paper):
-
-# > Assuming $A$ is non-singular, for a given sample time $\Delta \in \R_{> 0}$, the discretization of a state space is
-# > defined as a sequence-to-sequence map from $(u_0,\ldots,u_{L-1}) = u \in \R^L$ to $(y_0,\ldots,y_{L-1}) = y \in \R^L$
-# > where,
-
+# > Assuming $\boldsymbol{A}$ is non-singular, for a given sample time $\Delta \in \R_{> 0}$, the discretization  is
+# >
 # $$
 #   \begin{aligned}
-#       &x_k = \bar{A}x_{k-1} + \bar{B}u_k\ \ \ ,\ \ \ y_k = \bar{C}x_k  \\[10pt]
-#       &\bar{A} = e^{A\Delta}\ \;,\ \bar{B} = (\bar{A} - I)A^{-1}B\ ,\ \;\bar{C} = C\ .
+#       &\boldsymbol{\overline{A}} = e^{\boldsymbol{A}\Delta}\ \\
+#        & \boldsymbol{\overline{B}} = (\boldsymbol{\overline{A}} - I)\boldsymbol{{A}}^{-1}\boldsymbol{{B}}\ ,\ \\
+#       & \boldsymbol{\overline{C}} = \boldsymbol{C}\\
 #   \end{aligned}
 # $$
 
-# Why is this better than the original parameterization of $\boldsymbol{\overline{A}}$ from the original S4 work? In
-# the next section, we'll see how we can derive the SSM kernel using this parameterization with simpler restrictions on
-# the structure of $\boldsymbol{\overline{A}}$, allowing for a *simple, straightforward* implementation without losing
-# much in the way of performance!
+# This discretization will allow for an alternative implementation without losing
+# much in the way of performance.
 
 # ### Rewriting the SSM Kernel
 #
 # **[TODO figure out cross-page links]**
 #
-# Part 1 of this post showed that the above discretized state-space model can be treated as a *sequence-to-sequence* map,
-# behaving a lot like an RNN with a transition matrix given by $\boldsymbol{\overline{A}}$:
-
-# $$
-# \begin{aligned}
-#   x_{k} &= \boldsymbol{\overline{A}} x_{k-1} + \boldsymbol{\overline{B}} u_k\\
-#   y_k &= \boldsymbol{\overline{C}} x_k \\
-# \end{aligned}
-# $$
-
-# We then showed how we can turn the above recurrence into a *convolution* given the repetitive structure! We end up with
-# the kernel:
+# A key advantage of the SSM is that this recurrence can be turned into a
+# *convolution*, using the following derivation:
 
 # $$
 # \begin{aligned}
@@ -166,27 +161,21 @@ rng = jax.random.PRNGKey(1)
 # \end{aligned}
 # $$
 
-# **Problem**: Unfortunately, just like with the original S4 paper, computing this kernel $\boldsymbol{\overline{K}}$ is
-# **prohibitively expensive** (successive matrix powers of $\boldsymbol{\overline{A}}$ which blows up assuming
-# $\mathcal{O}(d^3)$ matrix multiplication, where $d$ is the dimensionality of $\boldsymbol{\overline{A}}$). Getting SSMs
-# to scale requires finding an *alternative path* to computing this kernel – one that is both efficient and that doesn't
-# badly restrict the expressivity of $\boldsymbol{\overline{A}}$. So how can we address this?
+# Computing this kernel $\boldsymbol{\overline{K}}$ is
+# prohibitively expensive. Scaling SSMs
+# requires finding an alternative path to computing this kernel. S4 and DSS
+# tak different approaches to this problem.
 
 
-# ### Diagonalization & Efficient Matrix Powers
+# DSS make a single assumption: let $\boldsymbol{\overline{A}}$ be
+# *diagonalizable*.  Doing so turns an expensive matrix multiply into
+# a near-linear time operation, one that is conducive to performing
+# matrix powers super fast.
 
-# This is the key "fork in the road" between the original S4 paper, and this post's Diagonal State Spaces paper. Notably,
-# where the S4 paper is rooted in HiPPO theory and steps through some complex math (and complex code!) to make computing
-# the kernel $\boldsymbol{\overline{K}}$ efficient, the DSS is going to make a single assumption: let
-# $\boldsymbol{\overline{A}}$ be *diagonalizable*.
-#
-# Doing so turns an expensive $\mathcal{O}(d^3)$ matrix multiply into a near-linear time operation, one that is
-# conducive to performing matrix powers super fast! How we can write and initialize $\boldsymbol{\overline{A}}$ in
-# this way, and produce an update rule that ensure stable learning is the focus of the next section.
 
 # ## Part II. Deriving Diagonal State Spaces
 #
-# As a brief sketch, the DSS paper shows  that we simply need to break $\boldsymbol{\overline{A}}$ into a collection
+# The DSS paper shows that we need to break $\boldsymbol{\overline{A}}$ into a collection
 # of diagonal terms $\Lambda = \lambda_1 \ldots \lambda_n$; then with some straightforward algebra, we can compute an
 # efficient expression for our kernel $\boldsymbol{\overline{K}}$.
 #
