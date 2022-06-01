@@ -11,6 +11,7 @@ from tqdm import tqdm
 from .data import Datasets
 from .dss import DSSLayer
 from .s4 import BatchStackedModel, S4Layer, SSMLayer
+from .s4d import S4DLayer
 
 
 try:
@@ -294,6 +295,7 @@ Models = {
     "ssm": SSMLayer,
     "s4": S4Layer,
     "dss": DSSLayer,
+    "s4d": S4DLayer,
 }
 
 
