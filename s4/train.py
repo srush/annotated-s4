@@ -86,7 +86,7 @@ def create_train_state(
         )
 
     # # S4 uses a Fixed LR = 1e-3 with NO weight decay for the S4 Matrices, higher LR elsewhere
-    if "s4" in model_name or "dss" in model_name:
+    if "s4" in model_name or "dss" in model_name or "s4d" in model_name:
         # Note for Debugging... this is all undocumented and so weird. The following links are helpful...
         #
         #   > Flax "Recommended" interplay w/ Optax (this bridge needs ironing):

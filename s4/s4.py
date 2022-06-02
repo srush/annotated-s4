@@ -860,6 +860,11 @@ def test_gen_inverse(L=16, N=4):
 def cauchy_dot(v, omega, lambd):
     return (v / (omega - lambd)).sum()
 
+# @partial(np.vectorize, signature="(n),(l),(n)->(l)")
+def cauchy(v, omega, lambd):
+    cauchy_dot = lambda _omega: (v / (_omega - lambd)).sum()
+    return jax.vmap(cauchy_dot)(omega)
+
 
 # While not important for our implementation, it is worth noting that
 # this is a [Cauchy
@@ -924,7 +929,32 @@ def K_gen_DPLR(Lambda, p, q, B, Ct, step, unmat=False):
     return gen
 
 
-# This is our final version of the $K$ function. Now we can check whether it worked.
+# This is our final version of the $K$ function. Because it's always called together with a generating function, we'll define a dedicated function to compute the DPLR SSM kernel from its parameters.
+
+
+@partial(jax.jit, static_argnums=6)
+def kernel_DPLR(Lambda, p, q, B, Ct, step, L):
+    # Evaluate at roots of unity
+    # Generating function is (-)z-transform, so we evaluate at (-)root
+    Omega_L = np.exp((-2j * np.pi) * (np.arange(L) / L))
+
+    aterm = (Ct.conj().ravel(), q.conj().ravel())
+    bterm = (B.ravel(), p.ravel())
+
+    g = (2.0 / step) * ((1.0 - Omega_L) / (1.0 + Omega_L))
+    c = 2.0 / (1.0 + Omega_L)
+
+    # Reduction to core Cauchy kernel
+    k00 = cauchy(aterm[0] * bterm[0], g, Lambda)
+    k01 = cauchy(aterm[0] * bterm[1], g, Lambda)
+    k10 = cauchy(aterm[1] * bterm[0], g, Lambda)
+    k11 = cauchy(aterm[1] * bterm[1], g, Lambda)
+    atRoots = c * (k00 - k01 * (1.0 / (1.0 + k11)) * k10)
+    out = np.fft.ifft(atRoots, L).reshape(L)
+    return out.real
+
+
+# Now we can check whether it worked.
 # First, let's generate a random Diagonal Plus Low Rank (DPLR) matrix,
 
 
@@ -959,7 +989,8 @@ def test_gen_dplr(L=16, N=4):
 
     # Compare to the DPLR generating function approach.
     Ct = (I - matrix_power(Ab, L)).conj().T @ Cb.ravel()
-    b = conv_from_gen(K_gen_DPLR(Lambda, p, q, B, Ct, step=1.0 / L), L)
+    # b = conv_from_gen(K_gen_DPLR(Lambda, p, q, B, Ct, step=1.0 / L), L)
+    b = kernel_DPLR(Lambda, p, q, B, Ct, step=1.0 / L, L=L)
     assert np.allclose(a.real, b.real)
 
 
@@ -1110,8 +1141,9 @@ def test_conversion(N=8, L=16):
     Ct = lecun_normal(dtype=np.complex64)(rng, (1, N))
 
     # CNN form.
-    K_gen = K_gen_DPLR(Lambda, p, q, B, Ct, step)
-    K = conv_from_gen(K_gen, L)
+    # K_gen = K_gen_DPLR(Lambda, p, q, B, Ct, step)
+    # K = conv_from_gen(K_gen, L)
+    K = kernel_DPLR(Lambda, p, q, B, Ct, step, L)
 
     # RNN form.
     Ab, Bb, Cb = discrete_DPLR(Lambda, p, q, B, Ct, step, L)
@@ -1171,16 +1203,26 @@ class S4Layer(nn.Module):
 
         if not self.decode:
             # CNN mode, compute kernel.
-            K_gen = K_gen_DPLR(
+            # K_gen = K_gen_DPLR(
+            #     self.Lambda,
+            #     self.p,
+            #     self.q,
+            #     self.B,
+            #     self.Ct,
+            #     self.step[0],
+            #     unmat=self.l_max > 1000,
+            # )
+            # self.K = conv_from_gen(K_gen, self.l_max)
+            self.K = kernel_DPLR(
                 self.Lambda,
                 self.p,
                 self.q,
                 self.B,
                 self.Ct,
-                self.step[0],
-                unmat=self.l_max > 1000,
+                self.step, # [AG: why take 0-th element? shouldn't this be a tensor instead of scalar?]
+                # unmat=self.l_max > 1000,
+                self.l_max,
             )
-            self.K = conv_from_gen(K_gen, self.l_max)
 
         else:
             # RNN mode, discretize
@@ -1534,3 +1576,52 @@ def sample_mnist_prefix(path, model, length):
 
 #
 # / Cheers – Sasha & Sidd
+
+
+
+if __name__ == '__main__':
+    from flax.training import train_state
+    import optax
+
+    N=256
+    L=1024
+    H=256
+    bsz=32
+    model_cls = S4LayerInit(N=N)
+    model_cls = partial(
+        BatchStackedModel,
+        layer=model_cls,
+        d_model=H,
+        d_output=10,
+        dropout=0.2,
+        n_layers=4,
+        l_max=L,
+        classification=True,
+    )
+
+    model = model_cls(training=True)
+    init_rng, dropout_rng = jax.random.split(rng, num=2)
+    params = model.init({"params": init_rng, "dropout": dropout_rng}, np.ones((bsz, L, H)))["params"].unfreeze()
+    tx = optax.adam(learning_rate=1e-3)
+    state = train_state.TrainState.create(
+        apply_fn=model.apply, params=params, tx=tx
+    )
+
+
+    print(jax.tree_map(np.shape, params))
+
+    # @partial(jax.jit, static_argnums=0)
+    def step(model, params, state, inputs):
+        def loss_fn(params):
+            logits, mod_vars = model.apply({"params": params}, inputs, rngs={"dropout": rng}, mutable=["intermediates"])
+            print("output shape", logits.shape)
+            loss = np.mean(logits) # Dummy loss, just need scalar output
+            return loss, logits
+
+        grad_fn = jax.value_and_grad(loss_fn, has_aux=True)
+        loss, grads = grad_fn(params)
+        state = state.apply_gradients(grads=grads)
+        return state
+
+    for _ in range(100000):
+        state = step(model, params, state, np.ones((bsz, L, H)))
