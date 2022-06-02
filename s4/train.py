@@ -102,7 +102,7 @@ def create_train_state(
         #   > Solution: Use Optax.multi_transform!
         s4_fn = map_nested_fn(
             lambda k, _: "s4"
-            if k in ["B", "Ct", "D", "log_step", "W"]
+            if k in ["Lambda", "p", "B", "log_step", "W"]
             else ("none" if k in [] else "regular")
         )
         tx = optax.multi_transform(

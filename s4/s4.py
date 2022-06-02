@@ -95,7 +95,7 @@ from functools import partial
 import jax
 import jax.numpy as np
 from flax import linen as nn
-from jax.nn.initializers import lecun_normal, uniform
+from jax.nn.initializers import lecun_normal, uniform, normal
 from jax.numpy.linalg import eig, inv, matrix_power
 from jax.scipy.signal import convolve
 
@@ -457,7 +457,7 @@ def make_HiPPO(N):
             return 0
 
     # Do it slow so we don't mess it up :)
-    mat = [[v(n, k) for k in range(1, N + 1)] for n in range(1, N + 1)]
+    mat = [[v(n, k) for k in range(N)] for n in range(N)]
     return -np.array(mat)
 
 
@@ -975,13 +975,8 @@ def test_gen_dplr(L=16, N=4):
     I = np.eye(4)
 
     # Create a DPLR A matrix and discretize
-    _, _, _, B, _ = random_DPLR(rng, N)
-    _, Lambda, p, q, V = make_NPLR_HiPPO(N)
-    Vc = V.conj().T
-    p = Vc @ p
-    q = Vc @ q.conj()
-    A = np.diag(Lambda) - p[:, np.newaxis] @ q[:, np.newaxis].conj().T
-    B = Vc @ np.sqrt(1.0 + 2 * np.arange(N)).reshape(N, 1)
+    Lambda, p, B, _ = make_DPLR_HiPPO(N)
+    A = np.diag(Lambda) - p[:, np.newaxis] @ p[:, np.newaxis].conj().T
     _, _, C = random_SSM(rng, N)
 
     Ab, Bb, Cb = discretize(A, B, C, 1.0 / L)
@@ -990,7 +985,8 @@ def test_gen_dplr(L=16, N=4):
     # Compare to the DPLR generating function approach.
     Ct = (I - matrix_power(Ab, L)).conj().T @ Cb.ravel()
     # b = conv_from_gen(K_gen_DPLR(Lambda, p, q, B, Ct, step=1.0 / L), L)
-    b = kernel_DPLR(Lambda, p, q, B, Ct, step=1.0 / L, L=L)
+    b = kernel_DPLR(Lambda, p, p, B, Ct, step=1.0 / L, L=L)
+    print(a, b)
     assert np.allclose(a.real, b.real)
 
 
@@ -1091,7 +1087,8 @@ def discrete_DPLR(Lambda, p, q, B, Ct, step, L):
 #  For S4, we need to work with a HiPPO matrix for $\boldsymbol{A}$. This requires extracting
 #  $\boldsymbol{\Lambda}$ from this decomposition. The appendix of the paper shows this
 #  by getting it into  a [skew-symmetric](https://en.wikipedia.org/wiki/Skew-symmetric_matrix)
-#  (normal) + low-rank form. We can use this math to get out the DPLR terms,
+#  (normal) + low-rank form. We can use this math to get out the DPLR terms.
+# A small simplifcation is that there is actually a representation that ties the terms $\boldsymbol{p} = \boldsymbol{q}$, which was shown in [follow-up work](https://arxiv.org/abs/2202.09729) to be important for stability.
 
 
 def make_NPLR_HiPPO(N):
@@ -1099,29 +1096,44 @@ def make_NPLR_HiPPO(N):
     nhippo = make_HiPPO(N)
 
     # Add in a rank 1 term. Makes it Normal.
-    p = 0.5 * np.sqrt(2 * np.arange(1, N + 1) + 1.0)
-    q = 2 * p
-    S = nhippo + p[:, np.newaxis] * q[np.newaxis, :]
+    p = np.sqrt(np.arange(N) + 0.5)
 
-    # Diagonalize to S to V \Lambda V^*
+    # HiPPO also specifies the B matrix
+    B = np.sqrt(2*np.arange(N) + 1.0)
+    return nhippo, p, B
+
+def make_DPLR_HiPPO(N):
+    """ Diagonalize NPLR representation """
+    A, p, B = make_NPLR_HiPPO(N)
+
+    S = A + p[:, np.newaxis] * p[np.newaxis, :]
+
+    # Diagonalize S to V \Lambda V^*
     Lambda, V = jax.jit(eig, backend="cpu")(S)
     # Lambda, V = eig(jax.device_put(S, device=jax.devices("cpu")[0]))
-    return nhippo, Lambda, p, q, V
+    Vc = V.conj().T
 
+    p = Vc @ p
+    B = Vc @ B
+    return Lambda, p, B, V
 
 # Sanity check just to make sure those identities hold,
 
 
 def test_nplr(N=8):
-    A2, Lambda, p, q, V = make_NPLR_HiPPO(N)
-    p, q = p[:, np.newaxis], q[:, np.newaxis]
-    Lambda = np.diag(Lambda)
+    A2, p, B = make_NPLR_HiPPO(N)
+    Lambda, pc, Bc, V = make_DPLR_HiPPO(N)
     Vc = V.conj().T
-    A3 = V @ (Lambda - (Vc @ p) @ (Vc @ q.conj()).conj().T) @ Vc
-    A4 = V @ Lambda @ Vc - (p @ q.T)
+    p = p[:, np.newaxis]
+    pc = pc[:, np.newaxis]
+    Lambda = np.diag(Lambda)
+
+    A3 = V @ Lambda @ Vc - (p @ p.T) # Test NPLR
+    A4 = V @ (Lambda - pc @ pc.conj().T) @ Vc # Test DPLR
     assert np.allclose(A2, A3, atol=1e-4, rtol=1e-4)
     assert np.allclose(A2, A4, atol=1e-4, rtol=1e-4)
 
+test_nplr()
 
 # ### Final Check
 
@@ -1131,22 +1143,18 @@ def test_nplr(N=8):
 def test_conversion(N=8, L=16):
     step = 1.0 / L
     # Compute a HiPPO NPLR matrix.
-    _, Lambda, p, q, V = make_NPLR_HiPPO(N)
-    Vc = V.conj().T
-    p = Vc @ p
-    q = Vc @ q.conj()
-    B = lecun_normal(dtype=np.complex64)(rng, (N, 1))
-    B = Vc @ B
+    Lambda, p, B, _ = make_DPLR_HiPPO(N)
+    B = B[:, np.newaxis]
     # Random complex Ct
     Ct = lecun_normal(dtype=np.complex64)(rng, (1, N))
 
     # CNN form.
-    # K_gen = K_gen_DPLR(Lambda, p, q, B, Ct, step)
-    # K = conv_from_gen(K_gen, L)
-    K = kernel_DPLR(Lambda, p, q, B, Ct, step, L)
+    K_gen = K_gen_DPLR(Lambda, p, p, B, Ct, step)
+    K = conv_from_gen(K_gen, L)
+    # K = kernel_DPLR(Lambda, p, p.conj(), B, Ct, step, L)
 
     # RNN form.
-    Ab, Bb, Cb = discrete_DPLR(Lambda, p, q, B, Ct, step, L)
+    Ab, Bb, Cb = discrete_DPLR(Lambda, p, p, B, Ct, step, L)
     K2 = K_conv(Ab, Bb, Cb, L=L)
     assert np.allclose(K.real, K2.real, atol=1e-5, rtol=1e-5)
 
@@ -1184,20 +1192,23 @@ def test_conversion(N=8, L=16):
 
 
 class S4Layer(nn.Module):
-    A: np.DeviceArray
-    Vc: np.DeviceArray
-    p: np.DeviceArray
-    q: np.DeviceArray
-    Lambda: np.DeviceArray
+    # A: np.DeviceArray
+    # p: np.DeviceArray
+    # q: np.DeviceArray
+    # Lambda: np.DeviceArray
     N: int
     l_max: int
     decode: bool = False
 
     def setup(self):
         # Learned Parameters (Ct is complex!)
-        self.Ct = self.param("Ct", lecun_normal(), (1, self.N, 2))
+        hippo_Lambda_initializer, hippo_p_initializer, hippo_B_initializer = hippo_initializer(self.N)
+        self.Lambda = self.param("Lambda", hippo_Lambda_initializer, (self.N,))
+        self.p = self.param("p", hippo_p_initializer, (self.N,))
+        self.B = self.param("B", hippo_B_initializer, (self.N, 1))
+        # C should be init as standard normal
+        self.Ct = self.param("Ct", normal(), (1, self.N, 2))
         self.Ct = self.Ct[..., 0] + 1j * self.Ct[..., 1]
-        self.B = self.Vc @ self.param("B", lecun_normal(), (self.N, 1))
         self.D = self.param("D", uniform(), (1,))
         self.step = np.exp(self.param("log_step", log_step_initializer(), (1,)))
 
@@ -1206,20 +1217,20 @@ class S4Layer(nn.Module):
             # K_gen = K_gen_DPLR(
             #     self.Lambda,
             #     self.p,
-            #     self.q,
+            #     self.p,
             #     self.B,
             #     self.Ct,
-            #     self.step[0],
+            #     self.step[0], # [AG: why take 0-th element? shouldn't this be a tensor instead of scalar?]
             #     unmat=self.l_max > 1000,
             # )
             # self.K = conv_from_gen(K_gen, self.l_max)
             self.K = kernel_DPLR(
                 self.Lambda,
                 self.p,
-                self.q,
+                self.p,
                 self.B,
                 self.Ct,
-                self.step, # [AG: why take 0-th element? shouldn't this be a tensor instead of scalar?]
+                self.step,
                 # unmat=self.l_max > 1000,
                 self.l_max,
             )
@@ -1232,7 +1243,7 @@ class S4Layer(nn.Module):
                 return discrete_DPLR(
                     self.Lambda,
                     self.p,
-                    self.q,
+                    self.p,
                     self.B,
                     self.Ct,
                     self.step[0],
@@ -1266,14 +1277,27 @@ S4Layer = cloneLayer(S4Layer)
 
 # We initialize the model by computing a HiPPO DPLR initializer
 
+def hippo_initializer(N):
+    Lambda, p, B, _ = make_DPLR_HiPPO(N)
+    def init_Lambda(key, shape):
+        assert shape == (N,)
+        return Lambda
+        # return np.asarray(Lambda, dtype=dtype)
+    def init_p(key, shape):
+        assert shape == (N,)
+        return p
+        # return np.asarray(p, dtype=dtype)
+    def init_B(key, shape):
+        assert shape == (N, 1)
+        return B[:, np.newaxis]
+        # return np.asarray(B[:, np.newaxis], dtype=dtype)
+    return init_Lambda, init_p, init_B
 
 def S4LayerInit(N):
-    _, Lambda, p, q, V = make_NPLR_HiPPO(N)
-    Vc = V.conj().T
-    p = Vc @ p
-    q = Vc @ q.conj()
-    A = np.diag(Lambda) - p[:, np.newaxis] @ q[:, np.newaxis].conj().T
-    return partial(S4Layer, N=N, A=A, Lambda=Lambda, p=p, q=q, Vc=Vc)
+    # Lambda, p, B, _ = make_DPLR_HiPPO(N)
+    # A = np.diag(Lambda) - p[:, np.newaxis] @ p[:, np.newaxis].conj().T
+    # return partial(S4Layer, N=N, A=A, Lambda=Lambda, p=p, q=p, Vc=Vc)
+    return partial(S4Layer, N=N)
 
 
 # ### Sampling and Caching
@@ -1583,7 +1607,7 @@ if __name__ == '__main__':
     from flax.training import train_state
     import optax
 
-    N=256
+    N=64
     L=1024
     H=256
     bsz=32

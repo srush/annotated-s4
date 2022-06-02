@@ -317,8 +317,7 @@ def test_conversion(N=8, L=16):
     step = 1.0 / L
     W = lecun_normal()(rng, (1, N, 2))
     W = W[..., 0] + 1j * W[..., 1]
-    _, Lambda, _, _, _ = s4.make_NPLR_HiPPO(2 * N)
-    Lambda = Lambda[np.nonzero(Lambda.imag > 0, size=N)]
+    Lambda, _, _, _ = s4.make_DPLR_HiPPO(N)
 
     K = dss_kernel(W, Lambda, L, step)
     ssm = dss_ssm(W, Lambda, L, step)
@@ -421,20 +420,15 @@ test_conversion()
 # we're ready to put the DSS layer together!
 
 
-def DSSLayerInit(N):
-    _, Lambda, _, _, _ = s4.make_NPLR_HiPPO(2 * N)
-    Lambda = Lambda[np.nonzero(Lambda.imag > 0, size=N)]
-    return partial(DSSLayer, N=N, Lambda=Lambda)
-
-
 class DSSLayer(nn.Module):
-    Lambda: np.DeviceArray
     N: int
     l_max: int
     decode: bool = False
 
     def setup(self):
         # Learned Parameters
+        hippo_Lambda_initializer, _, _ = s4.hippo_initializer(self.N)
+        self.Lambda = self.param("Lambda", hippo_Lambda_initializer, (self.N,))
         self.W = self.param("W", lecun_normal(), (1, self.N, 2))
         self.W = self.W[..., 0] + 1j * self.W[..., 1]
         self.D = self.param("D", nn.initializers.ones, (1,))
@@ -465,6 +459,9 @@ class DSSLayer(nn.Module):
             if self.is_mutable_collection("cache"):
                 self.x_k_1.value = x_k
             return y_s.reshape(-1).real + self.D * u
+
+def DSSLayerInit(N):
+    return partial(DSSLayer, N=N)
 
 
 DSSLayer = s4.cloneLayer(DSSLayer)
