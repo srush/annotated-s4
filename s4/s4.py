@@ -376,7 +376,7 @@ def K_conv(Ab, Bb, Cb, L):
 # As the length gets longer this FFT method will be more efficient than the direct convolution,
 
 
-def non_circular_convolution(u, K, nofft=False):
+def causal_convolution(u, K, nofft=False):
     if nofft:
         return convolve(u, K, mode="full")[: u.shape[0]]
     else:
@@ -399,7 +399,7 @@ def test_cnn_is_rnn(N=4, L=16, step=1.0 / 16):
 
     # CNN
     ssmb = discretize(*ssm, step=step)
-    conv = non_circular_convolution(u, K_conv(*ssmb, L))
+    conv = causal_convolution(u, K_conv(*ssmb, L))
 
     # Check
     assert np.allclose(rec.ravel(), conv.ravel())
@@ -462,7 +462,7 @@ class SSMLayer(nn.Module):
     def __call__(self, u):
         if not self.decode:
             # CNN Mode
-            return non_circular_convolution(u, self.K) + self.D * u
+            return causal_convolution(u, self.K) + self.D * u
         else:
             # RNN Mode
             x_k, y_s = scan_SSM(*self.ssm, u[:, np.newaxis], self.x_k_1.value)
@@ -1180,7 +1180,7 @@ def test_conversion(N=8, L=16):
 
     # Apply CNN
     u = np.arange(L) * 1.0
-    y1 = non_circular_convolution(u, K.real)
+    y1 = causal_convolution(u, K.real)
 
     # Apply RNN
     _, y2 = scan_SSM(
@@ -1197,7 +1197,7 @@ def test_conversion(N=8, L=16):
 
 # 1. `K_gen_DPLR` → Truncated generating function when $\boldsymbol{A}$ is DPLR (S4-part)
 # 2. `conv_from_gen` → Convert generating function to filter
-# 3. `non_circular_convolution` → Run convolution
+# 3. `causal_convolution` → Run convolution
 # 4. `discretize_DPLR` → Convert SSM to discrete form for RNN.
 
 
@@ -1297,7 +1297,7 @@ class S4Layer(nn.Module):
         # This is identical to SSM Layer
         if not self.decode:
             # CNN Mode
-            return non_circular_convolution(u, self.K) + self.D * u
+            return causal_convolution(u, self.K) + self.D * u
         else:
             # RNN Mode
             x_k, y_s = scan_SSM(*self.ssm, u[:, np.newaxis], self.x_k_1.value)

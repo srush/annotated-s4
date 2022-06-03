@@ -324,7 +324,7 @@ def test_conversion(N=8, L=16):
 
     # Apply CNN
     u = np.arange(L) * 1.0
-    y1 = s4.non_circular_convolution(u, K.real)
+    y1 = s4.causal_convolution(u, K.real)
 
     # Apply RNN
     _, y2 = s4.scan_SSM(
@@ -461,7 +461,7 @@ class DSSLayer(nn.Module):
 
     def __call__(self, u):
         if not self.decode:
-            return s4.non_circular_convolution(u, self.K) + self.D * u
+            return s4.causal_convolution(u, self.K) + self.D * u
         else:
             x_k, y_s = s4.scan_SSM(*self.ssm, u[:, np.newaxis], self.x_k_1.value)
             if self.is_mutable_collection("cache"):
