@@ -427,8 +427,10 @@ class DSSLayer(nn.Module):
 
     def setup(self):
         # Learned Parameters
-        hippo_Lambda_initializer, _, _ = s4.hippo_initializer(self.N)
-        self.Lambda = self.param("Lambda", hippo_Lambda_initializer, (self.N,))
+        hippo_Lambda_real_initializer, hippo_Lambda_imag_initializer, hippo_p_initializer, hippo_B_initializer = s4.hippo_initializer(self.N)
+        self.Lambda_re = self.param("Lambda_re", hippo_Lambda_real_initializer, (self.N,))
+        self.Lambda_im = self.param("Lambda_im", hippo_Lambda_imag_initializer, (self.N,))
+        self.Lambda = self.Lambda_re + 1j*self.Lambda_im
         self.W = self.param("W", lecun_normal(), (1, self.N, 2))
         self.W = self.W[..., 0] + 1j * self.W[..., 1]
         self.D = self.param("D", nn.initializers.ones, (1,))

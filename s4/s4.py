@@ -96,7 +96,7 @@ import jax
 import jax.numpy as np
 from flax import linen as nn
 from jax.nn.initializers import lecun_normal, uniform, normal
-from jax.numpy.linalg import eig, inv, matrix_power
+from jax.numpy.linalg import eigh, inv, matrix_power
 from jax.scipy.signal import convolve
 
 
@@ -1074,22 +1074,21 @@ def discrete_DPLR(Lambda, p, q, B, Ct, step, L):
 
 # This approach applies to DPLR matrices, but remember we would like it to also apply to the HiPPO matrix.
 #  While not DPLR in its current form, the HiPPO matrix *does have special structure*. It is
-#  [Normal](https://en.wikipedia.org/wiki/Normal_matrix) Plus Low-Rank (NPLR). The paper argues that
+#  Normal Plus Low-Rank (NPLR). Because [normal](https://en.wikipedia.org/wiki/Normal_matrix) matrices are exactly the class of matrices that are unitarily diagonalizable, NPLR matrices are essentially equivalent to DPLR matrices from the perspective of SSM models.
 # this is just as good as DPLR for the purposes of learning an SSM network.
 
 # > The S4 techniques can apply to any matrix $\boldsymbol{A}$ that can be decomposed as *Normal Plus Low-Rank (NPLR)*.
 # $$
 # >   \boldsymbol{A} = \boldsymbol{V} \boldsymbol{\Lambda} \boldsymbol{V}^* - \boldsymbol{p} \boldsymbol{q}^\top = \boldsymbol{V} \left( \boldsymbol{\Lambda} - \boldsymbol{V}^* \boldsymbol{p} (\boldsymbol{V}^*\boldsymbol{q})^* \right) \boldsymbol{V}^*
 # $$
-# > for [unitary](https://en.wikipedia.org/wiki/Unitary_matrix) $\boldsymbol{V} \in \mathbb{C}^{N \times N}$, diagonal $\boldsymbol{\Lambda}$, and low-rank factorization $\boldsymbol{p}, \boldsymbol{q} \in \mathbb{R}^{N \times r}$.  An NPLR SSM is therefore [unitarily](https://en.wikipedia.org/wiki/Unitary_matrix) equivalent to some DPLR matrix.
+# > for [unitary](https://en.wikipedia.org/wiki/Unitary_matrix) $\boldsymbol{V} \in \mathbb{C}^{N \times N}$, diagonal $\boldsymbol{\Lambda}$, and low-rank factorization $\boldsymbol{p}, \boldsymbol{q} \in \mathbb{R}^{N \times r}$.  An NPLR SSM is therefore unitarily equivalent to some DPLR matrix.
 
 
-#  For S4, we need to work with a HiPPO matrix for $\boldsymbol{A}$. This requires extracting
-#  $\boldsymbol{\Lambda}$ from this decomposition. The appendix of the paper shows this
-#  by getting it into  a [skew-symmetric](https://en.wikipedia.org/wiki/Skew-symmetric_matrix)
-#  (normal) + low-rank form. We can use this math to get out the DPLR terms.
-# A small simplifcation is that there is actually a representation that ties the terms $\boldsymbol{p} = \boldsymbol{q}$, which was shown in [follow-up work](https://arxiv.org/abs/2202.09729) to be important for stability.
+#  For S4, we need to work with a HiPPO matrix for $\boldsymbol{A}$. This requires first writing it as a normal plus low-rank term, and then diagonalizing to extract
+#  $\boldsymbol{\Lambda}$ from this decomposition. The appendix of the paper shows how 
+#  by writing the normal part as a [skew-symmetric](https://en.wikipedia.org/wiki/Skew-symmetric_matrix) (plus a constant times the identity matrix), which are a special class of normal matrices.
 
+# An additional simplification is that there is actually a representation that ties the low-rank components terms $\boldsymbol{p} = \boldsymbol{q}$, which was shown in [follow-up work](https://arxiv.org/abs/2202.09729) to be important for stability.
 
 def make_NPLR_HiPPO(N):
     # Make -HiPPO
@@ -1102,20 +1101,29 @@ def make_NPLR_HiPPO(N):
     B = np.sqrt(2*np.arange(N) + 1.0)
     return nhippo, p, B
 
+# After extracting the normal part, we can diagonalize to get out the DPLR terms.
+# Because the normal part is actually skew-symmetric, we can extract the real and complex parts of $\Lambda$ separately.
+# This serves two purposes. First, this gives us finer-grained control over the real and imaginary parts, which can be used to improve stability. Second, this lets us use more powerful diagonalization algorithms for [Hermitian matrices](https://en.wikipedia.org/wiki/Hermitian_matrix) - in fact, the current version of JAX does not support GPU diagonalization for non-Hermitian matrices!
+
 def make_DPLR_HiPPO(N):
     """ Diagonalize NPLR representation """
     A, p, B = make_NPLR_HiPPO(N)
 
     S = A + p[:, np.newaxis] * p[np.newaxis, :]
 
-    # Diagonalize S to V \Lambda V^*
-    Lambda, V = jax.jit(eig, backend="cpu")(S)
-    # Lambda, V = eig(jax.device_put(S, device=jax.devices("cpu")[0]))
-    Vc = V.conj().T
+    # Check skew symmetry
+    S_diag = np.diagonal(S)
+    Lambda_real = np.mean(S_diag) * np.ones_like(S_diag)
+    # assert np.allclose(Lambda_real, S_diag, atol=1e-3)
 
-    p = Vc @ p
-    B = Vc @ B
-    return Lambda, p, B, V
+    # Diagonalize S to V \Lambda V^*
+    Lambda_imag, V = eigh(S * -1j)
+    # Lambda, V = jax.jit(eig, backend="cpu")(S)
+    # Lambda, V = eig(jax.device_put(S, device=jax.devices("cpu")[0]))
+
+    p = V.conj().T @ p
+    B = V.conj().T @ B
+    return Lambda_real + 1j*Lambda_imag, p, B, V
 
 # Sanity check just to make sure those identities hold,
 
@@ -1202,8 +1210,10 @@ class S4Layer(nn.Module):
 
     def setup(self):
         # Learned Parameters (Ct is complex!)
-        hippo_Lambda_initializer, hippo_p_initializer, hippo_B_initializer = hippo_initializer(self.N)
-        self.Lambda = self.param("Lambda", hippo_Lambda_initializer, (self.N,))
+        hippo_Lambda_real_initializer, hippo_Lambda_imag_initializer, hippo_p_initializer, hippo_B_initializer = hippo_initializer(self.N)
+        self.Lambda_re = self.param("Lambda_re", hippo_Lambda_real_initializer, (self.N,))
+        self.Lambda_im = self.param("Lambda_im", hippo_Lambda_imag_initializer, (self.N,))
+        self.Lambda = np.clip(self.Lambda_re, None, 0.0) + 1j*self.Lambda_im
         self.p = self.param("p", hippo_p_initializer, (self.N,))
         self.B = self.param("B", hippo_B_initializer, (self.N, 1))
         # C should be init as standard normal
@@ -1279,10 +1289,12 @@ S4Layer = cloneLayer(S4Layer)
 
 def hippo_initializer(N):
     Lambda, p, B, _ = make_DPLR_HiPPO(N)
-    def init_Lambda(key, shape):
+    def init_Lambda_real(key, shape):
         assert shape == (N,)
-        return Lambda
-        # return np.asarray(Lambda, dtype=dtype)
+        return Lambda.real
+    def init_Lambda_imag(key, shape):
+        assert shape == (N,)
+        return Lambda.imag
     def init_p(key, shape):
         assert shape == (N,)
         return p
@@ -1291,7 +1303,7 @@ def hippo_initializer(N):
         assert shape == (N, 1)
         return B[:, np.newaxis]
         # return np.asarray(B[:, np.newaxis], dtype=dtype)
-    return init_Lambda, init_p, init_B
+    return init_Lambda_real, init_Lambda_imag, init_p, init_B
 
 def S4LayerInit(N):
     # Lambda, p, B, _ = make_DPLR_HiPPO(N)
