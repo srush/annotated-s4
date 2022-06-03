@@ -1207,9 +1207,9 @@ class S4Layer(nn.Module):
         self.p = self.param("p", hippo_p_initializer, (self.N,))
         self.B = self.param("B", hippo_B_initializer, (self.N, 1))
         # C should be init as standard normal
-        self.Ct = self.param("Ct", normal(), (1, self.N, 2))
+        self.Ct = self.param("Ct", normal(stddev=1.0), (1, self.N, 2))
         self.Ct = self.Ct[..., 0] + 1j * self.Ct[..., 1]
-        self.D = self.param("D", uniform(), (1,))
+        self.D = self.param("D", normal(stddev=1.0), (1,))
         self.step = np.exp(self.param("log_step", log_step_initializer(), (1,)))
 
         if not self.decode:
