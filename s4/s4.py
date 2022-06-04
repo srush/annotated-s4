@@ -1213,7 +1213,9 @@ class S4Layer(nn.Module):
         hippo_Lambda_real_initializer, hippo_Lambda_imag_initializer, hippo_p_initializer, hippo_B_initializer = hippo_initializer(self.N)
         self.Lambda_re = self.param("Lambda_re", hippo_Lambda_real_initializer, (self.N,))
         self.Lambda_im = self.param("Lambda_im", hippo_Lambda_imag_initializer, (self.N,))
-        self.Lambda = np.clip(self.Lambda_re, None, 0.0) + 1j*self.Lambda_im
+        # Ensure the real part of Lambda is negative
+        # (described in the SaShiMi follow-up to S4)
+        self.Lambda = np.clip(self.Lambda_re, None, -1e-4) + 1j*self.Lambda_im
         self.p = self.param("p", hippo_p_initializer, (self.N,))
         self.B = self.param("B", hippo_B_initializer, (self.N, 1))
         # C should be init as standard normal
