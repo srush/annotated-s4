@@ -405,7 +405,6 @@ def test_cnn_is_rnn(N=4, L=16, step=1.0 / 16):
     assert np.allclose(rec.ravel(), conv.ravel())
 
 
-
 # ### An SSM Neural Network.
 
 # We now have all of the machinery needed to build a basic SSM neural network layer.
@@ -591,7 +590,7 @@ BatchStackedModel = nn.vmap(
 # Full code for training is defined in
 # [training.py](https://github.com/srush/s4/blob/main/s4/train.py).
 
-# While we now have our main model, there are two core problems with SSMs. First, the randomly initialized SSM actually does not perform very well. Furthermore, computing it is pretty slow.
+# While we now have our main model, there are *two core problems with SSMs*. First, the randomly initialized SSM actually does not perform very well. Furthermore, computing it naively like we've done so far is really slow and memory inefficient.
 # Next, we'll complete our discussion of the modeling aspect of S4 by defining a special initialization for long-range dependencies (<a href="#part-1b-addressing-long-range-dependencies-with-hippo">Part 1b</a>),
 # and then figure out how to compute this SSM Layer faster – a lot faster (<a href="#part-2-implementing-s4">Part 2</a>)!
 
@@ -631,8 +630,8 @@ BatchStackedModel = nn.vmap(
 # magic. For our purposes we mainly need to know that: 1) we only need to
 # calculate it once, and 2) it has a nice, simple structure (which we will exploit in
 # part 2). Without going into the ODE math, the main takeaway
-# is that this matrix aims to remember the past history in the state a
-# timescale invariant manner,
+# is that this matrix aims to compress the past history into a state
+# that has enough information to approximately reconstruct the history.
 
 
 def make_HiPPO(N):
@@ -725,9 +724,9 @@ if False:
 
 # [Skip Button](#part-3-s4-in-practice)
 
-# To set the stage, recall that S4 has two main differences from a basic SSM. The first addresses a *modeling challenge* -- long-range dependencies -- by using a special formula for the $\boldsymbol{A}$ matrix defined in the previous part. This matrix was first used in [predecessor](https://arxiv.org/abs/2110.13985) works to S4.
+# To set the stage, recall that S4 has two main differences from a basic SSM. The first addresses a *modeling challenge* - long-range dependencies - by using a special formula for the $\boldsymbol{A}$ matrix defined in the previous part. These special SSMs were considered in [predecessor](https://arxiv.org/abs/2110.13985) works to S4.
 
-# The second main characteristic of S4 solves the *computational challenge* of SSMs by introducing a special representation and algorithm to be able to work with this matrix!
+# The second main feature of S4 solves the *computational challenge* of SSMs by introducing a special representation and algorithm to be able to work with this matrix!
 
 
 # > The fundamental bottleneck in computing the discrete-time SSM
@@ -748,11 +747,11 @@ if False:
 
 # The contribution of S4 is a stable method for speeding up this particular operation.
 # To do this we are going to focus on the case where the SSM
-# has special structure. Specifically, Diagonal Plus Low-Rank (DPLR) in complex
+# has special structure: specifically, Diagonal Plus Low-Rank (DPLR) in complex
 # space.
 
-# **DPLR:** SSM is  $(\boldsymbol{\Lambda} - \boldsymbol{P}\boldsymbol{Q}^*, \boldsymbol{B}, \boldsymbol{C})$ for some diagonal $\boldsymbol{\Lambda}$ and vectors $\boldsymbol{P}, \boldsymbol{Q}, \boldsymbol{B}, \boldsymbol{C} \in \mathbb{C}^{N \times 1}$.
-#
+# A **DPLR** SSM is $(\boldsymbol{\Lambda} - \boldsymbol{P}\boldsymbol{Q}^*, \boldsymbol{B}, \boldsymbol{C})$ for some diagonal $\boldsymbol{\Lambda}$ and matrices $\boldsymbol{P}, \boldsymbol{Q}, \boldsymbol{B}, \boldsymbol{C} \in \mathbb{C}^{N \times 1}$.
+# We assume without loss of generality that the rank is $1$, i.e. these matrices are vectors.
 #
 # Under this DPLR assumption, S4 overcomes the speed bottleneck in three steps
 
@@ -806,11 +805,11 @@ def conv_from_gen(gen, L):
 
 # More importantly, in the generating function we can replace the matrix power with an inverse!
 # $$
-# \hat{\mathcal{K}}_L(z) = \sum_{i=0}^{L-1} \boldsymbol{\overline{C}} \boldsymbol{\overline{A}}^i \boldsymbol{\overline{B}} z^i = \boldsymbol{\overline{C}} (\boldsymbol{I} - \boldsymbol{\overline{A}}^L z^L) (\boldsymbol{I} - \boldsymbol{\overline{A}} z)^{-1} \boldsymbol{\overline{B}} = \boldsymbol{\tilde{C}}  (\boldsymbol{I} - \boldsymbol{\overline{A}} z)^{-1} \boldsymbol{\overline{B}}
+# \hat{\mathcal{K}}_L(z) = \sum_{i=0}^{L-1} \boldsymbol{\overline{C}} \boldsymbol{\overline{A}}^i \boldsymbol{\overline{B}} z^i = \boldsymbol{\overline{C}} (\boldsymbol{I} - \boldsymbol{\overline{A}}^L z^L) (\boldsymbol{I} - \boldsymbol{\overline{A}} z)^{-1} \boldsymbol{\overline{B}} = \boldsymbol{\widetilde{C}}  (\boldsymbol{I} - \boldsymbol{\overline{A}} z)^{-1} \boldsymbol{\overline{B}}
 # $$
 
 # And for all $z \in \Omega_L$, we have $z^L = 1$ so that term is removed. We then pull this constant
-# term into a new $\boldsymbol{\tilde{C}}$. Critically, this function **does not** call `K_conv`,
+# term into a new $\boldsymbol{\widetilde{C}}$. Critically, this function **does not** call `K_conv`,
 
 
 def K_gen_inverse(Ab, Bb, Cb, L):
@@ -840,24 +839,24 @@ def test_gen_inverse(L=16, N=4):
 # ### Step 2: Diagonal Case
 
 # The next step to assume special *structure* on the matrix
-# $\boldsymbol{A}$ to avoid the inverse.  To begin, let us first
-# convert the equation above to use the original SSM matrices. With
-# some algebra you can expand the discretization and show:
+# $\boldsymbol{A}$ to compute the inverse faster than the naive inversion.
+# To begin, let us first convert the equation above to use the original SSM
+# matrices. With some algebra you can expand the discretization and show:
 
 # $$
 # \begin{aligned}
-#   \boldsymbol{\tilde{C}}\left(\boldsymbol{I} - \boldsymbol{\overline{A}} \right)^{-1} \boldsymbol{\overline{B}}
+#   \boldsymbol{\widetilde{C}}\left(\boldsymbol{I} - \boldsymbol{\overline{A}} \right)^{-1} \boldsymbol{\overline{B}}
 #   =
-#   \frac{2\Delta}{1+z} \boldsymbol{\tilde{C}} \left[ {2 \frac{1-z}{1+z}} - \Delta \boldsymbol{A} \right]^{-1} \boldsymbol{B}
+#   \frac{2\Delta}{1+z} \boldsymbol{\widetilde{C}} \left[ {2 \frac{1-z}{1+z}} - \Delta \boldsymbol{A} \right]^{-1} \boldsymbol{B}
 # \end{aligned}
 # $$
 
 
-# Now imagine $A=\boldsymbol{\Lambda}$ for a diagonal $\boldsymbol{\Lambda}$. Substituting in the discretization
+# Now imagine $\boldsymbol{A}=\boldsymbol{\Lambda}$ for a diagonal $\boldsymbol{\Lambda}$. Substituting in the discretization
 # formula the authors show that the generating function can be written in the following manner:
 
 # $$ \begin{aligned}
-# \boldsymbol{\hat{K}}_{\boldsymbol{\Lambda}}(z) & = c(z) \sum_i \cdot \frac{\tilde{C}_i B_i} {(g(z) - \Lambda_{i})} = c(z) \cdot k_{z, \boldsymbol{\Lambda}}(\boldsymbol{\tilde{C}}, \boldsymbol{B}) \\
+# \boldsymbol{\hat{K}}_{\boldsymbol{\Lambda}}(z) & = c(z) \sum_i \cdot \frac{\boldsymbol{\widetilde{C}}_i \boldsymbol{B}_i} {(g(z) - \boldsymbol{\Lambda}_i)} = c(z) \cdot k_{z, \boldsymbol{\Lambda}}(\boldsymbol{\widetilde{C}}, \boldsymbol{B}) \\
 #  \end{aligned}$$
 # where $c$ is a constant, and $g$ is a function of $z$.
 
@@ -904,7 +903,7 @@ def cauchy(v, omega, lambd):
 #  all look like Step 2 above:
 
 # $$ \begin{aligned}
-# \boldsymbol{\hat{K}}_{DPLR}(z) & = c(z) [k_{z, \Lambda}(\boldsymbol{\tilde{C}}, \boldsymbol{\boldsymbol{B}}) - k_{z, \Lambda}(\boldsymbol{\tilde{C}}, \boldsymbol{\boldsymbol{P}}) (1 + k_{z, \Lambda}(\boldsymbol{q^*}, \boldsymbol{\boldsymbol{P}}) )^{-1} k_{z, \Lambda}(\boldsymbol{q^*}, \boldsymbol{\boldsymbol{B}}) ]
+# \boldsymbol{\hat{K}}_{DPLR}(z) & = c(z) [k_{z, \Lambda}(\boldsymbol{\widetilde{C}}, \boldsymbol{\boldsymbol{B}}) - k_{z, \Lambda}(\boldsymbol{\widetilde{C}}, \boldsymbol{\boldsymbol{P}}) (1 + k_{z, \Lambda}(\boldsymbol{q^*}, \boldsymbol{\boldsymbol{P}}) )^{-1} k_{z, \Lambda}(\boldsymbol{q^*}, \boldsymbol{\boldsymbol{B}}) ]
 #  \end{aligned}$$
 
 
@@ -1203,7 +1202,7 @@ def test_conversion(N=8, L=16):
 #  A full S4 Layer is very similar to the simple SSM layer above. The
 #  only difference is in the the computation of $\boldsymbol{K}$.
 #  Additionally instead of learning $\boldsymbol{C}$, we learn
-#  $\boldsymbol{\tilde{C}}$ so we avoid computing powers of
+#  $\boldsymbol{\widetilde{C}}$ so we avoid computing powers of
 #  $\boldsymbol{A}$. Note as well that in the original paper $\boldsymbol{\Lambda}, \boldsymbol{P}, \boldsymbol{Q}$ are
 #  also learned. However, in this post, we leave them fixed for simplicity.
 
