@@ -277,7 +277,7 @@ class LSTMRecurrentModel(nn.Module):
 Models = {
     "ff": FeedForwardModel,
     "lstm": LSTMRecurrentModel,
-    "ssm-naive": SSMLayer,
+    "ssm": SSMLayer,
     "s4": S4Layer,
     "dss": DSSLayer,
 }
