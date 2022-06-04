@@ -911,9 +911,9 @@ def cauchy(v, omega, lambd):
 # The code consists of collecting up the terms and applying 4 weighted dot products,
 
 
-def K_gen_DPLR(Lambda, p, q, B, Ct, step, unmat=False):
-    aterm = (Ct.conj().ravel(), q.conj().ravel())
-    bterm = (B.ravel(), p.ravel())
+def K_gen_DPLR(Lambda, p, q, B, C, step, unmat=False):
+    aterm = (C.conj(), q.conj())
+    bterm = (B, p)
 
     def gen(o):
         g = (2.0 / step) * ((1.0 - o) / (1.0 + o))
@@ -939,13 +939,13 @@ def K_gen_DPLR(Lambda, p, q, B, Ct, step, unmat=False):
 
 
 @partial(jax.jit, static_argnums=6)
-def kernel_DPLR(Lambda, p, q, B, Ct, step, L):
+def kernel_DPLR(Lambda, p, q, B, C, step, L):
     # Evaluate at roots of unity
     # Generating function is (-)z-transform, so we evaluate at (-)root
     Omega_L = np.exp((-2j * np.pi) * (np.arange(L) / L))
 
-    aterm = (Ct.conj().ravel(), q.conj().ravel())
-    bterm = (B.ravel(), p.ravel())
+    aterm = (C.conj(), q.conj())
+    bterm = (B, p)
 
     g = (2.0 / step) * ((1.0 - Omega_L) / (1.0 + Omega_L))
     c = 2.0 / (1.0 + Omega_L)
@@ -989,10 +989,9 @@ def test_gen_dplr(L=16, N=4):
     a = K_conv(Ab, Bb, Cb.conj(), L=L)
 
     # Compare to the DPLR generating function approach.
-    Ct = (I - matrix_power(Ab, L)).conj().T @ Cb.ravel()
-    # b = conv_from_gen(K_gen_DPLR(Lambda, p, q, B, Ct, step=1.0 / L), L)
-    b = kernel_DPLR(Lambda, p, p, B, Ct, step=1.0 / L, L=L)
-    print(a, b)
+    C = (I - matrix_power(Ab, L)).conj().T @ Cb.ravel()
+    # b = conv_from_gen(K_gen_DPLR(Lambda, p, q, B, C, step=1.0 / L), L)
+    b = kernel_DPLR(Lambda, p, p, B, C, step=1.0 / L, L=L)
     assert np.allclose(a.real, b.real)
 
 
@@ -1053,7 +1052,11 @@ def test_gen_dplr(L=16, N=4):
 # $$
 
 
-def discrete_DPLR(Lambda, p, q, B, Ct, step, L):
+def discrete_DPLR(Lambda, p, q, B, C, step, L):
+    # Convert parameters to matrices
+    B = B[:, np.newaxis]
+    Ct = C[np.newaxis, :]
+
     N = Lambda.shape[0]
     A = np.diag(Lambda) - p[:, np.newaxis] @ q[:, np.newaxis].conj().T
     I = np.eye(N)
@@ -1158,17 +1161,17 @@ def test_conversion(N=8, L=16):
     step = 1.0 / L
     # Compute a HiPPO NPLR matrix.
     Lambda, p, B, _ = make_DPLR_HiPPO(N)
-    B = B[:, np.newaxis]
+    # B = B[:, np.newaxis]
     # Random complex Ct
-    Ct = lecun_normal(dtype=np.complex64)(rng, (1, N))
+    C = normal(dtype=np.complex64)(rng, (N,))
 
     # CNN form.
-    K_gen = K_gen_DPLR(Lambda, p, p, B, Ct, step)
+    K_gen = K_gen_DPLR(Lambda, p, p, B, C, step)
     K = conv_from_gen(K_gen, L)
-    # K = kernel_DPLR(Lambda, p, p.conj(), B, Ct, step, L)
+    # K = kernel_DPLR(Lambda, p, p.conj(), B, C, step, L)
 
     # RNN form.
-    Ab, Bb, Cb = discrete_DPLR(Lambda, p, p, B, Ct, step, L)
+    Ab, Bb, Cb = discrete_DPLR(Lambda, p, p, B, C, step, L)
     K2 = K_conv(Ab, Bb, Cb, L=L)
     assert np.allclose(K.real, K2.real, atol=1e-5, rtol=1e-5)
 
@@ -1224,7 +1227,7 @@ class S4Layer(nn.Module):
     }
 
     def setup(self):
-        # Learned Parameters (Ct is complex!)
+        # Learned Parameters (C is complex!)
         hippo_Lambda_real_initializer, hippo_Lambda_imag_initializer, hippo_p_initializer, hippo_B_initializer = hippo_initializer(self.N)
         self.Lambda_re = self.param("Lambda_re", hippo_Lambda_real_initializer, (self.N,))
         self.Lambda_im = self.param("Lambda_im", hippo_Lambda_imag_initializer, (self.N,))
@@ -1232,10 +1235,10 @@ class S4Layer(nn.Module):
         # (described in the SaShiMi follow-up to S4)
         self.Lambda = np.clip(self.Lambda_re, None, -1e-4) + 1j*self.Lambda_im
         self.p = self.param("p", hippo_p_initializer, (self.N,))
-        self.B = self.param("B", hippo_B_initializer, (self.N, 1))
+        self.B = self.param("B", hippo_B_initializer, (self.N,))
         # C should be init as standard normal
-        self.Ct = self.param("Ct", normal(stddev=1.0), (1, self.N, 2))
-        self.Ct = self.Ct[..., 0] + 1j * self.Ct[..., 1]
+        self.C = self.param("C", normal(stddev=1.0), (self.N, 2))
+        self.C = self.C[..., 0] + 1j * self.C[..., 1]
         self.D = self.param("D", normal(stddev=1.0), (1,))
         self.step = np.exp(self.param("log_step", log_step_initializer(), (1,)))
 
@@ -1246,8 +1249,8 @@ class S4Layer(nn.Module):
             #     self.p,
             #     self.p,
             #     self.B,
-            #     self.Ct,
-            #     self.step[0], # [AG: why take 0-th element? shouldn't this be a tensor instead of scalar?]
+            #     self.C,
+            #     self.step,
             #     unmat=self.l_max > 1000,
             # )
             # self.K = conv_from_gen(K_gen, self.l_max)
@@ -1256,7 +1259,7 @@ class S4Layer(nn.Module):
                 self.p,
                 self.p,
                 self.B,
-                self.Ct,
+                self.C,
                 self.step,
                 # unmat=self.l_max > 1000,
                 self.l_max,
@@ -1272,8 +1275,8 @@ class S4Layer(nn.Module):
                     self.p,
                     self.p,
                     self.B,
-                    self.Ct,
-                    self.step[0],
+                    self.C,
+                    self.step,
                     self.l_max,
                 )
 
@@ -1317,8 +1320,8 @@ def hippo_initializer(N):
         return p
         # return np.asarray(p, dtype=dtype)
     def init_B(key, shape):
-        assert shape == (N, 1)
-        return B[:, np.newaxis]
+        assert shape == (N,)
+        return B
         # return np.asarray(B[:, np.newaxis], dtype=dtype)
     return init_Lambda_real, init_Lambda_imag, init_p, init_B
 
