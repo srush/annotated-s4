@@ -5,11 +5,12 @@ import jax
 import jax.numpy as np
 import optax
 from flax import linen as nn
+from flax.core import freeze
 from flax.training import checkpoints, train_state
 from tqdm import tqdm
 from .data import Datasets
-from .dss import DSSLayerInit
-from .s4 import BatchStackedModel, S4LayerInit, SSMLayerInit
+from .dss import DSSLayer
+from .s4 import BatchStackedModel, S4Layer, SSMLayer
 
 
 try:
@@ -264,9 +265,9 @@ class LSTMRecurrentModel(nn.Module):
 Models = {
     "ff": FeedForwardModel,
     "lstm": LSTMRecurrentModel,
-    "ssm-naive": SSMLayerInit,
-    "s4": S4LayerInit,
-    "dss": DSSLayerInit,
+    "ssm-naive": SSMLayer,
+    "s4": S4Layer,
+    "dss": DSSLayer,
 }
 
 
@@ -295,30 +296,31 @@ def example_train(
     if use_wandb:
         wandb.init(project=wandb_project, entity=wandb_entity)
 
-    # Get model class and dataset creation function
-    create_dataset_fn = Datasets[dataset]
-    if model in ["ssm-naive", "s4", "dss"]:
-        model_cls = Models[model](N=ssm_n)
-    else:
-        model_cls = Models[model]
-
     # Check if classification dataset
     classification = "classification" in dataset
 
-    # Create dataset...
+    # Create dataset
+    create_dataset_fn = Datasets[dataset]
     trainloader, testloader, n_classes, seq_len, in_dim = create_dataset_fn(
         bsz=bsz
     )
+
+    # Get model class and arguments
+    model_cls = Models[model]
+    layer_args = {} if ssm_n is None else {"N": ssm_n}
+    layer_args["l_max"] = seq_len if classification else seq_len - 1
+
+
     print(f"[*] Starting `{model}` Training on `{dataset}` =>> Initializing...")
 
     model_cls = partial(
         BatchStackedModel,
         layer=model_cls,
+        layer_args=freeze(layer_args),
         d_model=d_model,
         d_output=n_classes,
         dropout=p_dropout,
         n_layers=n_layers,
-        l_max=seq_len if classification else seq_len - 1,
         classification=classification,
     )
     state = create_train_state(

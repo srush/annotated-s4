@@ -488,12 +488,6 @@ def cloneLayer(layer):
 
 SSMLayer = cloneLayer(SSMLayer)
 
-# We then initialize $A$ with the HiPPO matrix, and pass it into the stack of modules above,
-
-
-def SSMLayerInit(N):
-    return partial(SSMLayer, N=N)
-
 
 # This SSM Layer can then be put into a standard NN.
 # Here we add a block that pairs a call to an SSM with
@@ -502,7 +496,7 @@ def SSMLayerInit(N):
 
 class SequenceBlock(nn.Module):
     layer: nn.Module
-    l_max: int
+    layer_args: dict
     dropout: float
     d_model: int
     prenorm: bool = True
@@ -511,7 +505,7 @@ class SequenceBlock(nn.Module):
     decode: bool = False
 
     def setup(self):
-        self.seq = self.layer(l_max=self.l_max, decode=self.decode)
+        self.seq = self.layer(**self.layer_args, decode=self.decode)
         self.norm = nn.LayerNorm()
         self.out = nn.Dense(self.d_model)
         if self.glu:
@@ -543,14 +537,14 @@ class SequenceBlock(nn.Module):
 
 class StackedModel(nn.Module):
     layer: nn.Module
+    layer_args: dict # Extra arguments to pass into layer constructor
     d_output: int
     d_model: int
-    l_max: int
     n_layers: int
     dropout: float = 0.2
     training: bool = True
     classification: bool = False
-    decode: bool = False
+    decode: bool = False # Probably should be moved into layer_args
 
     def setup(self):
         self.encoder = nn.Dense(self.d_model)
@@ -558,10 +552,10 @@ class StackedModel(nn.Module):
         self.layers = [
             SequenceBlock(
                 layer=self.layer,
+                layer_args=self.layer_args,
                 d_model=self.d_model,
                 dropout=self.dropout,
                 training=self.training,
-                l_max=self.l_max,
                 decode=self.decode,
             )
             for _ in range(self.n_layers)
@@ -1325,12 +1319,6 @@ def hippo_initializer(N):
         # return np.asarray(B[:, np.newaxis], dtype=dtype)
     return init_Lambda_real, init_Lambda_imag, init_p, init_B
 
-def S4LayerInit(N):
-    # Lambda, p, B, _ = make_DPLR_HiPPO(N)
-    # A = np.diag(Lambda) - p[:, np.newaxis] @ p[:, np.newaxis].conj().T
-    # return partial(S4Layer, N=N, A=A, Lambda=Lambda, p=p, q=p, Vc=Vc)
-    return partial(S4Layer, N=N)
-
 
 # ### Sampling and Caching
 
@@ -1636,6 +1624,7 @@ def sample_mnist_prefix(path, model, length):
 
 
 if __name__ == '__main__':
+    from flax.core import freeze
     from flax.training import train_state
     import optax
 
@@ -1643,15 +1632,15 @@ if __name__ == '__main__':
     L=1024
     H=256
     bsz=32
-    model_cls = S4LayerInit(N=N)
+    model_cls = S4Layer
     model_cls = partial(
         BatchStackedModel,
         layer=model_cls,
+        layer_args=freeze({"N": N, "l_max": L}),
         d_model=H,
         d_output=10,
         dropout=0.2,
         n_layers=4,
-        l_max=L,
         classification=True,
     )
 
@@ -1666,7 +1655,7 @@ if __name__ == '__main__':
 
     print(jax.tree_map(np.shape, params))
 
-    # @partial(jax.jit, static_argnums=0)
+    @partial(jax.jit, static_argnums=0)
     def step(model, params, state, inputs):
         def loss_fn(params):
             logits, mod_vars = model.apply({"params": params}, inputs, rngs={"dropout": rng}, mutable=["intermediates"])

@@ -462,10 +462,6 @@ class DSSLayer(nn.Module):
                 self.x_k_1.value = x_k
             return y_s.reshape(-1).real + self.D * u
 
-def DSSLayerInit(N):
-    return partial(DSSLayer, N=N)
-
-
 DSSLayer = s4.cloneLayer(DSSLayer)
 
 
