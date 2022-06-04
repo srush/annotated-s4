@@ -302,13 +302,13 @@ def example_ssm():
         )
         camera.snap()
     anim = camera.animate()
-    anim.save("line.gif", dpi=150, writer="imagemagick")
+    anim.save("images/line.gif", dpi=150, writer="imagemagick")
 
 
 if False:
     example_ssm()
 
-# <img src="line.gif" width="100%">
+# <img src="images/line.gif" width="100%">
 
 # Neat! And that it was just 1 SSM, with 2 hidden states over 100 steps.
 # The final model will have had **100s of stacked SSMs** over **thousands of steps**. But first – we
