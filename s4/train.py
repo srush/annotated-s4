@@ -77,12 +77,10 @@ def create_train_state(
 
     # Implement LR Schedule (No change for first 30% of training, then decay w/ cubic polynomial to 0 for last 70%)
     if lr_schedule:
-        lr = optax.polynomial_schedule(
-            init_value=lr,
-            end_value=0.0,
-            power=3,
-            transition_begin=int(0.3 * total_steps),
-            transition_steps=int(0.7 * total_steps),
+        lr = optax.cosine_onecycle_schedule(
+            peak_value=lr,
+            transition_steps=total_steps,
+            pct_start=0.1,
         )
 
     # # S4 uses a Fixed LR = 1e-3 with NO weight decay for the S4 Matrices, higher LR elsewhere
