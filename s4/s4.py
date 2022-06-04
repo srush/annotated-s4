@@ -57,9 +57,9 @@
 # <li><a href="#discrete-time-ssm-the-recurrent-representation">Discrete-time SSM: The Recurrent Representation</a></li>
 # <li><a href="#tangent-a-mechanics-example">Tangent: A Mechanics Example</a></li>
 # <li><a href="#training-ssms-the-convolutional-representation">Training SSMs: The Convolutional Representation</a></li>
-# <li><a href="#addressing-long-range-dependencies-with-hippo">Addressing Long-Range Dependencies with HiPPO</a></li>
 # <li><a href="#an-ssm-neural-network.">An SSM Neural Network.</a></li>
 # </ul></li>
+# <li><a href="#part-1b-addressing-long-range-dependencies-with-hippo">Part 1b: Addressing Long-Range Dependencies with HiPPO</a></li>
 # <li><a href="#part-2-implementing-s4">Part 2: Implementing S4</a> (Advanced)<ul>
 # <li><a href="#step-1.-ssm-generating-functions">Step 1. SSM Generating Functions</a></li>
 # <li><a href="#step-2-diagonal-case">Step 2: Diagonal Case</a></li>
@@ -68,7 +68,7 @@
 # <li><a href="#turning-hippo-to-dplr">Turning HiPPO to DPLR</a></li>
 # <li><a href="#final-check">Final Check</a></li>
 # </ul></li>
-# <li><a href="#part-3-s4-in-practice">Part 3: S4 in Practice (NN Implementation)</a><ul>
+# <li><a href="#part-3-s4-in-practice">Part 3: S4 in Practice</a> (NN Implementation)<ul>
 # <li><a href="#s4-cnn-rnn-layer">S4 CNN / RNN Layer</a></li>
 # <li><a href="#sampling-and-caching">Sampling and Caching</a></li>
 # <li><a href="#experiments-mnist">Experiments: MNIST</a></li>
@@ -405,131 +405,10 @@ def test_cnn_is_rnn(N=4, L=16, step=1.0 / 16):
     assert np.allclose(rec.ravel(), conv.ravel())
 
 
-# At this point we have all of the machinery used for SSM training. The next
-# steps are about 1) making these models stable to train, and 2) making them fast.
-
-# ### Addressing Long-Range Dependencies with HiPPO
-
-# <img src="images/hippo.png" width="100%"/>
-#
-# > [Prior work](https://arxiv.org/abs/2008.07669) found that the basic SSM actually performs very poorly in
-# > practice.  Intuitively, one explanation is that they  suffer from gradients scaling exponentially in the sequence length (i.e., the
-# > vanishing/exploding gradients problem).  To address this problem, previous work developed the HiPPO theory of
-# > continuous-time memorization.
-# >
-# > HiPPO specifies a class of certain matrices $\boldsymbol{A} \in \mathbb{R}^{N \times N}$ that when incorporated,
-# > allow the state $x(t)$ to memorize the history of the input $u(t)$.
-# > The most important matrix in this class is defined by the HiPPO matrix.
-# >
-# $$
-# \begin{aligned}
-#   (\text{\textbf{HiPPO Matrix}})
-#   \qquad
-#   \boldsymbol{A}_{nk}
-#   =
-#   \begin{cases}
-#     (2n+1)^{1/2}(2k+1)^{1/2} & \text{if } n > k \\
-#     n+1 & \text{if } n = k \\
-#     0 & \text{if } n < k
-#   \end{cases}
-# \end{aligned}
-# $$
-# >
-# > Previous work found that simply modifying an SSM from a random matrix $\boldsymbol{A}$ to HiPPO
-# > improved its performance on the sequential MNIST classification benchmark from $50\%$ to $98\%$.
-
-
-# This matrix is going to be really important, but it is a bit of
-# magic. For our purposes we mainly need to know that: 1) we only need to
-# calculate it once, and 2) it has a nice, simple structure (which we will exploit in
-# part 2). Without going into the ODE math, the main takeaway
-# is that this matrix aims to remember the past history in the state a
-# timescale invariant manner,
-
-
-def make_HiPPO(N):
-    def v(n, k):
-        if n > k:
-            return np.sqrt(2 * n + 1) * np.sqrt(2 * k + 1)
-        elif n == k:
-            return n + 1
-        else:
-            return 0
-
-    # Do it slow so we don't mess it up :)
-    mat = [[v(n, k) for k in range(N)] for n in range(N)]
-    return -np.array(mat)
-
-
-# Diving a bit deeper, the intuitive explanation of this matrix is
-# that it produces a hidden state that memorizes its history. It does
-# this by keeping track of the coefficients of a [Legendre
-# polynomial](https://en.wikipedia.org/wiki/Legendre_polynomials). These
-# coefficients let it approximate all of the previous history. Let us
-# look at an example,
-
-
-def example_legendre(N=8):
-    # Random hidden state as coefficients
-    import numpy as np
-    import numpy.polynomial.legendre
-
-    x = (np.random.rand(N) - 0.5) * 2
-    t = np.linspace(-1, 1, 100)
-    f = numpy.polynomial.legendre.Legendre(x)(t)
-
-    # Plot
-    import matplotlib.pyplot as plt
-    import seaborn
-
-    seaborn.set_context("talk")
-    fig = plt.figure(figsize=(20, 10))
-    ax = fig.gca(projection="3d")
-    ax.plot(
-        np.linspace(-25, (N - 1) * 100 + 25, 100),
-        [0] * 100,
-        zs=-1,
-        zdir="x",
-        color="black",
-    )
-    ax.plot(t, f, zs=N * 100, zdir="y", c="r")
-    for i in range(N):
-        coef = [0] * N
-        coef[N - i - 1] = 1
-        ax.set_zlim(-4, 4)
-        ax.set_yticks([])
-        ax.set_zticks([])
-        # Plot basis function.
-        f = numpy.polynomial.legendre.Legendre(coef)(t)
-        ax.bar(
-            [100 * i],
-            [x[i]],
-            zs=-1,
-            zdir="x",
-            label="x%d" % i,
-            color="brown",
-            fill=False,
-            width=50,
-        )
-        ax.plot(t, f, zs=100 * i, zdir="y", c="b", alpha=0.5)
-    ax.view_init(elev=40.0, azim=-45)
-    fig.savefig("images/leg.png")
-
-
-if False:
-    example_legendre()
-
-# The red line represents that curve we are approximating,
-# while the black bars represent the values of our hidden state.
-# Each is a coefficient for one element of the Legendre series
-# shown as blue functions. The intuition is that the HiPPO matrix
-# updates these coefficients each step.
-
-# <img src="images/leg.png" width="100%">
 
 # ### An SSM Neural Network.
 
-# We now have everything we need to build an SSM neural network layer.
+# We now have all of the machinery needed to build a basic SSM neural network layer.
 # As defined above, the discrete SSM defines a map from $\mathbb{R}^L
 # \to \mathbb{R}^L$, i.e. a 1-D sequence map. We assume that we
 # are going to be learning the parameters $B$ and $C$, as well as a
@@ -559,13 +438,13 @@ def log_step_initializer(dt_min=0.001, dt_max=0.1):
 
 
 class SSMLayer(nn.Module):
-    A: np.DeviceArray  # HiPPO
     N: int
     l_max: int
     decode: bool = False
 
     def setup(self):
         # SSM parameters
+        self.A = self.param("A", lecun_normal(), (self.N, self.N))
         self.B = self.param("B", lecun_normal(), (self.N, 1))
         self.C = self.param("C", lecun_normal(), (1, self.N))
         self.D = self.param("D", nn.initializers.ones, (1,))
@@ -607,12 +486,13 @@ def cloneLayer(layer):
         split_rngs={"params": True},
     )
 
+SSMLayer = cloneLayer(SSMLayer)
 
 # We then initialize $A$ with the HiPPO matrix, and pass it into the stack of modules above,
 
 
-def SSMInit(N):
-    return partial(cloneLayer(SSMLayer), A=make_HiPPO(N), N=N)
+def SSMLayerInit(N):
+    return partial(SSMLayer, N=N)
 
 
 # This SSM Layer can then be put into a standard NN.
@@ -715,19 +595,145 @@ BatchStackedModel = nn.vmap(
 # exactly the signature exposed by related sequence models such as Transformers, RNNs, and CNNs.
 
 # Full code for training is defined in
-# [training.py](https://github.com/srush/s4/blob/main/s4/train.py). While
-# we now have our main model, it is not fast enough to actually use. The next
-# section is all about making this SSM Layer faster – a lot faster!
+# [training.py](https://github.com/srush/s4/blob/main/s4/train.py).
+
+# While we now have our main model, there are two core problems with SSMs. First, the randomly initialized SSM actually does not perform very well. Furthermore, computing it is pretty slow.
+# Next, we'll complete our discussion of the modeling aspect of S4 by defining a special initialization for long-range dependencies (<a href="#part-1b-addressing-long-range-dependencies-with-hippo">Part 1b</a>),
+# and then figure out how to compute this SSM Layer faster – a lot faster (<a href="#part-2-implementing-s4">Part 2</a>)!
+
+
+# ## Part 1b: Addressing Long-Range Dependencies with HiPPO
+
+# <img src="images/hippo.png" width="100%"/>
+#
+# > [Prior work](https://arxiv.org/abs/2008.07669) found that the basic SSM actually performs very poorly in
+# > practice.  Intuitively, one explanation is that they  suffer from gradients scaling exponentially in the sequence length (i.e., the
+# > vanishing/exploding gradients problem).  To address this problem, previous work developed the HiPPO theory of
+# > continuous-time memorization.
+# >
+# > HiPPO specifies a class of certain matrices $\boldsymbol{A} \in \mathbb{R}^{N \times N}$ that when incorporated,
+# > allow the state $x(t)$ to memorize the history of the input $u(t)$.
+# > The most important matrix in this class is defined by the HiPPO matrix.
+# >
+# $$
+# \begin{aligned}
+#   (\text{\textbf{HiPPO Matrix}})
+#   \qquad
+#   \boldsymbol{A}_{nk}
+#   =
+#   \begin{cases}
+#     (2n+1)^{1/2}(2k+1)^{1/2} & \text{if } n > k \\
+#     n+1 & \text{if } n = k \\
+#     0 & \text{if } n < k
+#   \end{cases}
+# \end{aligned}
+# $$
+# >
+# > Previous work found that simply modifying an SSM from a random matrix $\boldsymbol{A}$ to HiPPO
+# > improved its performance on the sequential MNIST classification benchmark from $60\%$ to $98\%$.
+
+
+# This matrix is going to be really important, but it is a bit of
+# magic. For our purposes we mainly need to know that: 1) we only need to
+# calculate it once, and 2) it has a nice, simple structure (which we will exploit in
+# part 2). Without going into the ODE math, the main takeaway
+# is that this matrix aims to remember the past history in the state a
+# timescale invariant manner,
+
+
+def make_HiPPO(N):
+    def v(n, k):
+        if n > k:
+            return np.sqrt(2 * n + 1) * np.sqrt(2 * k + 1)
+        elif n == k:
+            return n + 1
+        else:
+            return 0
+
+    # Do it slow so we don't mess it up :)
+    mat = [[v(n, k) for k in range(N)] for n in range(N)]
+    return -np.array(mat)
+
+
+# Diving a bit deeper, the intuitive explanation of this matrix is
+# that it produces a hidden state that memorizes its history. It does
+# this by keeping track of the coefficients of a [Legendre
+# polynomial](https://en.wikipedia.org/wiki/Legendre_polynomials). These
+# coefficients let it approximate all of the previous history. Let us
+# look at an example,
+
+
+def example_legendre(N=8):
+    # Random hidden state as coefficients
+    import numpy as np
+    import numpy.polynomial.legendre
+
+    x = (np.random.rand(N) - 0.5) * 2
+    t = np.linspace(-1, 1, 100)
+    f = numpy.polynomial.legendre.Legendre(x)(t)
+
+    # Plot
+    import matplotlib.pyplot as plt
+    import seaborn
+
+    seaborn.set_context("talk")
+    fig = plt.figure(figsize=(20, 10))
+    ax = fig.gca(projection="3d")
+    ax.plot(
+        np.linspace(-25, (N - 1) * 100 + 25, 100),
+        [0] * 100,
+        zs=-1,
+        zdir="x",
+        color="black",
+    )
+    ax.plot(t, f, zs=N * 100, zdir="y", c="r")
+    for i in range(N):
+        coef = [0] * N
+        coef[N - i - 1] = 1
+        ax.set_zlim(-4, 4)
+        ax.set_yticks([])
+        ax.set_zticks([])
+        # Plot basis function.
+        f = numpy.polynomial.legendre.Legendre(coef)(t)
+        ax.bar(
+            [100 * i],
+            [x[i]],
+            zs=-1,
+            zdir="x",
+            label="x%d" % i,
+            color="brown",
+            fill=False,
+            width=50,
+        )
+        ax.plot(t, f, zs=100 * i, zdir="y", c="b", alpha=0.5)
+    ax.view_init(elev=40.0, azim=-45)
+    fig.savefig("images/leg.png")
+
+
+if False:
+    example_legendre()
+
+# The red line represents that curve we are approximating,
+# while the black bars represent the values of our hidden state.
+# Each is a coefficient for one element of the Legendre series
+# shown as blue functions. The intuition is that the HiPPO matrix
+# updates these coefficients each step.
+
+# <img src="images/leg.png" width="100%">
 
 
 # ## Part 2: Implementing S4
 
 # Warning: this section has a lot of math. Roughly it boils down to finding a
-# way to compute the filter from Part 1 with a "HiPPO-like" matrix *really
+# way to compute the filter from Part 1 for "HiPPO-like" matrices *really
 # fast*. If you are interested, the details are really neat. If not,
 # skip to Part 3 for some cool applications like MNIST completion.
 
 # [Skip Button](#part-3-s4-in-practice)
+
+# To set the stage, recall that S4 has two main differences from a basic SSM. The first addresses a *modeling challenge* -- long-range dependencies -- by using a special formula for the $\boldsymbol{A}$ matrix defined in the previous part. This matrix was first used in [predecessor](https://arxiv.org/abs/2110.13985) works to S4.
+
+# The second main characteristic of S4 solves the *computational challenge* of SSMs by introducing a special representation and algorithm to be able to work with this matrix!
 
 
 # > The fundamental bottleneck in computing the discrete-time SSM
@@ -757,10 +763,10 @@ BatchStackedModel = nn.vmap(
 # Under this DPLR assumption, S4 overcomes the speed bottleneck in three steps
 
 #
-#  1. Instead of computing $\boldsymbol{\overline{K}}$ directly,
+# >  1. Instead of computing $\boldsymbol{\overline{K}}$ directly,
 #     we compute its spectrum by evaluating its **[truncated generating function](https://en.wikipedia.org/wiki/Generating_function)** .  This  now involves a matrix *inverse* instead of *power*.
-#  2. We show that the diagonal matrix case is equivalent to the computation of a **[Cauchy kernel](https://en.wikipedia.org/wiki/Cauchy_matrix)** $\frac{1}{\omega_j - \zeta_k}$.
-#  3. We show the low-rank term can now be corrected by applying the **[Woodbury identity](https://en.wikipedia.org/wiki/Woodbury_matrix_identity)** which reduces $(\boldsymbol{\Lambda} + \boldsymbol{p}\boldsymbol{q}^*)^{-1}$ in terms of $\boldsymbol{\Lambda}^{-1}$, truly reducing to the diagonal case.
+# >  2. We show that the diagonal matrix case is equivalent to the computation of a **[Cauchy kernel](https://en.wikipedia.org/wiki/Cauchy_matrix)** $\frac{1}{\omega_j - \zeta_k}$.
+# >  3. We show the low-rank term can now be corrected by applying the **[Woodbury identity](https://en.wikipedia.org/wiki/Woodbury_matrix_identity)** which reduces $(\boldsymbol{\Lambda} + \boldsymbol{p}\boldsymbol{q}^*)^{-1}$ in terms of $\boldsymbol{\Lambda}^{-1}$, truly reducing to the diagonal case.
 
 
 # ### Step 1. SSM Generating Functions

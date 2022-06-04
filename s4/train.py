@@ -9,7 +9,7 @@ from flax.training import checkpoints, train_state
 from tqdm import tqdm
 from .data import Datasets
 from .dss import DSSLayerInit
-from .s4 import BatchStackedModel, S4LayerInit, SSMInit
+from .s4 import BatchStackedModel, S4LayerInit, SSMLayerInit
 
 
 try:
@@ -264,7 +264,7 @@ class LSTMRecurrentModel(nn.Module):
 Models = {
     "ff": FeedForwardModel,
     "lstm": LSTMRecurrentModel,
-    "ssm-naive": SSMInit,
+    "ssm-naive": SSMLayerInit,
     "s4": S4LayerInit,
     "dss": DSSLayerInit,
 }
