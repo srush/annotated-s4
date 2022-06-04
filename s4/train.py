@@ -289,7 +289,7 @@ def example_train(
     d_model=128,
     bsz=128,
     epochs=10,
-    ssm_n=64,
+    d_state=64,
     lr=1e-3,
     lr_schedule=False,
     n_layers=4,
@@ -321,7 +321,7 @@ def example_train(
 
     # Get model class and arguments
     model_cls = Models[model]
-    layer_args = {} if ssm_n is None else {"N": ssm_n}
+    layer_args = {} if d_state is None else {"N": d_state}
     layer_args["l_max"] = l_max
 
     # Extract custom hyperparameters from model class
@@ -434,7 +434,7 @@ if __name__ == "__main__":
     parser.add_argument("--p_dropout", type=float, default=0.2)
 
     # S4 Specific Parameters
-    parser.add_argument("--ssm_n", type=int, default=64)
+    parser.add_argument("--d_state", type=int, default=64)
 
     # Optimization Parameters
     parser.add_argument("--lr", type=float, default=1e-3)
@@ -470,7 +470,7 @@ if __name__ == "__main__":
         epochs=args.epochs,
         d_model=args.d_model,
         bsz=args.bsz,
-        ssm_n=args.ssm_n,
+        d_state=args.d_state,
         lr=args.lr,
         lr_schedule=args.lr_schedule,
         n_layers=args.n_layers,
