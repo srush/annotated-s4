@@ -625,6 +625,8 @@ class SequenceBlock(nn.Module):
     l_max: int
     dropout: float
     d_model: int
+    prenorm: bool = True
+    glu: bool = True
     training: bool = True
     decode: bool = False
 
@@ -632,6 +634,8 @@ class SequenceBlock(nn.Module):
         self.seq = self.layer(l_max=self.l_max, decode=self.decode)
         self.norm = nn.LayerNorm()
         self.out = nn.Dense(self.d_model)
+        if self.glu:
+            self.out2 = nn.Dense(self.d_model)
         self.drop = nn.Dropout(
             self.dropout,
             broadcast_dims=[0],
@@ -639,9 +643,17 @@ class SequenceBlock(nn.Module):
         )
 
     def __call__(self, x):
-        x2 = self.seq(x)
-        z = self.drop(self.out(self.drop(nn.gelu(x2))))
-        return self.norm(z + x)
+        skip = x
+        if self.prenorm: x = self.norm(x)
+        x = self.seq(x)
+        x = self.drop(nn.gelu(x))
+        if self.glu:
+            x = self.out(x) * jax.nn.sigmoid(self.out2(x))
+        else:
+            x = self.out(x)
+        x = skip + self.drop(x)
+        if not self.prenorm: x = self.norm(x)
+        return x
 
 
 # We can then stack a bunch of these blocks on top of each other
