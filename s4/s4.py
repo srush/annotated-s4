@@ -751,7 +751,7 @@ if False:
 # has special structure. Specifically, Diagonal Plus Low-Rank (DPLR) in complex
 # space.
 
-# **DPLR:** SSM is  $(\boldsymbol{\Lambda} - \boldsymbol{p}\boldsymbol{q}^*, \boldsymbol{B}, \boldsymbol{C})$ for some diagonal $\boldsymbol{\Lambda}$ and vectors $\boldsymbol{p}, \boldsymbol{q}, \boldsymbol{B}, \boldsymbol{C} \in \mathbb{C}^{N \times 1}$.
+# **DPLR:** SSM is  $(\boldsymbol{\Lambda} - \boldsymbol{P}\boldsymbol{Q}^*, \boldsymbol{B}, \boldsymbol{C})$ for some diagonal $\boldsymbol{\Lambda}$ and vectors $\boldsymbol{P}, \boldsymbol{Q}, \boldsymbol{B}, \boldsymbol{C} \in \mathbb{C}^{N \times 1}$.
 #
 #
 # Under this DPLR assumption, S4 overcomes the speed bottleneck in three steps
@@ -760,7 +760,7 @@ if False:
 # >  1. Instead of computing $\boldsymbol{\overline{K}}$ directly,
 #     we compute its spectrum by evaluating its **[truncated generating function](https://en.wikipedia.org/wiki/Generating_function)** .  This  now involves a matrix *inverse* instead of *power*.
 # >  2. We show that the diagonal matrix case is equivalent to the computation of a **[Cauchy kernel](https://en.wikipedia.org/wiki/Cauchy_matrix)** $\frac{1}{\omega_j - \zeta_k}$.
-# >  3. We show the low-rank term can now be corrected by applying the **[Woodbury identity](https://en.wikipedia.org/wiki/Woodbury_matrix_identity)** which reduces $(\boldsymbol{\Lambda} + \boldsymbol{p}\boldsymbol{q}^*)^{-1}$ in terms of $\boldsymbol{\Lambda}^{-1}$, truly reducing to the diagonal case.
+# >  3. We show the low-rank term can now be corrected by applying the **[Woodbury identity](https://en.wikipedia.org/wiki/Woodbury_matrix_identity)** which reduces $(\boldsymbol{\Lambda} + \boldsymbol{P}\boldsymbol{Q}^*)^{-1}$ in terms of $\boldsymbol{\Lambda}^{-1}$, truly reducing to the diagonal case.
 
 
 # ### Step 1. SSM Generating Functions
@@ -883,10 +883,10 @@ def cauchy(v, omega, lambd):
 
 # The final step is to relax the diagonal assumption. In addition to
 # the diagonal term we allow a low-rank component with
-# $\boldsymbol{p}, \boldsymbol{q} \in \mathbb{C}^{N\times 1}$ such that:
+# $\boldsymbol{P}, \boldsymbol{Q} \in \mathbb{C}^{N\times 1}$ such that:
 
 # $$
-# \boldsymbol{A} = \boldsymbol{\Lambda} - \boldsymbol{p}  \boldsymbol{q}^*
+# \boldsymbol{A} = \boldsymbol{\Lambda} - \boldsymbol{P}  \boldsymbol{Q}^*
 # $$
 
 # The [Woodbury identity](https://en.wikipedia.org/wiki/Woodbury_matrix_identity)
@@ -895,7 +895,7 @@ def cauchy(v, omega, lambd):
 # adding the low-rank term.
 
 # $$ \begin{aligned}
-# (\boldsymbol{\Lambda} + \boldsymbol{p}  \boldsymbol{q}^*)^{-1} &= \boldsymbol{\Lambda}^{-1} - \boldsymbol{\Lambda}^{-1} \boldsymbol{p} (1 + \boldsymbol{q}^* \boldsymbol{\Lambda}^{-1} \boldsymbol{p})^{-1} \boldsymbol{q}^* \boldsymbol{\Lambda}^{-1}
+# (\boldsymbol{\Lambda} + \boldsymbol{P}  \boldsymbol{Q}^*)^{-1} &= \boldsymbol{\Lambda}^{-1} - \boldsymbol{\Lambda}^{-1} \boldsymbol{P} (1 + \boldsymbol{Q}^* \boldsymbol{\Lambda}^{-1} \boldsymbol{P})^{-1} \boldsymbol{Q}^* \boldsymbol{\Lambda}^{-1}
 #  \end{aligned}
 # $$
 
@@ -904,16 +904,16 @@ def cauchy(v, omega, lambd):
 #  all look like Step 2 above:
 
 # $$ \begin{aligned}
-# \boldsymbol{\hat{K}}_{DPLR}(z) & = c(z) [k_{z, \Lambda}(\boldsymbol{\tilde{C}}, \boldsymbol{\boldsymbol{B}}) - k_{z, \Lambda}(\boldsymbol{\tilde{C}}, \boldsymbol{\boldsymbol{p}}) (1 + k_{z, \Lambda}(\boldsymbol{q^*}, \boldsymbol{\boldsymbol{p}}) )^{-1} k_{z, \Lambda}(\boldsymbol{q^*}, \boldsymbol{\boldsymbol{B}}) ]
+# \boldsymbol{\hat{K}}_{DPLR}(z) & = c(z) [k_{z, \Lambda}(\boldsymbol{\tilde{C}}, \boldsymbol{\boldsymbol{B}}) - k_{z, \Lambda}(\boldsymbol{\tilde{C}}, \boldsymbol{\boldsymbol{P}}) (1 + k_{z, \Lambda}(\boldsymbol{q^*}, \boldsymbol{\boldsymbol{P}}) )^{-1} k_{z, \Lambda}(\boldsymbol{q^*}, \boldsymbol{\boldsymbol{B}}) ]
 #  \end{aligned}$$
 
 
 # The code consists of collecting up the terms and applying 4 weighted dot products,
 
 
-def K_gen_DPLR(Lambda, p, q, B, C, step, unmat=False):
-    aterm = (C.conj(), q.conj())
-    bterm = (B, p)
+def K_gen_DPLR(Lambda, P, Q, B, C, step, unmat=False):
+    aterm = (C.conj(), Q.conj())
+    bterm = (B, P)
 
     def gen(o):
         g = (2.0 / step) * ((1.0 - o) / (1.0 + o))
@@ -939,13 +939,13 @@ def K_gen_DPLR(Lambda, p, q, B, C, step, unmat=False):
 
 
 @partial(jax.jit, static_argnums=6)
-def kernel_DPLR(Lambda, p, q, B, C, step, L):
+def kernel_DPLR(Lambda, P, Q, B, C, step, L):
     # Evaluate at roots of unity
     # Generating function is (-)z-transform, so we evaluate at (-)root
     Omega_L = np.exp((-2j * np.pi) * (np.arange(L) / L))
 
-    aterm = (C.conj(), q.conj())
-    bterm = (B, p)
+    aterm = (C.conj(), Q.conj())
+    bterm = (B, P)
 
     g = (2.0 / step) * ((1.0 - Omega_L) / (1.0 + Omega_L))
     c = 2.0 / (1.0 + Omega_L)
@@ -967,11 +967,11 @@ def kernel_DPLR(Lambda, p, q, B, C, step, L):
 def random_DPLR(rng, N):
     l_r, p_r, q_r, b_r, c_r = jax.random.split(rng, 5)
     Lambda = jax.random.uniform(l_r, (N,))
-    p = jax.random.uniform(p_r, (N,))
-    q = jax.random.uniform(q_r, (N,))
+    P = jax.random.uniform(p_r, (N,))
+    Q = jax.random.uniform(q_r, (N,))
     B = jax.random.uniform(b_r, (N, 1))
     C = jax.random.uniform(c_r, (1, N))
-    return Lambda, p, q, B, C
+    return Lambda, P, Q, B, C
 
 
 # We can check that the DPLR method yields the same filter as computing $\boldsymbol{A}$ directly,
@@ -981,8 +981,8 @@ def test_gen_dplr(L=16, N=4):
     I = np.eye(4)
 
     # Create a DPLR A matrix and discretize
-    Lambda, p, B, _ = make_DPLR_HiPPO(N)
-    A = np.diag(Lambda) - p[:, np.newaxis] @ p[:, np.newaxis].conj().T
+    Lambda, P, B, _ = make_DPLR_HiPPO(N)
+    A = np.diag(Lambda) - P[:, np.newaxis] @ P[:, np.newaxis].conj().T
     _, _, C = random_SSM(rng, N)
 
     Ab, Bb, Cb = discretize(A, B, C, 1.0 / L)
@@ -990,8 +990,8 @@ def test_gen_dplr(L=16, N=4):
 
     # Compare to the DPLR generating function approach.
     C = (I - matrix_power(Ab, L)).conj().T @ Cb.ravel()
-    # b = conv_from_gen(K_gen_DPLR(Lambda, p, q, B, C, step=1.0 / L), L)
-    b = kernel_DPLR(Lambda, p, p, B, C, step=1.0 / L, L=L)
+    # b = conv_from_gen(K_gen_DPLR(Lambda, P, Q, B, C, step=1.0 / L), L)
+    b = kernel_DPLR(Lambda, P, P, B, C, step=1.0 / L, L=L)
     assert np.allclose(a.real, b.real)
 
 
@@ -1016,8 +1016,8 @@ def test_gen_dplr(L=16, N=4):
 # $$
 # \begin{align*}
 #   \bm{I} + \frac{\Delta}{2} \bm{A}
-#   &= \bm{I} + \frac{\Delta}{2} (\bm{\Lambda} - \bm{p} \bm{q}^*)
-#   \\&= \frac{\Delta}{2} \left[ \frac{2}{\Delta}\bm{I} + (\bm{\Lambda} - \bm{p} \bm{q}^*) \right]
+#   &= \bm{I} + \frac{\Delta}{2} (\bm{\Lambda} - \bm{P} \bm{Q}^*)
+#   \\&= \frac{\Delta}{2} \left[ \frac{2}{\Delta}\bm{I} + (\bm{\Lambda} - \bm{P} \bm{Q}^*) \right]
 #   \\&= \frac{\Delta}{2} \bm{A_0}
 # \end{align*}
 # $$
@@ -1030,11 +1030,11 @@ def test_gen_dplr(L=16, N=4):
 # \begin{align*}
 #   \left( \bm{I} - \frac{\Delta}{2} \bm{A} \right)^{-1}
 #   &=
-#   \left( \bm{I} - \frac{\Delta}{2} (\bm{\Lambda} - \bm{p} \bm{q}^*) \right)^{-1}
+#   \left( \bm{I} - \frac{\Delta}{2} (\bm{\Lambda} - \bm{P} \bm{Q}^*) \right)^{-1}
 #   \\&=
-#   \frac{2}{\Delta} \left[ \frac{2}{\Delta} - \bm{\Lambda} + \bm{p} \bm{q}^* \right]^{-1}
+#   \frac{2}{\Delta} \left[ \frac{2}{\Delta} - \bm{\Lambda} + \bm{P} \bm{Q}^* \right]^{-1}
 #   \\&=
-#   \frac{2}{\Delta} \left[ \bm{D} - \bm{D} \bm{p} \left( 1 + \bm{q}^* \bm{D} \bm{p} \right)^{-1} \bm{q}^* \bm{D} \right]
+#   \frac{2}{\Delta} \left[ \bm{D} - \bm{D} \bm{P} \left( 1 + \bm{Q}^* \bm{D} \bm{P} \right)^{-1} \bm{Q}^* \bm{D} \right]
 #   \\&= \frac{2}{\Delta} \bm{A_1}
 # \end{align*}
 # $$
@@ -1052,13 +1052,13 @@ def test_gen_dplr(L=16, N=4):
 # $$
 
 
-def discrete_DPLR(Lambda, p, q, B, C, step, L):
+def discrete_DPLR(Lambda, P, Q, B, C, step, L):
     # Convert parameters to matrices
     B = B[:, np.newaxis]
     Ct = C[np.newaxis, :]
 
     N = Lambda.shape[0]
-    A = np.diag(Lambda) - p[:, np.newaxis] @ q[:, np.newaxis].conj().T
+    A = np.diag(Lambda) - P[:, np.newaxis] @ Q[:, np.newaxis].conj().T
     I = np.eye(N)
 
     # Forward Euler
@@ -1066,9 +1066,9 @@ def discrete_DPLR(Lambda, p, q, B, C, step, L):
 
     # Backward Euler
     D = np.diag(1.0 / ((2.0 / step) - Lambda))
-    qc = q.conj().T.reshape(1, -1)
-    p2 = p.reshape(-1, 1)
-    A1 = D - (D @ p2 * (1.0 / (1 + (qc @ D @ p2))) * qc @ D)
+    Qc = Q.conj().T.reshape(1, -1)
+    P2 = P.reshape(-1, 1)
+    A1 = D - (D @ P2 * (1.0 / (1 + (Qc @ D @ P2))) * Qc @ D)
 
     # A bar and B bar
     Ab = A1 @ A0
@@ -1088,27 +1088,27 @@ def discrete_DPLR(Lambda, p, q, B, C, step, L):
 
 # > The S4 techniques can apply to any matrix $\boldsymbol{A}$ that can be decomposed as *Normal Plus Low-Rank (NPLR)*.
 # $$
-# >   \boldsymbol{A} = \boldsymbol{V} \boldsymbol{\Lambda} \boldsymbol{V}^* - \boldsymbol{p} \boldsymbol{q}^\top = \boldsymbol{V} \left( \boldsymbol{\Lambda} - \boldsymbol{V}^* \boldsymbol{p} (\boldsymbol{V}^*\boldsymbol{q})^* \right) \boldsymbol{V}^*
+# >   \boldsymbol{A} = \boldsymbol{V} \boldsymbol{\Lambda} \boldsymbol{V}^* - \boldsymbol{P} \boldsymbol{Q}^\top = \boldsymbol{V} \left( \boldsymbol{\Lambda} - \boldsymbol{V}^* \boldsymbol{P} (\boldsymbol{V}^*\boldsymbol{Q})^* \right) \boldsymbol{V}^*
 # $$
-# > for [unitary](https://en.wikipedia.org/wiki/Unitary_matrix) $\boldsymbol{V} \in \mathbb{C}^{N \times N}$, diagonal $\boldsymbol{\Lambda}$, and low-rank factorization $\boldsymbol{p}, \boldsymbol{q} \in \mathbb{R}^{N \times r}$.  An NPLR SSM is therefore unitarily equivalent to some DPLR matrix.
+# > for [unitary](https://en.wikipedia.org/wiki/Unitary_matrix) $\boldsymbol{V} \in \mathbb{C}^{N \times N}$, diagonal $\boldsymbol{\Lambda}$, and low-rank factorization $\boldsymbol{P}, \boldsymbol{Q} \in \mathbb{R}^{N \times r}$.  An NPLR SSM is therefore unitarily equivalent to some DPLR matrix.
 
 
 #  For S4, we need to work with a HiPPO matrix for $\boldsymbol{A}$. This requires first writing it as a normal plus low-rank term, and then diagonalizing to extract
 #  $\boldsymbol{\Lambda}$ from this decomposition. The appendix of the paper shows how 
 #  by writing the normal part as a [skew-symmetric](https://en.wikipedia.org/wiki/Skew-symmetric_matrix) (plus a constant times the identity matrix), which are a special class of normal matrices.
 
-# An additional simplification is that there is actually a representation that ties the low-rank components terms $\boldsymbol{p} = \boldsymbol{q}$, which was shown in [follow-up work](https://arxiv.org/abs/2202.09729) to be important for stability.
+# An additional simplification is that there is actually a representation that ties the low-rank components terms $\boldsymbol{P} = \boldsymbol{Q}$, which was shown in [follow-up work](https://arxiv.org/abs/2202.09729) to be important for stability.
 
 def make_NPLR_HiPPO(N):
     # Make -HiPPO
     nhippo = make_HiPPO(N)
 
     # Add in a rank 1 term. Makes it Normal.
-    p = np.sqrt(np.arange(N) + 0.5)
+    P = np.sqrt(np.arange(N) + 0.5)
 
     # HiPPO also specifies the B matrix
     B = np.sqrt(2*np.arange(N) + 1.0)
-    return nhippo, p, B
+    return nhippo, P, B
 
 # After extracting the normal part, we can diagonalize to get out the DPLR terms.
 # Because the normal part is actually skew-symmetric, we can extract the real and complex parts of $\Lambda$ separately.
@@ -1116,9 +1116,9 @@ def make_NPLR_HiPPO(N):
 
 def make_DPLR_HiPPO(N):
     """ Diagonalize NPLR representation """
-    A, p, B = make_NPLR_HiPPO(N)
+    A, P, B = make_NPLR_HiPPO(N)
 
-    S = A + p[:, np.newaxis] * p[np.newaxis, :]
+    S = A + P[:, np.newaxis] * P[np.newaxis, :]
 
     # Check skew symmetry
     S_diag = np.diagonal(S)
@@ -1130,23 +1130,23 @@ def make_DPLR_HiPPO(N):
     # Lambda, V = jax.jit(eig, backend="cpu")(S)
     # Lambda, V = eig(jax.device_put(S, device=jax.devices("cpu")[0]))
 
-    p = V.conj().T @ p
+    P = V.conj().T @ P
     B = V.conj().T @ B
-    return Lambda_real + 1j*Lambda_imag, p, B, V
+    return Lambda_real + 1j*Lambda_imag, P, B, V
 
 # Sanity check just to make sure those identities hold,
 
 
 def test_nplr(N=8):
-    A2, p, B = make_NPLR_HiPPO(N)
-    Lambda, pc, Bc, V = make_DPLR_HiPPO(N)
+    A2, P, B = make_NPLR_HiPPO(N)
+    Lambda, Pc, Bc, V = make_DPLR_HiPPO(N)
     Vc = V.conj().T
-    p = p[:, np.newaxis]
-    pc = pc[:, np.newaxis]
+    P = P[:, np.newaxis]
+    Pc = Pc[:, np.newaxis]
     Lambda = np.diag(Lambda)
 
-    A3 = V @ Lambda @ Vc - (p @ p.T) # Test NPLR
-    A4 = V @ (Lambda - pc @ pc.conj().T) @ Vc # Test DPLR
+    A3 = V @ Lambda @ Vc - (P @ P.T) # Test NPLR
+    A4 = V @ (Lambda - Pc @ Pc.conj().T) @ Vc # Test DPLR
     assert np.allclose(A2, A3, atol=1e-4, rtol=1e-4)
     assert np.allclose(A2, A4, atol=1e-4, rtol=1e-4)
 
@@ -1160,18 +1160,18 @@ test_nplr()
 def test_conversion(N=8, L=16):
     step = 1.0 / L
     # Compute a HiPPO NPLR matrix.
-    Lambda, p, B, _ = make_DPLR_HiPPO(N)
+    Lambda, P, B, _ = make_DPLR_HiPPO(N)
     # B = B[:, np.newaxis]
     # Random complex Ct
     C = normal(dtype=np.complex64)(rng, (N,))
 
     # CNN form.
-    K_gen = K_gen_DPLR(Lambda, p, p, B, C, step)
+    K_gen = K_gen_DPLR(Lambda, P, P, B, C, step)
     K = conv_from_gen(K_gen, L)
-    # K = kernel_DPLR(Lambda, p, p.conj(), B, C, step, L)
+    # K = kernel_DPLR(Lambda, P, P.conj(), B, C, step, L)
 
     # RNN form.
-    Ab, Bb, Cb = discrete_DPLR(Lambda, p, p, B, C, step, L)
+    Ab, Bb, Cb = discrete_DPLR(Lambda, P, P, B, C, step, L)
     K2 = K_conv(Ab, Bb, Cb, L=L)
     assert np.allclose(K.real, K2.real, atol=1e-5, rtol=1e-5)
 
@@ -1204,7 +1204,7 @@ def test_conversion(N=8, L=16):
 #  only difference is in the the computation of $\boldsymbol{K}$.
 #  Additionally instead of learning $\boldsymbol{C}$, we learn
 #  $\boldsymbol{\tilde{C}}$ so we avoid computing powers of
-#  $\boldsymbol{A}$. Note as well that in the original paper $\Lambda, p, q$ are
+#  $\boldsymbol{A}$. Note as well that in the original paper $\boldsymbol{\Lambda}, \boldsymbol{P}, \boldsymbol{Q}$ are
 #  also learned. However, in this post, we leave them fixed for simplicity.
 
 
@@ -1234,7 +1234,7 @@ class S4Layer(nn.Module):
         # Ensure the real part of Lambda is negative
         # (described in the SaShiMi follow-up to S4)
         self.Lambda = np.clip(self.Lambda_re, None, -1e-4) + 1j*self.Lambda_im
-        self.p = self.param("p", hippo_p_initializer, (self.N,))
+        self.P = self.param("P", hippo_p_initializer, (self.N,))
         self.B = self.param("B", hippo_B_initializer, (self.N,))
         # C should be init as standard normal
         self.C = self.param("C", normal(stddev=1.0), (self.N, 2))
@@ -1256,8 +1256,8 @@ class S4Layer(nn.Module):
             # self.K = conv_from_gen(K_gen, self.l_max)
             self.K = kernel_DPLR(
                 self.Lambda,
-                self.p,
-                self.p,
+                self.P,
+                self.P,
                 self.B,
                 self.C,
                 self.step,
@@ -1272,8 +1272,8 @@ class S4Layer(nn.Module):
             def init_discrete():
                 return discrete_DPLR(
                     self.Lambda,
-                    self.p,
-                    self.p,
+                    self.P,
+                    self.P,
                     self.B,
                     self.C,
                     self.step,
@@ -1308,22 +1308,22 @@ S4Layer = cloneLayer(S4Layer)
 # We initialize the model by computing a HiPPO DPLR initializer
 
 def hippo_initializer(N):
-    Lambda, p, B, _ = make_DPLR_HiPPO(N)
+    Lambda, P, B, _ = make_DPLR_HiPPO(N)
     def init_Lambda_real(key, shape):
         assert shape == (N,)
         return Lambda.real
     def init_Lambda_imag(key, shape):
         assert shape == (N,)
         return Lambda.imag
-    def init_p(key, shape):
+    def init_P(key, shape):
         assert shape == (N,)
-        return p
+        return P
         # return np.asarray(p, dtype=dtype)
     def init_B(key, shape):
         assert shape == (N,)
         return B
         # return np.asarray(B[:, np.newaxis], dtype=dtype)
-    return init_Lambda_real, init_Lambda_imag, init_p, init_B
+    return init_Lambda_real, init_Lambda_imag, init_P, init_B
 
 
 # ### Sampling and Caching
