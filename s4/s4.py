@@ -864,15 +864,9 @@ def test_gen_inverse(L=16, N=4):
 
 # We have effectively replaced an inverse with a weighted dot product.
 # Let's make a small helper function to compute this weight dot product for use.
-# Here [vectorize](https://jax.readthedocs.io/en/latest/_autosummary/jax.numpy.vectorize.html)
-# is a decorator that let's us broadcast this function automatically,
-
-
-@partial(np.vectorize, signature="(c),(),(c)->()")
 def cauchy_dot(v, omega, lambd):
     return (v / (omega - lambd)).sum()
 
-# @partial(np.vectorize, signature="(n),(l),(n)->(l)")
 def cauchy(v, omega, lambd):
     cauchy_dot = lambda _omega: (v / (_omega - lambd)).sum()
     return jax.vmap(cauchy_dot)(omega)
