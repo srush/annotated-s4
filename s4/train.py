@@ -285,6 +285,7 @@ def example_train(
     use_wandb=True,
     wandb_project="s4",
     wandb_entity=None,
+    checkpoint=False,
 ):
     # Set randomness...
     print("[*] Setting Randomness...")
@@ -356,22 +357,23 @@ def example_train(
         )
 
         # Save a checkpoint each epoch & handle best (test loss... not "copacetic" but ehh)
-        suf = f"-{suffix}" if suffix is not None else ""
-        run_id = f"checkpoints/{dataset}/{model}-d_model={d_model}-lr={lr}-bsz={bsz}{suf}"
+        if checkpoint:
+            suf = f"-{suffix}" if suffix is not None else ""
+            run_id = f"checkpoints/{dataset}/{model}-d_model={d_model}-lr={lr}-bsz={bsz}{suf}"
+            ckpt_path = checkpoints.save_checkpoint(
+                run_id,
+                state,
+                epoch,
+                keep=epochs,
+            )
 
-        ckpt_path = checkpoints.save_checkpoint(
-            run_id,
-            state,
-            epoch,
-            keep=epochs,
-        )
-        if (classification and test_acc > best_acc) or (
-            not classification and test_loss < best_loss
-        ):
+        if (classification and test_acc > best_acc) \
+            or (not classification and test_loss < best_loss):
             # Create new "best-{step}.ckpt and remove old one
-            shutil.copy(ckpt_path, f"{run_id}/best_{epoch}")
-            if os.path.exists(f"{run_id}/best_{best_epoch}"):
-                os.remove(f"{run_id}/best_{best_epoch}")
+            if checkpoint:
+                shutil.copy(ckpt_path, f"{run_id}/best_{epoch}")
+                if os.path.exists(f"{run_id}/best_{best_epoch}"):
+                    os.remove(f"{run_id}/best_{best_epoch}")
 
             best_loss, best_acc, best_epoch = test_loss, test_acc, epoch
 
@@ -440,6 +442,8 @@ if __name__ == "__main__":
         help="entity to use for W&B logging",
     )
 
+    parser.add_argument( "--checkpoint", action="store_true")
+
     args = parser.parse_args()
 
     example_train(
@@ -457,4 +461,5 @@ if __name__ == "__main__":
         use_wandb=args.use_wandb,
         wandb_project=args.wandb_project,
         wandb_entity=args.wandb_entity,
+        checkpoint=args.checkpoint,
     )
