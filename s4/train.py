@@ -59,9 +59,7 @@ def map_nested_fn(fn):
 def create_train_state(
     model_cls,
     rng,
-    in_dim=1,
-    bsz=128,
-    seq_len=784,
+    in_shape,
     lr=1e-3,
     lr_layer=None,
     lr_schedule=False,
@@ -71,7 +69,7 @@ def create_train_state(
     init_rng, dropout_rng = jax.random.split(rng, num=2)
     params = model.init(
         {"params": init_rng, "dropout": dropout_rng},
-        np.ones((bsz, seq_len, in_dim)),
+        np.ones(in_shape),
     )
     params = params["params"].unfreeze() # Note: Added immediate `unfreeze()` to play well w/ Optax. See below!
 
@@ -315,14 +313,16 @@ def example_train(
 
     # Create dataset
     create_dataset_fn = Datasets[dataset]
-    trainloader, testloader, n_classes, seq_len, in_dim = create_dataset_fn(
+    trainloader, testloader, n_classes, l_seq, d_input = create_dataset_fn(
         bsz=bsz
     )
+    l_max = l_seq if classification else l_seq - 1 # Max length that model sees
+    in_shape = (bsz, l_max, d_input) # Input shape
 
     # Get model class and arguments
     model_cls = Models[model]
     layer_args = {} if ssm_n is None else {"N": ssm_n}
-    layer_args["l_max"] = seq_len if classification else seq_len - 1
+    layer_args["l_max"] = l_max
 
     # Extract custom hyperparameters from model class
     lr_layer = getattr(model_cls, "lr", None)
@@ -340,12 +340,11 @@ def example_train(
         n_layers=n_layers,
         classification=classification,
     )
+
     state = create_train_state(
         model_cls,
         rng,
-        in_dim=in_dim,
-        bsz=bsz,
-        seq_len=seq_len if classification else seq_len - 1,
+        in_shape,
         lr=lr,
         lr_layer=lr_layer,
         lr_schedule=lr_schedule,
