@@ -128,12 +128,12 @@ def create_train_state(
 def train_epoch(state, rng, model, trainloader, classification=False):
     # Store Metrics
     model = model(training=True)
-    batch_losses = []
+    batch_losses, batch_accuracies = [], []
     for batch_idx, (inputs, labels) in enumerate(tqdm(trainloader)):
         inputs = np.array(inputs.numpy())
         labels = np.array(labels.numpy())  # Not the most efficient...
         rng, drop_rng = jax.random.split(rng)
-        state, loss = train_step(
+        state, loss, acc = train_step(
             state,
             drop_rng,
             inputs,
@@ -142,9 +142,10 @@ def train_epoch(state, rng, model, trainloader, classification=False):
             classification=classification,
         )
         batch_losses.append(loss)
+        batch_accuracies.append(acc)
 
     # Return average loss over batches
-    return state, np.mean(np.array(batch_losses))
+    return state, np.mean(np.array(batch_losses)), np.mean(np.array(batch_accuracies))
 
 
 def validate(params, model, testloader, classification=False):
@@ -199,6 +200,7 @@ def train_step(
                 mutable=["intermediates"],
             )
             loss = np.mean(cross_entropy_loss(logits, batch_labels))
+            acc = np.mean(compute_accuracy(logits, batch_labels))
         else:
             logits, mod_vars = model.apply(
                 {"params": params},
@@ -207,12 +209,13 @@ def train_step(
                 mutable=["intermediates"],
             )
             loss = np.mean(cross_entropy_loss(logits, batch_inputs[:, 1:, 0]))
-        return loss, logits
+            acc = np.mean(compute_accuracy(logits, batch_inputs[:, 1:, 0]))
+        return loss, (logits, acc)
 
     grad_fn = jax.value_and_grad(loss_fn, has_aux=True)
-    (loss, logits), grads = grad_fn(state.params)
+    (loss, (logits, acc)), grads = grad_fn(state.params)
     state = state.apply_gradients(grads=grads)
-    return state, loss
+    return state, loss, acc
 
 
 @partial(jax.jit, static_argnums=(3, 4))
@@ -333,7 +336,7 @@ def example_train(
     best_loss, best_acc, best_epoch = 10000, 0, 0
     for epoch in range(epochs):
         print(f"[*] Starting Training Epoch {epoch + 1}...")
-        state, train_loss = train_epoch(
+        state, train_loss, train_acc = train_epoch(
             state,
             train_rng,
             model_cls,
@@ -348,8 +351,8 @@ def example_train(
 
         print(f"\n=>> Epoch {epoch + 1} Metrics ===")
         print(
-            f"\tTrain Loss: {train_loss:.5f} -- Test Loss: {test_loss:.5f} --"
-            f" Test Accuracy: {test_acc:.4f}"
+            f"\tTrain Loss: {train_loss:.5f} -- Train Accuracy: {train_acc:.4f}\n"
+            f"\tTest Loss: {test_loss:.5f} -- Test Accuracy: {test_acc:.4f}"
         )
 
         # Save a checkpoint each epoch & handle best (test loss... not "copacetic" but ehh)
