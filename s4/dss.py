@@ -425,6 +425,12 @@ class DSSLayer(nn.Module):
     l_max: int
     decode: bool = False
 
+    lr = {
+        "Lambda_re": 0.1,
+        "Lambda_im": 0.1,
+        "log_step": 0.1,
+    }
+
     def setup(self):
         # Learned Parameters
         hippo_Lambda_real_initializer, hippo_Lambda_imag_initializer, hippo_p_initializer, hippo_B_initializer = s4.hippo_initializer(self.N)

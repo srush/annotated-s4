@@ -1220,6 +1220,15 @@ class S4Layer(nn.Module):
     l_max: int
     decode: bool = False
 
+    # Special parameters with multiplicative factor on lr and no weight decay (handled by main train script)
+    lr = {
+        "Lambda_re": 0.1,
+        "Lambda_im": 0.1,
+        "P": 0.1,
+        "B": 0.1,
+        "log_step": 0.1,
+    }
+
     def setup(self):
         # Learned Parameters (Ct is complex!)
         hippo_Lambda_real_initializer, hippo_Lambda_imag_initializer, hippo_p_initializer, hippo_B_initializer = hippo_initializer(self.N)
