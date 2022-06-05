@@ -121,6 +121,12 @@ def create_train_state(
     # tx = optax.adamw(learning_rate=lr, weight_decay=0.01)
 
 
+    # Print parameter count
+    param_sizes = map_nested_fn(
+        lambda k, param: param.size if lr_layer.get(k, lr) > 0. else 0
+    )(params)
+    print(f"[*] Trainable Parameters: {sum(jax.tree_leaves(param_sizes))}")
+    print(f"[*] Total training steps: {total_steps}")
 
     return train_state.TrainState.create(
         apply_fn=model.apply, params=params, tx=tx
