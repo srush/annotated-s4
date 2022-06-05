@@ -122,8 +122,10 @@ def create_train_state(
 
 
     # Print parameter count
+    _is_complex = lambda x: x.dtype in [np.complex64, np.complex128]
     param_sizes = map_nested_fn(
-        lambda k, param: param.size if lr_layer.get(k, lr) > 0. else 0
+        lambda k, param: param.size * (2 if _is_complex(param) else 1)
+        if lr_layer.get(k, lr) > 0. else 0
     )(params)
     print(f"[*] Trainable Parameters: {sum(jax.tree_leaves(param_sizes))}")
     print(f"[*] Total training steps: {total_steps}")
