@@ -1624,12 +1624,14 @@ if __name__ == '__main__':
     from flax.core import freeze
     from flax.training import train_state
     import optax
+    from .s4d import S4DLayer
 
     N=64
     L=1024
     H=256
-    bsz=32
-    model_cls = S4Layer
+    bsz=16
+    # model_cls = S4Layer
+    model_cls = S4DLayer
     model_cls = partial(
         BatchStackedModel,
         layer=model_cls,
@@ -1637,7 +1639,7 @@ if __name__ == '__main__':
         d_model=H,
         d_output=10,
         dropout=0.2,
-        n_layers=4,
+        n_layers=1,
         classification=True,
     )
 
@@ -1665,5 +1667,23 @@ if __name__ == '__main__':
         state = state.apply_gradients(grads=grads)
         return state
 
-    for _ in range(100000):
-        state = step(model, params, state, np.ones((bsz, L, H)))
+    # @partial(jax.jit, static_argnums=0)
+    def step2(inputs):
+        def loss_fn(params):
+            logits, mod_vars = model.apply({"params": params}, inputs, rngs={"dropout": rng}, mutable=["intermediates"])
+            print("output shape", logits.shape)
+            loss = np.mean(logits) # Dummy loss, just need scalar output
+            return loss, logits
+
+        grad_fn = jax.value_and_grad(loss_fn, has_aux=True)
+        loss, grads = grad_fn(params)
+        # loss = loss_fn(params)
+        # state = state.apply_gradients(grads=grads)
+        # return state
+
+    # jax.make_jaxpr(step)(model, params, state, np.ones((bsz, L, H)))
+    jaxpr = jax.make_jaxpr(step2)(np.ones((bsz, L, H)))
+    print(jaxpr)
+
+    # for _ in range(100000):
+    #     state = step(model, params, state, np.ones((bsz, L, H)))
