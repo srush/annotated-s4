@@ -39,7 +39,7 @@ from functools import partial
 import jax
 import jax.numpy as np
 from flax import linen as nn
-from jax.nn.initializers import lecun_normal
+from jax.nn.initializers import lecun_normal, normal
 
 rng = jax.random.PRNGKey(1)
 
@@ -437,7 +437,7 @@ class DSSLayer(nn.Module):
         self.Lambda_re = self.param("Lambda_re", hippo_Lambda_real_initializer, (self.N,))
         self.Lambda_im = self.param("Lambda_im", hippo_Lambda_imag_initializer, (self.N,))
         self.Lambda = self.Lambda_re + 1j*self.Lambda_im
-        self.W = self.param("W", lecun_normal(), (1, self.N, 2))
+        self.W = self.param("W", normal(stddev=.5**.5), (1, self.N, 2))
         self.W = self.W[..., 0] + 1j * self.W[..., 1]
         self.D = self.param("D", nn.initializers.ones, (1,))
         self.step = np.exp(
