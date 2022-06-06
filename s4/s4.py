@@ -635,18 +635,10 @@ BatchStackedModel = nn.vmap(
 
 
 def make_HiPPO(N):
-    def v(n, k):
-        if n > k:
-            return np.sqrt(2 * n + 1) * np.sqrt(2 * k + 1)
-        elif n == k:
-            return n + 1
-        else:
-            return 0
-
-    # Do it slow so we don't mess it up :)
-    mat = [[v(n, k) for k in range(N)] for n in range(N)]
-    return -np.array(mat)
-
+    P = np.sqrt(1 + 2*np.arange(N))
+    A = P[:, np.newaxis] * P[np.newaxis, :]
+    A = np.tril(A) - np.diag(np.arange(N))
+    return -A
 
 # Diving a bit deeper, the intuitive explanation of this matrix is
 # that it produces a hidden state that memorizes its history. It does
