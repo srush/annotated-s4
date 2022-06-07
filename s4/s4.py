@@ -981,7 +981,6 @@ def test_gen_dplr(L=16, N=4):
 
     # Compare to the DPLR generating function approach.
     C = (I - matrix_power(Ab, L)).conj().T @ Cb.ravel()
-    # b = conv_from_gen(K_gen_DPLR(Lambda, P, Q, B, C, step=1.0 / L), L)
     b = kernel_DPLR(Lambda, P, P, B, C, step=1.0 / L, L=L)
     assert np.allclose(a.real, b.real)
 
@@ -1141,8 +1140,6 @@ def test_nplr(N=8):
     assert np.allclose(A2, A3, atol=1e-4, rtol=1e-4)
     assert np.allclose(A2, A4, atol=1e-4, rtol=1e-4)
 
-test_nplr()
-
 # ### Final Check
 
 # This tests that everything works as planned.
@@ -1157,9 +1154,7 @@ def test_conversion(N=8, L=16):
     C = normal(dtype=np.complex64)(rng, (N,))
 
     # CNN form.
-    K_gen = K_gen_DPLR(Lambda, P, P, B, C, step)
-    K = conv_from_gen(K_gen, L)
-    # K = kernel_DPLR(Lambda, P, P.conj(), B, C, step, L)
+    K = kernel_DPLR(Lambda, P, P, B, C, step, L)
 
     # RNN form.
     Ab, Bb, Cb = discrete_DPLR(Lambda, P, P, B, C, step, L)
@@ -1200,10 +1195,6 @@ def test_conversion(N=8, L=16):
 
 
 class S4Layer(nn.Module):
-    # A: np.DeviceArray
-    # p: np.DeviceArray
-    # q: np.DeviceArray
-    # Lambda: np.DeviceArray
     N: int
     l_max: int
     decode: bool = False
@@ -1237,16 +1228,6 @@ class S4Layer(nn.Module):
 
         if not self.decode:
             # CNN mode, compute kernel.
-            # K_gen = K_gen_DPLR(
-            #     self.Lambda,
-            #     self.p,
-            #     self.p,
-            #     self.B,
-            #     self.C,
-            #     self.step,
-            #     unmat=self.l_max > 1000,
-            # )
-            # self.K = conv_from_gen(K_gen, self.l_max)
             self.K = kernel_DPLR(
                 self.Lambda,
                 self.P,
@@ -1254,7 +1235,6 @@ class S4Layer(nn.Module):
                 self.B,
                 self.C,
                 self.step,
-                # unmat=self.l_max > 1000,
                 self.l_max,
             )
 
@@ -1311,11 +1291,9 @@ def hippo_initializer(N):
     def init_P(key, shape):
         assert shape == (N,)
         return P
-        # return np.asarray(p, dtype=dtype)
     def init_B(key, shape):
         assert shape == (N,)
         return B
-        # return np.asarray(B[:, np.newaxis], dtype=dtype)
     return init_Lambda_real, init_Lambda_imag, init_P, init_B
 
 
