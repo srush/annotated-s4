@@ -102,6 +102,7 @@ def create_train_state(
         schedule_fn = lambda lr: lr
     # lr_layer is a dictionary from parameter name to LR multiplier
     if lr_layer is None: lr_layer = {}
+
     optimizers = {
         k: optax.adam(learning_rate=schedule_fn(v*lr))
         for k, v in lr_layer.items()
@@ -114,9 +115,14 @@ def create_train_state(
         learning_rate=schedule_fn(lr),
         weight_decay=0.01,
     )
-    tx = optax.multi_transform(optimizers, map_nested_fn(lambda k, _: k if k in lr_layer else "__default__"))
+    name_map = map_nested_fn(lambda k, _: k if k in lr_layer else "__default__")
+    tx = optax.multi_transform(optimizers, name_map)
     # For debugging, this would be the default transform with no scheduler or special params
     # tx = optax.adamw(learning_rate=lr, weight_decay=0.01)
+
+    # Check that all special parameter names are actually parameters
+    extra_keys = set(lr_layer.keys()) - set(jax.tree_leaves(name_map(params)))
+    assert len(extra_keys) == 0, f"Special params {extra_keys} do not correspond to actual params"
 
 
     # Print parameter count
