@@ -859,6 +859,8 @@ def test_gen_inverse(L=16, N=4):
 
 # We have effectively replaced an inverse with a weighted dot product.
 # Let's make a small helper function to compute this weight dot product for use.
+
+
 def cauchy_dot(v, omega, lambd):
     return (v / (omega - lambd)).sum()
 
@@ -929,7 +931,7 @@ def K_gen_DPLR(Lambda, P, Q, B, C, step, unmat=False):
 # This is our final version of the $K$ function. Because `conv_from_gen` is always called together with a generating function (e.g. `K_gen_DPLR`), we'll fuse them into define a dedicated function to compute the DPLR SSM kernel from all of its parameters. (With fewer layers of indirection, this could also make it easier for XLA compiler to optimize.)
 
 
-@partial(jax.jit, donate_argnums=1)
+@jax.jit
 def cauchy(v, omega, lambd):
     """Cauchy matrix multiplication: (n), (l), (n) -> (l)"""
     cauchy_dot = lambda _omega: (v / (_omega - lambd)).sum()
@@ -1126,8 +1128,6 @@ def make_DPLR_HiPPO(N):
 
     # Diagonalize S to V \Lambda V^*
     Lambda_imag, V = eigh(S * -1j)
-    # Lambda, V = jax.jit(eig, backend="cpu")(S)
-    # Lambda, V = eig(jax.device_put(S, device=jax.devices("cpu")[0]))
 
     P = V.conj().T @ P
     B = V.conj().T @ B
@@ -1160,7 +1160,6 @@ def test_conversion(N=8, L=16):
     step = 1.0 / L
     # Compute a HiPPO NPLR matrix.
     Lambda, P, B, _ = make_DPLR_HiPPO(N)
-    # B = B[:, np.newaxis]
     # Random complex Ct
     C = normal(dtype=np.complex64)(rng, (N,))
 
@@ -1223,7 +1222,7 @@ class S4Layer(nn.Module):
         # Learned Parameters (C is complex!)
         init_A_re, init_A_im, init_P, init_B = hippo_initializer(self.N)
         self.Lambda_re = self.param("Lambda_re", init_A_re, (self.N,))
-        self.Lambda_im = self.param("Lambda_re", init_A_im, (self.N,))
+        self.Lambda_im = self.param("Lambda_im", init_A_im, (self.N,))
         # Ensure the real part of Lambda is negative
         # (described in the SaShiMi follow-up to S4)
         self.Lambda = np.clip(self.Lambda_re, None, -1e-4) + 1j * self.Lambda_im
