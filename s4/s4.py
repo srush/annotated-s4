@@ -858,10 +858,6 @@ def test_gen_inverse(L=16, N=4):
 def cauchy_dot(v, omega, lambd):
     return (v / (omega - lambd)).sum()
 
-def cauchy(v, omega, lambd):
-    cauchy_dot = lambda _omega: (v / (_omega - lambd)).sum()
-    return jax.vmap(cauchy_dot)(omega)
-
 
 # While not important for our implementation, it is worth noting that
 # this is a [Cauchy
@@ -926,10 +922,14 @@ def K_gen_DPLR(Lambda, P, Q, B, C, step, unmat=False):
     return gen
 
 
-# This is our final version of the $K$ function. Because it's always called together with a generating function, we'll define a dedicated function to compute the DPLR SSM kernel from its parameters.
+# This is our final version of the $K$ function. Because `conv_from_gen` is always called together with a generating function (e.g. `K_gen_DPLR`), we'll fuse them into define a dedicated function to compute the DPLR SSM kernel from all of its parameters. (With fewer layers of indirection, this could also make it easier for XLA compiler to optimize.)
 
+@partial(jax.jit, donate_argnums=1)
+def cauchy(v, omega, lambd):
+    """ Cauchy matrix multiplication: (n), (l), (n) -> (l) """
+    cauchy_dot = lambda _omega: (v / (_omega - lambd)).sum()
+    return jax.vmap(cauchy_dot)(omega)
 
-@partial(jax.jit, static_argnums=6)
 def kernel_DPLR(Lambda, P, Q, B, C, step, L):
     # Evaluate at roots of unity
     # Generating function is (-)z-transform, so we evaluate at (-)root
