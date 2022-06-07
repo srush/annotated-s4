@@ -63,6 +63,7 @@ def create_train_state(
     lr=1e-3,
     lr_layer=None,
     lr_schedule=False,
+    weight_decay=0.0,
     total_steps=-1,
 ):
     model = model_cls(training=True)
@@ -114,7 +115,7 @@ def create_train_state(
     # which causes an error since None can't be compared to str
     optimizers["__default__"] = optax.adamw(
         learning_rate=schedule_fn(lr),
-        weight_decay=0.01,
+        weight_decay=weight_decay,
     )
     name_map = map_nested_fn(lambda k, _: k if k in lr_layer else "__default__")
     tx = optax.multi_transform(optimizers, name_map)
@@ -305,6 +306,7 @@ def example_train(
     d_state=64,
     lr=1e-3,
     lr_schedule=False,
+    weight_decay=0.0,
     n_layers=4,
     p_dropout=0.2,
     suffix=None,
@@ -360,6 +362,7 @@ def example_train(
         lr=lr,
         lr_layer=lr_layer,
         lr_schedule=lr_schedule,
+        weight_decay=weight_decay,
         total_steps=len(trainloader) * epochs,
     )
 
@@ -453,6 +456,7 @@ if __name__ == "__main__":
     # Optimization Parameters
     parser.add_argument("--lr", type=float, default=1e-3)
     parser.add_argument("--lr_schedule", default=False, action="store_true")
+    parser.add_argument("--weight_decay", default=0.01, action="store_true")
 
     # Weights and Biases Parameters
     parser.add_argument(
@@ -487,6 +491,7 @@ if __name__ == "__main__":
         d_state=args.d_state,
         lr=args.lr,
         lr_schedule=args.lr_schedule,
+        weight_decay=args.weight_decay,
         n_layers=args.n_layers,
         p_dropout=args.p_dropout,
         suffix=args.suffix,
