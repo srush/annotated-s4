@@ -1280,21 +1280,16 @@ S4Layer = cloneLayer(S4Layer)
 
 # We initialize the model by computing a HiPPO DPLR initializer
 
+# Factory for constant initializer in Flax
+def init(x):
+    def _init(key, shape):
+        assert shape == x.shape
+        return x
+    return _init
+
 def hippo_initializer(N):
     Lambda, P, B, _ = make_DPLR_HiPPO(N)
-    def init_Lambda_real(key, shape):
-        assert shape == (N,)
-        return Lambda.real
-    def init_Lambda_imag(key, shape):
-        assert shape == (N,)
-        return Lambda.imag
-    def init_P(key, shape):
-        assert shape == (N,)
-        return P
-    def init_B(key, shape):
-        assert shape == (N,)
-        return B
-    return init_Lambda_real, init_Lambda_imag, init_P, init_B
+    return init(Lambda.real), init(Lambda.imag), init(P), init(B)
 
 
 # ### Sampling and Caching
