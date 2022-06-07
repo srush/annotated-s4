@@ -95,7 +95,7 @@ from functools import partial
 import jax
 import jax.numpy as np
 from flax import linen as nn
-from jax.nn.initializers import lecun_normal, uniform, normal
+from jax.nn.initializers import lecun_normal, normal
 from jax.numpy.linalg import eigh, inv, matrix_power
 from jax.scipy.signal import convolve
 
@@ -485,6 +485,7 @@ def cloneLayer(layer):
         split_rngs={"params": True},
     )
 
+
 SSMLayer = cloneLayer(SSMLayer)
 
 
@@ -517,7 +518,8 @@ class SequenceBlock(nn.Module):
 
     def __call__(self, x):
         skip = x
-        if self.prenorm: x = self.norm(x)
+        if self.prenorm:
+            x = self.norm(x)
         x = self.seq(x)
         x = self.drop(nn.gelu(x))
         if self.glu:
@@ -525,7 +527,8 @@ class SequenceBlock(nn.Module):
         else:
             x = self.out(x)
         x = skip + self.drop(x)
-        if not self.prenorm: x = self.norm(x)
+        if not self.prenorm:
+            x = self.norm(x)
         return x
 
 
@@ -536,14 +539,14 @@ class SequenceBlock(nn.Module):
 
 class StackedModel(nn.Module):
     layer: nn.Module
-    layer_args: dict # Extra arguments to pass into layer constructor
+    layer_args: dict  # Extra arguments to pass into layer constructor
     d_output: int
     d_model: int
     n_layers: int
     dropout: float = 0.2
     training: bool = True
     classification: bool = False
-    decode: bool = False # Probably should be moved into layer_args
+    decode: bool = False  # Probably should be moved into layer_args
 
     def setup(self):
         self.encoder = nn.Dense(self.d_model)
@@ -635,10 +638,11 @@ BatchStackedModel = nn.vmap(
 
 
 def make_HiPPO(N):
-    P = np.sqrt(1 + 2*np.arange(N))
+    P = np.sqrt(1 + 2 * np.arange(N))
     A = P[:, np.newaxis] * P[np.newaxis, :]
     A = np.tril(A) - np.diag(np.arange(N))
     return -A
+
 
 # Diving a bit deeper, the intuitive explanation of this matrix is
 # that it produces a hidden state that memorizes its history. It does
@@ -924,11 +928,13 @@ def K_gen_DPLR(Lambda, P, Q, B, C, step, unmat=False):
 
 # This is our final version of the $K$ function. Because `conv_from_gen` is always called together with a generating function (e.g. `K_gen_DPLR`), we'll fuse them into define a dedicated function to compute the DPLR SSM kernel from all of its parameters. (With fewer layers of indirection, this could also make it easier for XLA compiler to optimize.)
 
+
 @partial(jax.jit, donate_argnums=1)
 def cauchy(v, omega, lambd):
-    """ Cauchy matrix multiplication: (n), (l), (n) -> (l) """
+    """Cauchy matrix multiplication: (n), (l), (n) -> (l)"""
     cauchy_dot = lambda _omega: (v / (_omega - lambd)).sum()
     return jax.vmap(cauchy_dot)(omega)
+
 
 def kernel_DPLR(Lambda, P, Q, B, C, step, L):
     # Evaluate at roots of unity
@@ -1084,10 +1090,11 @@ def discrete_DPLR(Lambda, P, Q, B, C, step, L):
 
 
 #  For S4, we need to work with a HiPPO matrix for $\boldsymbol{A}$. This requires first writing it as a normal plus low-rank term, and then diagonalizing to extract
-#  $\boldsymbol{\Lambda}$ from this decomposition. The appendix of the paper shows how 
+#  $\boldsymbol{\Lambda}$ from this decomposition. The appendix of the paper shows how
 #  by writing the normal part as a [skew-symmetric](https://en.wikipedia.org/wiki/Skew-symmetric_matrix) (plus a constant times the identity matrix), which are a special class of normal matrices.
 
 # An additional simplification is that there is actually a representation that ties the low-rank components terms $\boldsymbol{P} = \boldsymbol{Q}$, which was shown in [follow-up work](https://arxiv.org/abs/2202.09729) to be important for stability.
+
 
 def make_NPLR_HiPPO(N):
     # Make -HiPPO
@@ -1097,15 +1104,17 @@ def make_NPLR_HiPPO(N):
     P = np.sqrt(np.arange(N) + 0.5)
 
     # HiPPO also specifies the B matrix
-    B = np.sqrt(2*np.arange(N) + 1.0)
+    B = np.sqrt(2 * np.arange(N) + 1.0)
     return nhippo, P, B
+
 
 # After extracting the normal part, we can diagonalize to get out the DPLR terms.
 # Because the normal part is actually skew-symmetric, we can extract the real and complex parts of $\Lambda$ separately.
 # This serves two purposes. First, this gives us finer-grained control over the real and imaginary parts, which can be used to improve stability. Second, this lets us use more powerful diagonalization algorithms for [Hermitian matrices](https://en.wikipedia.org/wiki/Hermitian_matrix) - in fact, the current version of JAX does not support GPU diagonalization for non-Hermitian matrices!
 
+
 def make_DPLR_HiPPO(N):
-    """ Diagonalize NPLR representation """
+    """Diagonalize NPLR representation"""
     A, P, B = make_NPLR_HiPPO(N)
 
     S = A + P[:, np.newaxis] * P[np.newaxis, :]
@@ -1122,7 +1131,8 @@ def make_DPLR_HiPPO(N):
 
     P = V.conj().T @ P
     B = V.conj().T @ B
-    return Lambda_real + 1j*Lambda_imag, P, B, V
+    return Lambda_real + 1j * Lambda_imag, P, B, V
+
 
 # Sanity check just to make sure those identities hold,
 
@@ -1135,10 +1145,11 @@ def test_nplr(N=8):
     Pc = Pc[:, np.newaxis]
     Lambda = np.diag(Lambda)
 
-    A3 = V @ Lambda @ Vc - (P @ P.T) # Test NPLR
-    A4 = V @ (Lambda - Pc @ Pc.conj().T) @ Vc # Test DPLR
+    A3 = V @ Lambda @ Vc - (P @ P.T)  # Test NPLR
+    A4 = V @ (Lambda - Pc @ Pc.conj().T) @ Vc  # Test DPLR
     assert np.allclose(A2, A3, atol=1e-4, rtol=1e-4)
     assert np.allclose(A2, A4, atol=1e-4, rtol=1e-4)
+
 
 # ### Final Check
 
@@ -1210,18 +1221,18 @@ class S4Layer(nn.Module):
 
     def setup(self):
         # Learned Parameters (C is complex!)
-        hippo_Lambda_real_initializer, hippo_Lambda_imag_initializer, hippo_p_initializer, hippo_B_initializer = hippo_initializer(self.N)
-        self.Lambda_re = self.param("Lambda_re", hippo_Lambda_real_initializer, (self.N,))
-        self.Lambda_im = self.param("Lambda_im", hippo_Lambda_imag_initializer, (self.N,))
+        init_A_re, init_A_im, init_P, init_B = hippo_initializer(self.N)
+        self.Lambda_re = self.param("Lambda_re", init_A_re, (self.N,))
+        self.Lambda_im = self.param("Lambda_re", init_A_im, (self.N,))
         # Ensure the real part of Lambda is negative
         # (described in the SaShiMi follow-up to S4)
-        self.Lambda = np.clip(self.Lambda_re, None, -1e-4) + 1j*self.Lambda_im
-        self.P = self.param("P", hippo_p_initializer, (self.N,))
-        self.B = self.param("B", hippo_B_initializer, (self.N,))
+        self.Lambda = np.clip(self.Lambda_re, None, -1e-4) + 1j * self.Lambda_im
+        self.P = self.param("P", init_P, (self.N,))
+        self.B = self.param("B", init_B, (self.N,))
         # C should be init as standard normal
         # This doesn't work due to how JAX handles complex optimizers https://github.com/deepmind/optax/issues/196
         # self.C = self.param("C", normal(stddev=1.0, dtype=np.complex64), (self.N,))
-        self.C = self.param("C", normal(stddev=.5**.5), (self.N, 2))
+        self.C = self.param("C", normal(stddev=0.5**0.5), (self.N, 2))
         self.C = self.C[..., 0] + 1j * self.C[..., 1]
         self.D = self.param("D", nn.initializers.ones, (1,))
         self.step = np.exp(self.param("log_step", log_step_initializer(), (1,)))
@@ -1280,12 +1291,15 @@ S4Layer = cloneLayer(S4Layer)
 
 # We initialize the model by computing a HiPPO DPLR initializer
 
+
 # Factory for constant initializer in Flax
 def init(x):
     def _init(key, shape):
         assert shape == x.shape
         return x
+
     return _init
+
 
 def hippo_initializer(N):
     Lambda, P, B, _ = make_DPLR_HiPPO(N)

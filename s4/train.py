@@ -71,8 +71,8 @@ def create_train_state(
         {"params": init_rng, "dropout": dropout_rng},
         np.ones(in_shape),
     )
-    params = params["params"].unfreeze() # Note: Added immediate `unfreeze()` to play well w/ Optax. See below!
-
+    # Note: Added immediate `unfreeze()` to play well w/ Optax. See below!
+    params = params["params"].unfreeze()
 
     # Handle learning rates:
     # - LR scheduler
@@ -101,10 +101,11 @@ def create_train_state(
     else:
         schedule_fn = lambda lr: lr
     # lr_layer is a dictionary from parameter name to LR multiplier
-    if lr_layer is None: lr_layer = {}
+    if lr_layer is None:
+        lr_layer = {}
 
     optimizers = {
-        k: optax.adam(learning_rate=schedule_fn(v*lr))
+        k: optax.adam(learning_rate=schedule_fn(v * lr))
         for k, v in lr_layer.items()
     }
     # Add default optimizer
@@ -122,14 +123,16 @@ def create_train_state(
 
     # Check that all special parameter names are actually parameters
     extra_keys = set(lr_layer.keys()) - set(jax.tree_leaves(name_map(params)))
-    assert len(extra_keys) == 0, f"Special params {extra_keys} do not correspond to actual params"
-
+    assert (
+        len(extra_keys) == 0
+    ), f"Special params {extra_keys} do not correspond to actual params"
 
     # Print parameter count
     _is_complex = lambda x: x.dtype in [np.complex64, np.complex128]
     param_sizes = map_nested_fn(
         lambda k, param: param.size * (2 if _is_complex(param) else 1)
-        if lr_layer.get(k, lr) > 0. else 0
+        if lr_layer.get(k, lr) > 0.0
+        else 0
     )(params)
     print(f"[*] Trainable Parameters: {sum(jax.tree_leaves(param_sizes))}")
     print(f"[*] Total training steps: {total_steps}")
@@ -164,7 +167,11 @@ def train_epoch(state, rng, model, trainloader, classification=False):
         batch_accuracies.append(acc)
 
     # Return average loss over batches
-    return state, np.mean(np.array(batch_losses)), np.mean(np.array(batch_accuracies))
+    return (
+        state,
+        np.mean(np.array(batch_losses)),
+        np.mean(np.array(batch_accuracies)),
+    )
 
 
 def validate(params, model, testloader, classification=False):
@@ -322,8 +329,8 @@ def example_train(
     trainloader, testloader, n_classes, l_seq, d_input = create_dataset_fn(
         bsz=bsz
     )
-    l_max = l_seq if classification else l_seq - 1 # Max length that model sees
-    in_shape = (bsz, l_max, d_input) # Input shape
+    l_max = l_seq if classification else l_seq - 1  # Max length that model sees
+    in_shape = (bsz, l_max, d_input)  # Input shape
 
     # Get model class and arguments
     model_cls = Models[model]
@@ -332,7 +339,6 @@ def example_train(
 
     # Extract custom hyperparameters from model class
     lr_layer = getattr(model_cls, "lr", None)
-
 
     print(f"[*] Starting `{model}` Training on `{dataset}` =>> Initializing...")
 
@@ -376,8 +382,9 @@ def example_train(
 
         print(f"\n=>> Epoch {epoch + 1} Metrics ===")
         print(
-            f"\tTrain Loss: {train_loss:.5f} -- Train Accuracy: {train_acc:.4f}\n"
-            f"\tTest Loss: {test_loss:.5f} -- Test Accuracy: {test_acc:.4f}"
+            f"\tTrain Loss: {train_loss:.5f} -- Train Accuracy:"
+            f" {train_acc:.4f}\n\tTest Loss: {test_loss:.5f} -- Test Accuracy:"
+            f" {test_acc:.4f}"
         )
 
         # Save a checkpoint each epoch & handle best (test loss... not "copacetic" but ehh)
@@ -391,8 +398,9 @@ def example_train(
                 keep=epochs,
             )
 
-        if (classification and test_acc > best_acc) \
-            or (not classification and test_loss < best_loss):
+        if (classification and test_acc > best_acc) or (
+            not classification and test_loss < best_loss
+        ):
             # Create new "best-{step}.ckpt and remove old one
             if checkpoint:
                 shutil.copy(ckpt_path, f"{run_id}/best_{epoch}")
@@ -466,7 +474,7 @@ if __name__ == "__main__":
         help="entity to use for W&B logging",
     )
 
-    parser.add_argument( "--checkpoint", action="store_true")
+    parser.add_argument("--checkpoint", action="store_true")
 
     args = parser.parse_args()
 
