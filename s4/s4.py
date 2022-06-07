@@ -1228,8 +1228,9 @@ class S4Layer(nn.Module):
         self.P = self.param("P", hippo_p_initializer, (self.N,))
         self.B = self.param("B", hippo_B_initializer, (self.N,))
         # C should be init as standard normal
-        self.C = self.param("C", normal(stddev=.5**.5), (self.N, 2))
-        self.C = self.C[..., 0] + 1j * self.C[..., 1]
+        # self.C = self.param("C", normal(stddev=.5**.5), (self.N, 2))
+        # self.C = self.C[..., 0] + 1j * self.C[..., 1]
+        self.C = self.param("C", normal(stddev=1.0, dtype=np.complex64), (self.N,))
         self.D = self.param("D", nn.initializers.ones, (1,))
         self.step = np.exp(self.param("log_step", log_step_initializer(), (1,)))
 
