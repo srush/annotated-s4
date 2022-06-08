@@ -34,14 +34,16 @@
 # Space (DSS) variant can be easily implemented in PyTorch with some minor changes.
 
 # import s4.s4 as s4  TODO -- For some reason breaks streamlit...
-import s4
+from . import s4
 from functools import partial
 import jax
 import jax.numpy as np
 from flax import linen as nn
 from jax.nn.initializers import lecun_normal, normal
 
-rng = jax.random.PRNGKey(1)
+
+if __name__ == '__main__':
+    rng = jax.random.PRNGKey(1)
 
 # ## Table of Contents
 # <nav id="TOC">
@@ -331,9 +333,6 @@ def test_conversion(N=8, L=16):
         *ssm, u[:, np.newaxis], np.zeros((N,)).astype(np.complex64)
     )
     assert np.allclose(y1, y2.reshape(-1).real, atol=1e-4, rtol=1e-4)
-
-
-test_conversion()
 
 
 # ### Secret Sauce – Part 1: Complex Softmax
