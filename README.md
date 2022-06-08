@@ -27,23 +27,21 @@ python -m s4.train --dataset quickdraw --model s4 --epochs 1 --bsz 512 --d_model
 #### MNIST Classification
 
 ```bash
-python -m s4.train --dataset mnist-classification --model s4 --epochs 10 --bsz 128 --d_model 128 --ssm_n 64
+python -m s4.train --dataset mnist-classification --model s4 --epochs 20 --bsz 128 --d_model 128 --p_dropout 0.25 --lr 5e-3 --lr_schedule
 ```
 
-Gets "best" 97.76% accuracy in 10 epochs @ 40s/epoch on a TitanRTX.
+Gets "best" 99.27% accuracy after 20 epochs @ 17s/epoch on an A100
 
 #### CIFAR-10 Classification
 
 ```
-# Following @frederick0329's/@albertgu's results: https://github.com/srush/annotated-s4/pull/43#issuecomment-1065444261
-python -m s4.train --dataset cifar-classification --model s4 --epoch 100 --bsz 64 --n_layers 6 --p_dropout 0.25 --lr 5e-3 --d_model 512
-
-# DSS Model
-python -m s4.train --dataset cifar-classification --model dss --epoch 100 --bsz 64 --n_layers 6 --p_dropout 0.25 --lr 5e-3 --d_model 512
+python -m s4.train --dataset cifar-classification --model {s4,dss,s4d} --epoch 100 --bsz 50 --n_layers 6 --d_model 512 --p_dropout 0.25 --lr 5e-3 --lr_schedule
 ```
 
-S4 gets "best" 87.05% accuracy after 100 epochs @ 3m8s/epoch on a TitanRTX
-DSS gets "best" 88.90% accuracy after 100 epochs @ 3m11s/epoch on a TitanRTX
+S4 gets "best" 91.03% accuracy after 100 epochs @ 2m2s/epoch on an A100
+S4D gets "best" 89.22% accuracy after 100 epochs @ 1m32s/epoch on an A100
+DSS gets "best" 89.70% accuracy after 100 epochs @ 1m41s/epoch on an A100
+
 
 ---
 
