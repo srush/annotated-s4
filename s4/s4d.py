@@ -1,5 +1,9 @@
-# <center><h1> Diagonal State Space Models </h1></center>
-#
+# <center>
+# <h1>
+# The Annotated S4D
+# </h1>
+# </center>
+
 #
 # <center>
 # <p><a href="https://arxiv.org/abs/2203.14343">Diagonal State Spaces are as Effective as Structured State Spaces</a></p>
@@ -34,12 +38,11 @@
 # This important observation allows diagonal SSMs to be used while preserving the empirical strengths of S4!
 # Diagonal SSMs were further fleshed out in [[On the Parameterization and Initialization of Diagonal State Space Models](https://TODO)],
 # which implemented S4's original diagonal algorithm combined with new theory explaining why this particular diagonal initialization can model long-range dependencies (S4D).
-# The rest of this post steps through this much simpler model, an *even more structured* state space for diagonal matrices.
+# The rest of this post steps through this much simpler model, an *even more structured* state space.
 #
 # This post aims to be **a complete standalone for Section 2** of the original Annotated S4 post.
 # We'll still be using Jax with the Flax NN Library for consistency with the original post, and PyTorch versions of [DSS](https://github.com/ag1988/dss) and [S4D](https://github.com/HazyResearch/state-spaces) models are publically available.
 
-# import s4.s4 as s4  TODO -- For some reason breaks streamlit...
 from functools import partial
 import jax
 import jax.numpy as np
@@ -58,30 +61,27 @@ from .s4 import (
 if __name__ == '__main__':
     rng = jax.random.PRNGKey(1)
 
+
 # ## Table of Contents
 # <nav id="TOC">
-# <ul>
-#   <li>Part I. A Refresher on State Space Models</li>
-#   <li>Part II. Diagonal State Space Models<ul>
-#   <li>The Diagonal SSM Algorithm - Vandermonde Matrix Multiplication</li>
-#   <li>Implementing the S4D Kernel</li>
-#   <li>Comparing SSM Parameterizations</li>
-#   <li>The Complete S4D Layer</li>
-#   </ul></li>
-#   <li>Part IIIa. The Central Challenge: Initialization
-#       <ul>
-#           <li>A Brief Refresher on S4 and HiPPO</li>
-#           <li>The Diagonal HiPPO Matrix</li>
-#       </ul></li>
-#   <li>Part IIIb. An Intuitive Understanding of SSMs
-#       <ul>
-#           <li>Case: 1-dimensional State</li>
-#           <li>Case: Diagonal SSM</li>
-#           <li>Case: General SSM</li>
-#           <li>Case: HiPPO and Diagonal HiPPO</li>
-#           <li>Other Diagonal Initializations</li>
-#       </ul></li>
-# </ul>
+# * [Part I. A Refresher on State Space Models]
+# * [Part II. Diagonal State Space Models]
+#     - [The Diagonal SSM Algorithm: Vandermonde Matrix Multiplication]
+#     - [Implementing the S4D Kernel]
+#     - [Comparing SSM Parameterizations]
+#     - [The Complete S4D Layer]
+# * [Part IIIa. The Central Challenge: Initialization]
+#     - [A Brief Refresher on S4 and HiPPO]
+#     - [The Diagonal HiPPO Matrix]
+# * [Part IIIb. An Intuitive Understanding of SSMs]
+# <!--
+#     - [Case: 1-dimensional State]
+#     - [Case: Diagonal SSM]
+#     - [Case: General SSM]
+#     - [Case: HiPPO and Diagonal-HiPPO]
+#     - [Other Diagonal Initializations]
+# -->
+
 
 # Part I of this post provides a quick summary of SSMs to define their main computational challenge.
 # In Part II, we step through the complete derivation and implementation of S4D, following the original S4 paper.
@@ -131,18 +131,22 @@ if __name__ == '__main__':
 
 # Note that when $\boldsymbol{A}$ is diagonal, the first equation decomposes as independent 1-dimensional recurrences over the elements of $x$ (*Splash figure, Left*)!
 
-# We then showed how we can turn the above recurrence into a *convolution* because of the repetitive structure (more formally because the recurrence is *time-invariant*). We end up with
-# the kernel:
-
+# We then showed how we can turn the above recurrence into a *convolution* because of the repetitive structure (more formally because the recurrence is *time-invariant*).
+# Expanding out the recurrence gives a closed formula for $y$
 # $$
 # \begin{aligned}
 #     y_k &= \boldsymbol{\overline{C}} \boldsymbol{\overline{A}}^k \boldsymbol{\overline{B}} u_0 + \boldsymbol{\overline{C}} \boldsymbol{\overline{A}}^{k-1} \boldsymbol{\overline{B}} u_1 + \dots + \boldsymbol{\overline{C}} \boldsymbol{\overline{A}} \boldsymbol{\overline{B}} u_{k-1} + \boldsymbol{\overline{C}}\boldsymbol{\overline{B}} u_k
-#     \\
-#     y &= \boldsymbol{\overline{K}} \ast u
+# \end{aligned}
+# $$
+# which is just a convolution with a particular kernel $\bm{\overline{K}}$:
+# $$
+# \begin{aligned}
+#     y &= \boldsymbol{\overline{K}} \ast u \\
+#   \boldsymbol{\overline{K}} &= (\boldsymbol{\overline{C}}\boldsymbol{\overline{B}}, \boldsymbol{\overline{C}}\boldsymbol{\overline{A}}\boldsymbol{\overline{B}}, \dots, \boldsymbol{\overline{C}}\boldsymbol{\overline{A}}^{L-1}\boldsymbol{\overline{B}}) \in \mathbb{R}^L
 # \end{aligned}
 # $$
 
-# Recall that $N$ denotes the state size, or dimensionality of $\boldsymbol{A}$, while $L$ denotes the sequence length.
+# Recall that $N$ denotes the state size, or the dimensionality of $\boldsymbol{A} \in \mathbb{C}^{N \times N}, \boldsymbol{B} \in \mathbb{C}^{N \times 1}, \boldsymbol{C} \in \mathbb{C}^{1 \times N}$, while $L$ denotes the sequence length.
 
 # $$
 # \begin{aligned}
@@ -152,25 +156,28 @@ if __name__ == '__main__':
 
 # **Problem**: SSMs in deep learning have two core challenges. The *modeling* challenge is finding good parameters of the SSM, particular the state matrix $\boldsymbol{A}$, that can effectively model complex interactions in sequential data such as long-range dependencies. We defer this discussion, which is more theoretical, to Part III.
 #
-# The core *computational* challenge of SSMs is constructing this kernel $\boldsymbol{\overline{K}}$ fast. Overcoming this requires imposing **structure** on the state space. Next, let's see how diagonal SSMs provide a simple way to do this.
+# The core *computational* challenge of SSMs is constructing this kernel $\boldsymbol{\overline{K}}$ fast. Overcoming this requires imposing *structure* on the state space. Next, we'll see how diagonal SSMs provide a simple way to do this.
 
 # ## Part II. Diagonal State Space Models
 
-# Let's now examine more closely how to compute this discretized SSM.
+# Let's now examine more closely how to compute the discretized SSM kernel.
 # This part will directly follow Section 3.1 of the original S4 paper.
 
 # > The fundamental bottleneck in computing the discrete-time SSM is that it involves repeated matrix multiplication by $\boldsymbol{\overline{A}}$.
 # > For example, computing $\boldsymbol{\overline{K}}$ naively involves $L$ successive multiplications by $\boldsymbol{\overline{A}}$, requiring $O(N^2 L)$ operations and $O(NL)$ space.
 
-# In other words, computing this kernel $\boldsymbol{\overline{K}}$ is
-# prohibitively expensive for general state matrices $\boldsymbol{A}$. Getting SSMs
-# to scale requires finding an alternative way to computing this kernel – one that is both efficient and that doesn't
-# badly restrict the expressivity of $\boldsymbol{A}$. So how can we address this?
+# In other words, computing this kernel $\boldsymbol{\overline{K}}$ can be
+# prohibitively expensive for general state matrices $\boldsymbol{A}$, which was an issue in the [predecessor to S4](https://arxiv.org/abs/2110.13985). Getting SSMs
+# to scale requires finding an alternative way to computing this kernel – one that is both efficient and doesn't
+# badly restrict the expressivity of $\boldsymbol{A}$. How can we address this?
 
 # > To overcome this bottleneck, we use a structural result that allows us to simplify SSMs.
 # >
 # > **Lemma 1.**
-# >   Conjugation is an equivalence relation on SSMs $(\boldsymbol{A}, \boldsymbol{B}, \boldsymbol{C}) \sim (\boldsymbol{V}^{-1} \boldsymbol{A} \boldsymbol{V}, \boldsymbol{V}^{-1}\boldsymbol{B}, \boldsymbol{C}\boldsymbol{V})$.
+# >   Conjugation is an equivalence relation on SSMs
+# $$
+# (\boldsymbol{A}, \boldsymbol{B}, \boldsymbol{C}) \sim (\boldsymbol{V}^{-1} \boldsymbol{A} \boldsymbol{V}, \boldsymbol{V}^{-1}\boldsymbol{B}, \boldsymbol{C}\boldsymbol{V})
+# $$
 # >
 # > **Proof.**
 # > Write out the two SSMs with state denoted by $x$ and $\tilde{x}$ respectively:
@@ -184,15 +191,16 @@ if __name__ == '__main__':
 # > Therefore these compute the exact same operator $u \mapsto y$, but with a change of basis by $\boldsymbol{V}$ in the state $x$.
 
 # Why is this important? It allows replacing $\boldsymbol{A}$ with a [canonical form](https://en.wikipedia.org/wiki/Canonical_form#Linear_algebra) such as diagonal matrices,
-# simplifying the structure while preserving expressivity! Ideally, this structure would simplify and speed up the computation of the SSM kernel.
+# imposing simpler *structure* while preserving expressivity! Ideally, this structure would simplify and speed up the computation of the SSM kernel.
 #
-# Note that this provides an immediate proof of the expressivity of diagonal SSMs. [footnote: a more complicated version is presented as Proposition 1 of the DSS paper]
+# Note that Lemma 1 provides an immediate proof of the expressivity of diagonal SSMs.
 # To spell it out: suppose we have a state space with parameters $(\boldsymbol{A}, \boldsymbol{B}, \boldsymbol{C})$ where the matrix $\boldsymbol{A}$ is diagonalizable - in other words, there exists a matrix $\boldsymbol{V}$ such that $\boldsymbol{V}^{-1}\boldsymbol{A}\boldsymbol{V}$ is diagonal.
 # Then the state space $(\boldsymbol{V}^{-1} \boldsymbol{A} \boldsymbol{V}, \boldsymbol{V}^{-1}\boldsymbol{B}, \boldsymbol{C}\boldsymbol{V})$ is a diagonal SSM that is *exactly equivalent*, or in other words defines the exact same sequence-to-sequence transformation $u \mapsto y$!
+# ^[This shows the equivalence of the *continuous* SSMs. The equivalence of their discretizations follows immediately because the *discrete* SSM (viewed as the map $u_k \mapsto y_k$) depends only on the step size $\Delta$ and the continuous SSM ($u(t) \mapsto y(t)$). A more complicated version of this expressivity result is presented as Proposition 1 of the DSS paper, which focuses on the discrete case.]
 
 # Furthermore, it's well known that [almost all matrices are diagonalizable](https://chiasme.wordpress.com/2013/09/03/almost-all-matrices-are-diagonalizable/), so that diagonal SSMs are essentially fully expressive (with a caveat that we'll talk about in Part III).
 
-# ### The Diagonal SSM Algorithm - Vandermonde Matrix Multiplication
+# ### The Diagonal SSM Algorithm: Vandermonde Matrix Multiplication
 
 # So what's the computational advantage of diagonal SSMs? S4 outlined the main idea:
 
@@ -208,13 +216,14 @@ if __name__ == '__main__':
 # \boldsymbol{\overline{K}}_\ell = \boldsymbol{C}\boldsymbol{\overline{A}}^\ell\boldsymbol{\overline{B}} = \sum_{n=0}^{N-1} \boldsymbol{C}_n \boldsymbol{\overline{A}}_n^\ell \boldsymbol{\overline{B}}_n
 # $$
 
-# But this can be rewritten as a single matrix-vector product:
+# But this can be rewritten as a single matrix-vector product,
+# where the matrix on the right side is known as a [Vandermonde matrix](https://en.wikipedia.org/wiki/Vandermonde_matrix), whose columns encode successive powers of $\boldsymbol{\overline{A}}$.
 
 # $$
 # \begin{aligned}
 #       \boldsymbol{\overline{K}} =
 #       \begin{bmatrix}
-#         \boldsymbol{\overline{B}}_0 \boldsymbol{C}_0 & \dots & \boldsymbol{\overline{B}}_{N-1} \boldsymbol{C}_{N-1}
+#         \boldsymbol{C}_0 \boldsymbol{\overline{B}}_0 & \dots & \boldsymbol{C}_{N-1} \boldsymbol{\overline{B}}_{N-1}
 #       \end{bmatrix}
 #       \begin{bmatrix}
 #         1      & \boldsymbol{\overline{A}}_0     & \boldsymbol{\overline{A}}_0^2     & \dots  & \boldsymbol{\overline{A}}_0^{L-1}     \\
@@ -225,16 +234,15 @@ if __name__ == '__main__':
 #     \end{aligned}
 # $$
 
-# The matrix on the right side is known as a [Vandermonde matrix](https://en.wikipedia.org/wiki/Vandermonde_matrix), where the columns encode successive powers of $\boldsymbol{\overline{A}}$.
 
 # More importantly, writing the kernel in this form immediately exposes the computational complexity!
 # Naively, materializing the matrix requires $O(NL)$ space and the multiplication takes $O(NL)$ time.
 # But Vandermonde matrices are very well-studied, and it's known that they can be multiplied in $\widetilde{O}(N+L)$ operations and $O(N+L)$ space,
 # providing an asymptotic efficiency improvement.
 
-# We make note of a small implementation detail: the SSM depends only on the elementwise product $\boldsymbol{C} \circ \boldsymbol{B}$.
+# We make note of a small implementation detail: from the above formula, diagonal SSMs depends only on the elementwise product $\boldsymbol{C} \circ \boldsymbol{B}$.
 # So we can assume without loss of generality that $\boldsymbol{B} = \boldsymbol{1}$ and choose to either train it (as in S4(D)) or freeze it (as in DSS).
-# (footnote: DSS also renames $\boldsymbol{C}$ to $W$ in their presentation, but we find the original notation clearer.)
+# ^[Instead of the notation $\bm{B}$ and $\bm{C}$, DSS defines a $\bm{W}$ parameter which represents $\boldsymbol{C} \circ \boldsymbol{B}$. This is equivalent to setting $\bm{B} = \bm{1}$ and freezing it, while S4D chooses to train it in the style of the original S4.]
 
 # ### Implementing the S4D Kernel
 
@@ -254,7 +262,7 @@ def discretize(A, B, step, mode="zoh"):
 
 # The Vandermonde matrix multiplication is almost trivial to implement and can be applied to *any discretization* of a diagonal SSM.
 
-def vandermonde(v, L, alpha):
+def vandermonde_kernel(v, L, alpha):
     """
     Computes v @ Vandermonde(alpha, L)
     v, alpha: shape (N,)
@@ -266,23 +274,23 @@ def vandermonde(v, L, alpha):
 
 def s4d_kernel(C, A, L, step):
     Abar, Bbar = discretize(A, 1.0, step)
-    return vandermonde(C * Bbar, L, Abar).real
+    return vandermonde_kernel(C * Bbar, L, Abar).real
 
 
 # Finally, this Vandermonde matrix multiply can be slightly optimized.
 # First, computing powers $\alpha^k$ explicitly can be slower than exponentiating $\exp(k \log(\alpha))$.
-# Second, in the case of ZOH discretization, which directly involves a matrix exponential, a $\log \circ \exp$ term can be removed, saving a pointwise operation.
-# Finally, materializing the full matrix is unnecessary and can be optimized away to save a lot of memory! We elaborate on this below. [**Link**]
+# Second, in the case of ZOH discretization (which directly involves a matrix exponential), a $\log \circ \exp$ term can be removed, saving a pointwise operation.
+# Finally, materializing the full matrix is unnecessary and can be optimized away to save a lot of memory! In JAX, this can be automatically handled by JIT and XLA compilation.
 
 
 @partial(jax.jit, static_argnums=2)
 def s4d_kernel_zoh(C, A, L, step):
-    """ A version of the kernel for B=1 and ZOH """
+    """A version of the kernel specialized to B=1 and ZOH"""
     kernel_l = lambda l: (C * (np.exp(step*A)-1)/A * np.exp(l*step*A)).sum()
-    return jax.vmap(kernel_l)(np.arange(L)).ravel().real
+    return jax.vmap(kernel_l)(np.arange(L)).real
 
 
-# As the original S4 paper specified, this kernel in the diagonal case is just a single **Vandermonde matrix-vector product**.
+# As the original S4 paper described, this kernel in the diagonal case is just a single **Vandermonde matrix-vector product**.
 # We emphasize that the above *2 lines of code* is a drop-in replacement for all the intricate machinery of the full S4 model!
 #
 # Just as with all SSMs, we can test that convolving by this kernel produces the same answer as the sequential scan.
@@ -321,6 +329,8 @@ def test_conversion(N=8, L=16):
     )
     assert np.allclose(y1, y2.reshape(-1).real, atol=1e-4, rtol=1e-4)
 
+if __name__ == '__main__':
+    test_conversion()
 
 # ### Comparing SSM Parameterizations
 
@@ -339,11 +349,11 @@ def test_conversion(N=8, L=16):
 
 # **S4D.**
 # Notice that the S4D algorithm is very similar, ultimately reducing to a Vandermonde matrix multiplication which has the same asymptotic efficiency.
-# In fact, this is no surprise - Vandermonde matrices and Cauchy matrices are very closely related, and have essentially identical computational complexities because they can be easily transformed to one another. [AG: how to add citation?]
+# In fact, this is no surprise - Vandermonde matrices and Cauchy matrices are very closely related, and have essentially identical computational complexities because they can be easily [transformed to one another](https://arxiv.org/abs/1311.3729).
 # It's neat that generalizing the diagonal case to diagonal plus low-rank simply reduces to a slightly different, but computationally equivalent, linear algebra primitive!
 
-# We note that in practice, the near-linear $\widetilde{O}(N+L)$ time algorithm for Vandermonde and Cauchy matrices may be less efficient than naively doing the $O(NL)$ summation due to hardware efficiency.
-# However, exposing the structure of Vandermonde and Cauchy matrices allows the kernels to be written in a way that avoids materializing the full matrix (as our code above does, leveraging JAX's clever jit compilation),
+# We note that in practice, the near-linear $\widetilde{O}(N+L)$ time algorithm for Vandermonde and Cauchy matrices may be less efficient than naively doing the $O(NL)$ summation on hardware such as GPUs and TPUs.
+# However, exposing the structure of Vandermonde and Cauchy matrices allows the kernels to be written in a way that avoids materializing the full matrix (as our code above does),
 # reducing the space complexity from $O(NL)$ to $O(N+L)$.
 
 # **DSS.**
@@ -362,6 +372,7 @@ class S4DLayer(nn.Module):
     l_max: int
     decode: bool = False
 
+    # The full training script has optimizer hooks that lower the LR on special params
     lr = {
         "A_re": 0.1,
         "A_im": 0.1,
@@ -415,8 +426,9 @@ S4DLayer = cloneLayer(S4DLayer)
 
 # The core of the S4D layer is the same as the traditional SSM layer defined in the first part of the post. We define our SSM parameters $(\bm{A}, \bm{B}, \bm{C}, \bm{D})$ and then call the kernel code written above as a convolution during training.
 # Finally, during discrete decoding, we use the initial recurrence computed above.
+# Note that much of the above code is boilerplate for initialization and handling the recurrence case, and the core forward pass (kernel construction and convolution) really only requires < 10 LoC.
 
-# ... and that's all folks! S4D is dramatically more easy to understand and compact (50 LoC!) than S4, with an extremely structured state space that reduces to a single linear algebra primitive. Together with the new theoretical insights in the next section, we can build a model that is almost as expressive and performant as S4.
+# ... and that's all folks! S4D is dramatically more easy to understand and compact than S4, with an extremely structured state space that reduces to a single linear algebra primitive. Together with the new theoretical insights in the next section, we can build a model that is almost as expressive and performant as S4.
 
 
 # ## Part IIIa. The Central Challenge: Initialization
@@ -518,13 +530,13 @@ S4DLayer = cloneLayer(S4DLayer)
 # This is a pretty remarkable fact proved in the S4D paper, and honestly still seems like an incredible coincidence.
 # In the rest of this post, we'll unpack this fact and try to give more intuition for SSMs.
 
-# ## Part IIIb: An Intuitive Understanding of SSMs
+# ## Part IIIb. An Intuitive Understanding of SSMs
 
 # We'll close out this blog post with some discussion on how to think about SSMs, illustrated through diagonal SSMs. We'll focus on intuition for the following question:
 #
 # Q: **How should we interpret the convolution kernel of a state space model**?
 
-# ### Case: 1-dimensional state
+# ### Case: 1-dimensional State
 # Let's start with the case of an SSM with $N=1$. We'll write lowercase $\bm{a}$ and $\bm{b}$ to emphasize that they're scalars. The state $x(t)$ is then a scalar function that satisfies a linear ODE, which is elementary to solve.
 # The original SSM state equation
 # $$
@@ -658,7 +670,7 @@ S4DLayer = cloneLayer(S4DLayer)
 # ## Conclusion
 
 # The introduction of new **diagonal state space models** show the potential of SSMs as sequence models that can be incredibly powerful, yet quite simple to understand and implement.
-# Many directions are open for exploration, from fundamental research in understanding and improving these models, to drawing connections to the rich scientific literature on state space models, to exploring direct applications in domains such as audio, vision, time-series, NLP, and more.
+# Many directions are open for exploration, from fundamental research in understanding and improving these models, to drawing connections to the rich scientific literature on state spaces, to exploring direct applications in domains such as audio, vision, time-series, NLP, and more.
 # In writing this post, we hope that fleshing out the details of these models can lower the barrier to understanding S4 and inspire future ideas in this area.
 # There's much left to understand here, and we believe that perhaps even simpler and better models will be uncovered!
 
