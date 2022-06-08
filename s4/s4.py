@@ -100,7 +100,10 @@ from jax.numpy.linalg import eigh, inv, matrix_power
 from jax.scipy.signal import convolve
 
 
-rng = jax.random.PRNGKey(1)
+if __name__ == '__main__':
+    # For this tutorial, it'll be convenient to construct a global rng key
+    # But we don't want it when importing as a library
+    rng = jax.random.PRNGKey(1)
 
 
 # ## Part 1: State Space Models
