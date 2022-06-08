@@ -45,7 +45,7 @@ import jax
 import jax.numpy as np
 from flax import linen as nn
 from jax.nn.initializers import lecun_normal, normal
-from s4 import (
+from .s4 import (
     causal_convolution,
     cloneLayer,
     hippo_initializer,
@@ -55,7 +55,8 @@ from s4 import (
 )
 
 
-rng = jax.random.PRNGKey(1)
+if __name__ == '__main__':
+    rng = jax.random.PRNGKey(1)
 
 # ## Table of Contents
 # <nav id="TOC">
