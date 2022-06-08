@@ -333,9 +333,6 @@ def test_conversion(N=8, L=16):
     assert np.allclose(y1, y2.reshape(-1).real, atol=1e-4, rtol=1e-4)
 
 
-test_conversion()
-
-
 # ### Secret Sauce – Part 1: Complex Softmax
 #
 # While the implementation above is pretty concise, there are some subtle gotchas that need to be addresed. First is the
