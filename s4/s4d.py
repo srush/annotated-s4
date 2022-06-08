@@ -74,6 +74,7 @@ if __name__ == '__main__':
 #     - [A Brief Refresher on S4 and HiPPO]
 #     - [The Diagonal HiPPO Matrix]
 # * [Part IIIb. An Intuitive Understanding of SSMs]
+# </nav>
 # <!--
 #     - [Case: 1-dimensional State]
 #     - [Case: Diagonal SSM]
@@ -193,7 +194,7 @@ if __name__ == '__main__':
 # Why is this important? It allows replacing $\boldsymbol{A}$ with a [canonical form](https://en.wikipedia.org/wiki/Canonical_form#Linear_algebra) such as diagonal matrices,
 # imposing simpler *structure* while preserving expressivity! Ideally, this structure would simplify and speed up the computation of the SSM kernel.
 #
-# Note that Lemma 1 provides an immediate proof of the expressivity of diagonal SSMs.
+# Note that Lemma 1 provides an immediately implies the expressivity of diagonal SSMs.
 # To spell it out: suppose we have a state space with parameters $(\boldsymbol{A}, \boldsymbol{B}, \boldsymbol{C})$ where the matrix $\boldsymbol{A}$ is diagonalizable - in other words, there exists a matrix $\boldsymbol{V}$ such that $\boldsymbol{V}^{-1}\boldsymbol{A}\boldsymbol{V}$ is diagonal.
 # Then the state space $(\boldsymbol{V}^{-1} \boldsymbol{A} \boldsymbol{V}, \boldsymbol{V}^{-1}\boldsymbol{B}, \boldsymbol{C}\boldsymbol{V})$ is a diagonal SSM that is *exactly equivalent*, or in other words defines the exact same sequence-to-sequence transformation $u \mapsto y$!
 # ^[This shows the equivalence of the *continuous* SSMs. The equivalence of their discretizations follows immediately because the *discrete* SSM (viewed as the map $u_k \mapsto y_k$) depends only on the step size $\Delta$ and the continuous SSM ($u(t) \mapsto y(t)$). A more complicated version of this expressivity result is presented as Proposition 1 of the DSS paper, which focuses on the discrete case.]
@@ -451,7 +452,7 @@ S4DLayer = cloneLayer(S4DLayer)
 
 # As a refresher, S4's motivation was to instead use a particular formula for the $\boldsymbol{A}$ matrix called a [HiPPO matrix](https://arxiv.org/abs/2008.07669) that has a mathematical interpretation of memorizing the history of the input $u(t)$.
 # This theory is what gives S4 its remarkable performance on long sequence modeling,
-# described in this figure from [[How to Train Your HiPPO](https://link)].
+# illustrated in this animation from [[How to Train Your HiPPO](https://link)].
 
 # <center>
 # <img src="images/hippo_reconstruction_cropped.gif" width="100%"/>
@@ -517,13 +518,13 @@ S4DLayer = cloneLayer(S4DLayer)
 # ### The Diagonal HiPPO Matrix
 
 # Finally, we can describe the key fact that made diagonal SSMs work.
-# DSS's core contribution is showing that simply **masking out the low-rank portion of the HiPPO matrix** results in a diagonal matrix that empirically performs almost as well as S4.
+# The core contribution of DSS is showing that simply **masking out the low-rank portion of the HiPPO matrix** results in a diagonal matrix that empirically performs almost as well as S4.
 # This is the key "fork in the road" between the original S4 paper, and the follow-up diagonal SSMs which all use this diagonal approximation of the HiPPO matrix.
-# More precisely, these initialize with the matrix $\bm{A}^{(D)}$ defined as the diagonalization (eigenvalues) of the normal matrix $\bm{A}^{(N)}$.
+# More precisely, they initialize with the matrix $\bm{A}^{(D)}$ defined as the diagonalization (eigenvalues) of the normal matrix $\bm{A}^{(N)}$.
 
 # It can be hard to appreciate how surprising and subtle this fact is.
-# It's important to note that writing the HiPPO matrix in DPLR form was S4's main contribution, but **this form was purely for computational purposes**.
-# In other words, **the diagonal and low-rank portions by themselves should have no mathematical meaning**.
+# It's important to note that writing the HiPPO matrix in DPLR form was S4's main contribution, but *this form was purely for computational purposes*.
+# In other words, *the diagonal and low-rank portions by themselves should have no mathematical meaning*.
 # In fact, other follow-ups that [generalize and explain S4](https://TODO) introduce different variants of S4 that all have a DPLR representation, but where dropping the low-rank term to convert it to a diagonal matrix performs much worse.
 
 # It turns out that this particular matrix is extremely special, and the diagonal HiPPO matrix *does* have a theoretical interpretation. Dropping the low-rank term - leaving only the normal term $\boldsymbol{A}^{(N)}$ - *has the same dynamics as $\boldsymbol{A}$ in the limit as the state size $N \to \infty$*.
@@ -613,7 +614,7 @@ S4DLayer = cloneLayer(S4DLayer)
 # ### Case: General SSM
 
 # The same derivation and formula for the convolution kernel actually holds in the case of non-diagonal state matrices $\bm{A}$,
-# only now it involves a *matrix exponential* instead of scalar exponentials.
+# only now it involves a **matrix exponential** instead of scalar exponentials.
 # We still interpret it the same way: $e^{t\bm{A}} \bm{B}$ is a vector of $N$ different **basis kernels**, and the overall convolution kernel
 # $\bm{C} e^{t\bm{A}} \bm{B}$ is a linear combination of these basis functions.
 

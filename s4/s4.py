@@ -31,13 +31,13 @@
 # towards this goal of gaining intuition, linking concrete code
 # implementations with explanations from the S4 paper – very much in
 # the style of [the annotated
-# transformer](https://nlp.seas.harvard.edu/2018/04/03/attention.html).
+# Transformer](https://nlp.seas.harvard.edu/2018/04/03/attention.html).
 # Hopefully this combination of code and literate explanations helps
 # you follow the details of the model. By the end of the blog you will
 # have an efficient working version of S4 that can operate as a CNN
 # for training, but then convert to an efficient RNN at test time.  To
 # preview the results, you will be able to generate images from pixels
-# and sounds directly on sound waves on a standard GPU.
+# and sounds directly from audio waves on a standard GPU.
 #
 # <center> <img src="images/im0.4.png" width="70%">
 # <img src='images/speech25.0.png' width='80%'>
@@ -52,32 +52,29 @@
 # ## Table of Contents
 
 # <nav id="TOC">
-# <ul>
-# <li><a href="#part-1-state-space-models">Part 1: State Space Models</a> (Modeling)<ul>
-# <li><a href="#discrete-time-ssm-the-recurrent-representation">Discrete-time SSM: The Recurrent Representation</a></li>
-# <li><a href="#tangent-a-mechanics-example">Tangent: A Mechanics Example</a></li>
-# <li><a href="#training-ssms-the-convolutional-representation">Training SSMs: The Convolutional Representation</a></li>
-# <li><a href="#an-ssm-neural-network.">An SSM Neural Network.</a></li>
-# </ul></li>
-# <li><a href="#part-1b-addressing-long-range-dependencies-with-hippo">Part 1b: Addressing Long-Range Dependencies with HiPPO</a></li>
-# <li><a href="#part-2-implementing-s4">Part 2: Implementing S4</a> (Advanced)<ul>
-# <li><a href="#step-1.-ssm-generating-functions">Step 1. SSM Generating Functions</a></li>
-# <li><a href="#step-2-diagonal-case">Step 2: Diagonal Case</a></li>
-# <li><a href="#step-3-diagonal-plus-low-rank">Step 3: Diagonal Plus Low-Rank</a></li>
-# <li><a href="#diagonal-plus-low-rank-rnn.">Diagonal Plus Low-Rank RNN.</a></li>
-# <li><a href="#turning-hippo-to-dplr">Turning HiPPO to DPLR</a></li>
-# <li><a href="#final-check">Final Check</a></li>
-# </ul></li>
-# <li><a href="#part-3-s4-in-practice">Part 3: S4 in Practice</a> (NN Implementation)<ul>
-# <li><a href="#s4-cnn-rnn-layer">S4 CNN / RNN Layer</a></li>
-# <li><a href="#sampling-and-caching">Sampling and Caching</a></li>
-# <li><a href="#experiments-mnist">Experiments: MNIST</a></li>
-# <li><a href="#experiments-quickdraw">Experiments: QuickDraw</a></li>
-# <li><a href="#experiments-spoken-digits">Experiments: Spoken Digits</a></li>
-# </ul></li>
-# <li><a href="#conclusion">Conclusion</a></li>
-# </ul>
+# * [Part 1: State Space Models] (Modeling)
+#     - [Discrete-time SSM: The Recurrent Representation]
+#     - [Tangent: A Mechanics Example]
+#     - [Training SSMs: The Convolutional Representation]
+#     - [An SSM Neural Network.]
+# * [Part 1b: Addressing Long-Range Dependencies with HiPPO]
+# * [Part 2: Implementing S4] (Advanced)
+#     - [Step 1. SSM Generating Functions]
+#     - [Step 2: Diagonal Case]
+#     - [Step 3: Diagonal Plus Low-Rank]
+#     - [Diagonal Plus Low-Rank RNN.]
+#     - [Turning HiPPO to DPLR]
+#     - [Final Check]
+# * [Part 3: S4 in Practice] (NN Implementation)
+#     - [S4 CNN / RNN Layer]
+#     - [Sampling and Caching]
+#     - [Experiments: MNIST]
+#     - [Experiments: QuickDraw]
+#     - [Experiments: Spoken Digits]
+# * [Conclusion]
 # </nav>
+
+# <nav id="TOC">
 
 # Note that this project uses [JAX](https://github.com/google/jax/)
 # with the [Flax](https://github.com/google/flax) NN library.  While
@@ -101,7 +98,7 @@ from jax.scipy.signal import convolve
 
 
 if __name__ == '__main__':
-    # For this tutorial, it'll be convenient to construct a global rng key
+    # For this tutorial, it'll be convenient to construct a global JAX rng key
     # But we don't want it when importing as a library
     rng = jax.random.PRNGKey(1)
 
@@ -597,7 +594,7 @@ BatchStackedModel = nn.vmap(
 # [training.py](https://github.com/srush/s4/blob/main/s4/train.py).
 
 # While we now have our main model, there are *two core problems with SSMs*. First, the randomly initialized SSM actually does not perform very well. Furthermore, computing it naively like we've done so far is really slow and memory inefficient.
-# Next, we'll complete our discussion of the modeling aspect of S4 by defining a special initialization for long-range dependencies (<a href="#part-1b-addressing-long-range-dependencies-with-hippo">Part 1b</a>),
+# Next, we'll complete our discussion of the modeling aspect of S4 by defining a special initialization for long-range dependencies,
 # and then figure out how to compute this SSM Layer faster – a lot faster (<a href="#part-2-implementing-s4">Part 2</a>)!
 
 
@@ -1114,7 +1111,7 @@ def make_NPLR_HiPPO(N):
 
 
 # After extracting the normal part, we can diagonalize to get out the DPLR terms.
-# Because the normal part is actually skew-symmetric, we can extract the real and complex parts of $\Lambda$ separately.
+# Because the normal part is actually skew-symmetric, we can extract the real and complex parts of $\boldsymbol{\Lambda}$ separately.
 # This serves two purposes. First, this gives us finer-grained control over the real and imaginary parts, which can be used to improve stability. Second, this lets us use more powerful diagonalization algorithms for [Hermitian matrices](https://en.wikipedia.org/wiki/Hermitian_matrix) - in fact, the current version of JAX does not support GPU diagonalization for non-Hermitian matrices!
 
 
