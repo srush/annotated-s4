@@ -312,12 +312,18 @@ def example_train(
     n_layers=4,
     p_dropout=0.2,
     suffix=None,
+    use_wandb=True,
+    wandb_project="s4",
+    wandb_entity=None,
     checkpoint=False,
 ):
     # Set randomness...
     print("[*] Setting Randomness...")
     key = jax.random.PRNGKey(0)
     key, rng, train_rng = jax.random.split(key, num=3)
+
+    if use_wandb:
+        wandb.init(project=wandb_project, entity=wandb_entity)
 
     # Check if classification dataset
     classification = "classification" in dataset
@@ -414,7 +420,7 @@ def example_train(
             f" {best_acc:.4f} at Epoch {best_epoch + 1}\n"
         )
 
-        if wandb is not None:
+        if use_wandb:
             wandb.log(
                 {
                     "Training Loss": train_loss,
@@ -456,7 +462,9 @@ if __name__ == "__main__":
 
     # Weights and Biases Parameters
     parser.add_argument(
-        "--wandb", action="store_true",
+        "--use_wandb",
+        default=False,
+        type=bool,
         help="Whether to use W&B for metric logging",
     )
     parser.add_argument(
@@ -476,12 +484,6 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
-    if args.wandb:
-        wandb.init(project=args.wandb_project, entity=args.wandb_entity)
-    else:
-        wandb = None
-
-
     example_train(
         args.model,
         args.dataset,
@@ -495,5 +497,8 @@ if __name__ == "__main__":
         n_layers=args.n_layers,
         p_dropout=args.p_dropout,
         suffix=args.suffix,
+        use_wandb=args.use_wandb,
+        wandb_project=args.wandb_project,
+        wandb_entity=args.wandb_entity,
         checkpoint=args.checkpoint,
     )
