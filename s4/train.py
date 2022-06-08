@@ -417,9 +417,10 @@ def example_train(
         if wandb is not None:
             wandb.log(
                 {
-                    "Training Loss": train_loss,
-                    "Test Loss": test_loss,
-                    "Test Accuracy": test_acc,
+                    "train/loss": train_loss,
+                    "train/accuracy": train_acc,
+                    "test/loss": test_loss,
+                    "test/accuracy": test_acc,
                 }
             )
             wandb.run.summary["Best Test Loss"] = best_loss
