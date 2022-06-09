@@ -20,3 +20,5 @@ seaborn
 celluloid
 wandb
 datasets
+tqdm
+hydra-core
