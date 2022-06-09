@@ -5,6 +5,7 @@ import hydra
 import jax
 import jax.numpy as np
 import optax
+import torch
 from flax import linen as nn
 from flax.training import checkpoints, train_state
 from omegaconf import DictConfig, OmegaConf
@@ -61,9 +62,9 @@ def map_nested_fn(fn):
 
 
 def create_train_state(
-    model_cls,
     rng,
-    in_shape,
+    model_cls,
+    trainloader,
     lr=1e-3,
     lr_layer=None,
     lr_schedule=False,
@@ -74,7 +75,7 @@ def create_train_state(
     init_rng, dropout_rng = jax.random.split(rng, num=2)
     params = model.init(
         {"params": init_rng, "dropout": dropout_rng},
-        np.ones(in_shape),
+        np.array(next(iter(trainloader))[0].numpy()),
     )
     # Note: Added immediate `unfreeze()` to play well w/ Optax. See below!
     params = params["params"].unfreeze()
@@ -223,25 +224,37 @@ def train_step(
     state, rng, batch_inputs, batch_labels, model, classification=False
 ):
     def loss_fn(params):
-        if classification:
-            logits, mod_vars = model.apply(
-                {"params": params},
-                batch_inputs,
-                rngs={"dropout": rng},
-                mutable=["intermediates"],
-            )
-            loss = np.mean(cross_entropy_loss(logits, batch_labels))
-            acc = np.mean(compute_accuracy(logits, batch_labels))
-        else:
-            logits, mod_vars = model.apply(
-                {"params": params},
-                batch_inputs[:, :-1],
-                rngs={"dropout": rng},
-                mutable=["intermediates"],
-            )
-            loss = np.mean(cross_entropy_loss(logits, batch_inputs[:, 1:, 0]))
-            acc = np.mean(compute_accuracy(logits, batch_inputs[:, 1:, 0]))
+        logits, mod_vars = model.apply(
+            {"params": params},
+            batch_inputs,
+            rngs={"dropout": rng},
+            mutable=["intermediates"],
+        )
+        loss = np.mean(cross_entropy_loss(logits, batch_labels))
+        acc = np.mean(compute_accuracy(logits, batch_labels))
+        # else:
+        # if classification:
+        #     logits, mod_vars = model.apply(
+        #         {"params": params},
+        #         batch_inputs,
+        #         rngs={"dropout": rng},
+        #         mutable=["intermediates"],
+        #     )
+        #     loss = np.mean(cross_entropy_loss(logits, batch_labels))
+        #     acc = np.mean(compute_accuracy(logits, batch_labels))
+        # else:
+        #     logits, mod_vars = model.apply(
+        #         {"params": params},
+        #         batch_inputs[:, :-1],
+        #         rngs={"dropout": rng},
+        #         mutable=["intermediates"],
+        #     )
+        #     loss = np.mean(cross_entropy_loss(logits, batch_inputs[:, 1:, 0]))
+        #     acc = np.mean(compute_accuracy(logits, batch_inputs[:, 1:, 0]))
         return loss, (logits, acc)
+
+    if not classification:
+        batch_labels = batch_inputs[:, :, 0]
 
     grad_fn = jax.value_and_grad(loss_fn, has_aux=True)
     (loss, (logits, acc)), grads = grad_fn(state.params)
@@ -251,14 +264,19 @@ def train_step(
 
 @partial(jax.jit, static_argnums=(3, 4))
 def eval_step(batch_inputs, batch_labels, params, model, classification=False):
-    if classification:
-        logits = model.apply({"params": params}, batch_inputs)
-        loss = np.mean(cross_entropy_loss(logits, batch_labels))
-        acc = np.mean(compute_accuracy(logits, batch_labels))
-    else:
-        logits = model.apply({"params": params}, batch_inputs[:, :-1])
-        loss = np.mean(cross_entropy_loss(logits, batch_inputs[:, 1:, 0]))
-        acc = np.mean(compute_accuracy(logits, batch_inputs[:, 1:, 0]))
+    if not classification:
+        batch_labels = batch_inputs[:, :, 0]
+    logits = model.apply({"params": params}, batch_inputs)
+    loss = np.mean(cross_entropy_loss(logits, batch_labels))
+    acc = np.mean(compute_accuracy(logits, batch_labels))
+    # if classification:
+    #     logits = model.apply({"params": params}, batch_inputs)
+    #     loss = np.mean(cross_entropy_loss(logits, batch_labels))
+    #     acc = np.mean(compute_accuracy(logits, batch_labels))
+    # else:
+    #     logits = model.apply({"params": params}, batch_inputs[:, :-1])
+    #     loss = np.mean(cross_entropy_loss(logits, batch_inputs[:, 1:, 0]))
+    #     acc = np.mean(compute_accuracy(logits, batch_inputs[:, 1:, 0]))
     return loss, acc
 
 
@@ -330,10 +348,10 @@ def example_train(
 
     # Create dataset
     create_dataset_fn = Datasets[dataset]
-    trainloader, testloader, n_classes, l_seq, d_input = create_dataset_fn(
+    trainloader, testloader, n_classes, l_max, d_input = create_dataset_fn(
         bsz=train.bsz
     )
-    l_max = l_seq if classification else l_seq - 1  # Max length that model sees
+    # l_max = l_seq if classification else l_seq - 1  # Max length that model sees
     in_shape = (train.bsz, l_max, d_input)  # Input shape
 
     # Get model class and arguments
@@ -357,9 +375,9 @@ def example_train(
     )
 
     state = create_train_state(
-        model_cls,
         rng,
-        in_shape,
+        model_cls,
+        trainloader,
         lr=train.lr,
         lr_layer=lr_layer,
         lr_schedule=train.lr_schedule,

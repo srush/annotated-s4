@@ -550,7 +550,10 @@ class StackedModel(nn.Module):
     decode: bool = False  # Probably should be moved into layer_args
 
     def setup(self):
-        self.encoder = nn.Dense(self.d_model)
+        if self.classification:
+            self.encoder = nn.Dense(self.d_model)
+        else:
+            self.encoder = nn.Embed(self.d_output+1, self.d_model)
         self.decoder = nn.Dense(self.d_output)
         self.layers = [
             SequenceBlock(
@@ -566,6 +569,8 @@ class StackedModel(nn.Module):
         ]
 
     def __call__(self, x):
+        if not self.classification:
+            x = np.pad(x[:-1, 0], (1, 0), constant_values=self.d_output)
         x = self.encoder(x)
         for layer in self.layers:
             x = layer(x)
