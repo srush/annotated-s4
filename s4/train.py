@@ -1,12 +1,14 @@
 import os
 import shutil
 from functools import partial
+import hydra
 import jax
 import jax.numpy as np
 import optax
 from flax import linen as nn
 from flax.core import freeze
 from flax.training import checkpoints, train_state
+from omegaconf import DictConfig, OmegaConf
 from tqdm import tqdm
 from .data import Datasets
 from .dss import DSSLayer
@@ -434,76 +436,84 @@ def example_train(
             wandb.run.summary["Best Epoch"] = best_epoch
 
 
-if __name__ == "__main__":
-    import argparse
+@hydra.main(version_base=None, config_path="", config_name="config")
+def main(cfg : DictConfig) -> None:
+    print(OmegaConf.to_yaml(cfg))
 
-    parser = argparse.ArgumentParser()
-    parser.add_argument(
-        "--dataset", type=str, choices=Datasets.keys(), required=True
-    )
-    parser.add_argument(
-        "--model", type=str, choices=Models.keys(), required=True
-    )
-    parser.add_argument("--epochs", type=int, default=10)
-    parser.add_argument("--bsz", type=int, default=128)
-    parser.add_argument("--suffix", type=str, default=None)
+    # breakpoint()
 
-    # Model Parameters
-    parser.add_argument("--d_model", type=int, default=128)
-    parser.add_argument("--n_layers", type=int, default=4)
-    parser.add_argument("--p_dropout", type=float, default=0.2)
-    parser.add_argument("--prenorm", action="store_true")
+    # import argparse
 
-    # S4 Specific Parameters
-    parser.add_argument("--d_state", type=int, default=64)
+    # parser = argparse.ArgumentParser()
+    # parser.add_argument(
+    #     "--dataset", type=str, choices=Datasets.keys(), required=True
+    # )
+    # parser.add_argument(
+    #     "--model", type=str, choices=Models.keys(), required=True
+    # )
+    # parser.add_argument("--epochs", type=int, default=10)
+    # parser.add_argument("--bsz", type=int, default=128)
+    # parser.add_argument("--suffix", type=str, default=None)
 
-    # Optimization Parameters
-    parser.add_argument("--lr", type=float, default=1e-3)
-    parser.add_argument("--lr_schedule", default=False, action="store_true")
-    parser.add_argument("--weight_decay", default=0.01, action="store_true")
+    # # Model Parameters
+    # parser.add_argument("--d_model", type=int, default=128)
+    # parser.add_argument("--n_layers", type=int, default=4)
+    # parser.add_argument("--p_dropout", type=float, default=0.2)
+    # parser.add_argument("--prenorm", action="store_true")
 
-    # Weights and Biases Parameters
-    parser.add_argument(
-        "--wandb", action="store_true",
-        help="Whether to use W&B for metric logging",
-    )
-    parser.add_argument(
-        "--wandb_project",
-        default="s4",
-        type=str,
-        help="Name of the W&B Project",
-    )
-    parser.add_argument(
-        "--wandb_entity",
-        default=None,
-        type=str,
-        help="entity to use for W&B logging",
-    )
+    # # S4 Specific Parameters
+    # parser.add_argument("--d_state", type=int, default=64)
 
-    parser.add_argument("--checkpoint", action="store_true")
+    # # Optimization Parameters
+    # parser.add_argument("--lr", type=float, default=1e-3)
+    # parser.add_argument("--lr_schedule", default=False, action="store_true")
+    # parser.add_argument("--weight_decay", default=0.01, action="store_true")
 
-    args = parser.parse_args()
+    # # Weights and Biases Parameters
+    # parser.add_argument(
+    #     "--wandb", action="store_true",
+    #     help="Whether to use W&B for metric logging",
+    # )
+    # parser.add_argument(
+    #     "--wandb_project",
+    #     default="s4",
+    #     type=str,
+    #     help="Name of the W&B Project",
+    # )
+    # parser.add_argument(
+    #     "--wandb_entity",
+    #     default=None,
+    #     type=str,
+    #     help="entity to use for W&B logging",
+    # )
 
-    if args.wandb:
+    # parser.add_argument("--checkpoint", action="store_true")
+
+    # args = parser.parse_args()
+
+    if cfg.get('wandb', None) is not None:
         assert wandb is not None, "wandb is not installed"
-        wandb.init(project=args.wandb_project, entity=args.wandb_entity)
+        wandb.init(project=cfg.wandb.project, entity=cfg.wandb.entity)
     else:
         wandb = None
 
 
     example_train(
-        args.model,
-        args.dataset,
-        epochs=args.epochs,
-        d_model=args.d_model,
-        prenorm=args.prenorm,
-        bsz=args.bsz,
-        d_state=args.d_state,
-        lr=args.lr,
-        lr_schedule=args.lr_schedule,
-        weight_decay=args.weight_decay,
-        n_layers=args.n_layers,
-        p_dropout=args.p_dropout,
-        suffix=args.suffix,
-        checkpoint=args.checkpoint,
+        cfg.model,
+        cfg.dataset,
+        epochs=cfg.epochs,
+        d_model=cfg.d_model,
+        prenorm=cfg.prenorm,
+        bsz=cfg.bsz,
+        d_state=cfg.d_state,
+        lr=cfg.lr,
+        lr_schedule=cfg.lr_schedule,
+        weight_decay=cfg.weight_decay,
+        n_layers=cfg.n_layers,
+        p_dropout=cfg.p_dropout,
+        suffix=cfg.suffix,
+        checkpoint=cfg.checkpoint,
     )
+
+if __name__ == "__main__":
+    main()

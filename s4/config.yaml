@@ -1,0 +1,35 @@
+dataset: mnist-classification
+model: s4
+
+epochs: 10
+bsz: 128
+suffix: null
+d_model: 128
+n_layers: 4
+p_dropout: 0.0
+prenorm: true
+d_state: 64
+
+lr: 0.001
+lr_schedule: false
+weight_decay: 0.01
+
+checkpoint: false
+
+# Pass in 'wandb=null' or 'wandb=false' to turn off wandb
+wandb:
+  project: s4
+  entity: null
+
+# hydra creates a working directory in outputs/ that manages jobs,
+# e.g. saving configs and log files
+# Uncomment the below lines to suppress this
+# defaults:
+#   - _self_
+#   - override hydra/hydra_logging: disabled
+#   - override hydra/job_logging: disabled
+
+# hydra:
+#   output_subdir: null
+#   run:
+#     dir: .
