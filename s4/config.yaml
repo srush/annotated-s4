@@ -19,8 +19,9 @@ train:
   checkpoint: false
   suffix: null # String to use for checkpoint suffix
 
-# Pass in 'wandb=null' to turn off wandb logging
+# Pass in 'wandb.mode=online' to turn on wandb logging
 wandb:
+  mode: disabled
   project: s4
   entity: null
 

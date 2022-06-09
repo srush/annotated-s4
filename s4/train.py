@@ -19,11 +19,11 @@ from .s4d import S4DLayer
 
 try:
     # Slightly nonstandard import name to make config easier - see example_train()
-    import wandb as wb
+    import wandb
 
-    assert hasattr(wb, "__version__")  # verify package import not local dir
+    assert hasattr(wandb, "__version__")  # verify package import not local dir
 except (ImportError, AssertionError):
-    wb = None
+    wandb = None
 
 # ## Baseline Models
 #
@@ -323,19 +323,13 @@ Models = {
 def example_train(
     dataset : str,
     layer: str,
+    seed : int,
     model : DictConfig,
     train : DictConfig,
-    wandb : Optional[DictConfig],
-    seed : int,
 ):
     # Warnings and sanity checks
     if not train.checkpoint:
-        print("[*] Warning: not checkpointing models")
-
-    if wandb is not None:
-        assert wb is not None, "wandb is not installed"
-        wb.init(project=wandb.project, entity=wandb.entity)
-
+        print("[*] Warning: models are not being checkpoint")
 
     # Set randomness...
     print("[*] Setting Randomness...")
@@ -437,8 +431,8 @@ def example_train(
             f" {best_acc:.4f} at Epoch {best_epoch + 1}\n"
         )
 
-        if wb is not None:
-            wb.log(
+        if wandb is not None:
+            wandb.log(
                 {
                     "train/loss": train_loss,
                     "train/accuracy": train_acc,
@@ -446,15 +440,23 @@ def example_train(
                     "test/accuracy": test_acc,
                 }
             )
-            wb.run.summary["Best Test Loss"] = best_loss
-            wb.run.summary["Best Test Accuracy"] = best_acc
-            wb.run.summary["Best Epoch"] = best_epoch
+            wandb.run.summary["Best Test Loss"] = best_loss
+            wandb.run.summary["Best Test Accuracy"] = best_acc
+            wandb.run.summary["Best Epoch"] = best_epoch
 
 
 @hydra.main(version_base=None, config_path="", config_name="config")
 def main(cfg : DictConfig) -> None:
     print(OmegaConf.to_yaml(cfg))
     OmegaConf.set_struct(cfg, False) # Allow writing keys
+
+    # Track with wandb
+    if wandb is not None:
+        wandb_cfg = cfg.pop("wandb")
+        wandb.init(
+            **wandb_cfg,
+            config=OmegaConf.to_container(cfg, resolve=True)
+        )
 
     example_train(**cfg)
 
