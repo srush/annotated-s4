@@ -11,7 +11,7 @@
 # <img src="images/hero.png" width="100%"/>
 
 
-# *Blog Post and [Library](https://github.com/srush/annotated-s4/) by [Sasha Rush](http://rush-nlp.com/) and [Sidd Karamcheti](https://www.siddkaramcheti.com/)*, v2
+# *Blog Post and [Library](https://github.com/srush/annotated-s4/) by [Sasha Rush](http://rush-nlp.com/) and [Sidd Karamcheti](https://www.siddkaramcheti.com/)*, v3
 
 #
 # The [Structured State Space for Sequence
@@ -51,7 +51,7 @@
 
 # ## Table of Contents
 
-# <nav id="TOC">
+
 # * [Part 1: State Space Models] (Modeling)
 #     - [Discrete-time SSM: The Recurrent Representation]
 #     - [Tangent: A Mechanics Example]
@@ -72,7 +72,7 @@
 #     - [Experiments: QuickDraw]
 #     - [Experiments: Spoken Digits]
 # * [Conclusion]
-# </nav>
+
 
 # <nav id="TOC">
 
@@ -97,8 +97,8 @@ from jax.numpy.linalg import eigh, inv, matrix_power
 from jax.scipy.signal import convolve
 
 
-if __name__ == '__main__':
-    # For this tutorial, it'll be convenient to construct a global JAX rng key
+if __name__ == "__main__":
+    # For this tutorial, construct a global JAX rng key
     # But we don't want it when importing as a library
     rng = jax.random.PRNGKey(1)
 
@@ -1231,7 +1231,7 @@ class S4Layer(nn.Module):
         # C should be init as standard normal
         # This doesn't work due to how JAX handles complex optimizers https://github.com/deepmind/optax/issues/196
         # self.C = self.param("C", normal(stddev=1.0, dtype=np.complex64), (self.N,))
-        self.C = self.param("C", normal(stddev=0.5**0.5), (self.N, 2))
+        self.C = self.param("C", normal(stddev=0.5 ** 0.5), (self.N, 2))
         self.C = self.C[..., 0] + 1j * self.C[..., 1]
         self.D = self.param("D", nn.initializers.ones, (1,))
         self.step = np.exp(self.param("log_step", log_step_initializer(), (1,)))
@@ -1605,3 +1605,18 @@ def sample_mnist_prefix(path, model, length):
 
 #
 # / Cheers – Sasha & Sidd
+
+
+# ## Changelog
+#
+# * v3
+#   * Major editing pass from Albert.
+#   * Fix bug in HiPPO calculation.
+#   * Added training of all S4 parameters.
+#   * Fix learning rate / initialization issues.
+# * v2
+#   * Added RNN decoding
+#   * Added Speech examples
+# * v1 - Original version
+
+
