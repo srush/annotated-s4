@@ -6,10 +6,10 @@ import jax
 import jax.numpy as np
 import optax
 from flax import linen as nn
-from flax.core import freeze
 from flax.training import checkpoints, train_state
 from omegaconf import DictConfig, OmegaConf
 from tqdm import tqdm
+from typing import Optional
 from .data import Datasets
 from .dss import DSSLayer
 from .s4 import BatchStackedModel, S4Layer, SSMLayer
@@ -302,23 +302,14 @@ Models = {
 
 
 def example_train(
-    model,
-    dataset,
-    d_model=128,
-    prenorm=True,
-    bsz=128,
-    epochs=10,
-    d_state=64,
-    lr=1e-3,
-    lr_schedule=False,
-    weight_decay=0.0,
-    n_layers=4,
-    p_dropout=0.2,
-    suffix=None,
-    checkpoint=False,
+    dataset : str,
+    layer: str,
+    model : DictConfig,
+    train : DictConfig,
+    wandb : Optional[DictConfig],
 ):
     # Warnings and sanity checks
-    if not checkpoint:
+    if not train.checkpoint:
         print("[*] Warning: not checkpointing models")
 
     # Set randomness...
@@ -332,47 +323,45 @@ def example_train(
     # Create dataset
     create_dataset_fn = Datasets[dataset]
     trainloader, testloader, n_classes, l_seq, d_input = create_dataset_fn(
-        bsz=bsz
+        bsz=train.bsz
     )
     l_max = l_seq if classification else l_seq - 1  # Max length that model sees
-    in_shape = (bsz, l_max, d_input)  # Input shape
+    in_shape = (train.bsz, l_max, d_input)  # Input shape
 
     # Get model class and arguments
-    model_cls = Models[model]
-    layer_args = {} if d_state is None else {"N": d_state}
-    layer_args["l_max"] = l_max
+    layer_cls = Models[layer]
+    # layer_args = {} if model.d_state is None else {"N": model.d_state}
+    # layer_args["l_max"] = l_max
+    model.layer.l_max = l_max
 
     # Extract custom hyperparameters from model class
-    lr_layer = getattr(model_cls, "lr", None)
+    lr_layer = getattr(layer_cls, "lr", None)
 
-    print(f"[*] Starting `{model}` Training on `{dataset}` =>> Initializing...")
+    print(f"[*] Starting `{layer}` Training on `{dataset}` =>> Initializing...")
 
     model_cls = partial(
         BatchStackedModel,
-        layer=model_cls,
-        layer_args=freeze(layer_args),
-        prenorm=prenorm,
-        d_model=d_model,
+        layer_cls=layer_cls,
+        # layer_args=freeze(layer_args),
         d_output=n_classes,
-        dropout=p_dropout,
-        n_layers=n_layers,
         classification=classification,
+        **model,
     )
 
     state = create_train_state(
         model_cls,
         rng,
         in_shape,
-        lr=lr,
+        lr=train.lr,
         lr_layer=lr_layer,
-        lr_schedule=lr_schedule,
-        weight_decay=weight_decay,
-        total_steps=len(trainloader) * epochs,
+        lr_schedule=train.lr_schedule,
+        weight_decay=train.weight_decay,
+        total_steps=len(trainloader) * train.epochs,
     )
 
     # Loop over epochs
     best_loss, best_acc, best_epoch = 10000, 0, 0
-    for epoch in range(epochs):
+    for epoch in range(train.epochs):
         print(f"[*] Starting Training Epoch {epoch + 1}...")
         state, train_loss, train_acc = train_epoch(
             state,
@@ -395,21 +384,21 @@ def example_train(
         )
 
         # Save a checkpoint each epoch & handle best (test loss... not "copacetic" but ehh)
-        if checkpoint:
-            suf = f"-{suffix}" if suffix is not None else ""
-            run_id = f"checkpoints/{dataset}/{model}-d_model={d_model}-lr={lr}-bsz={bsz}{suf}"
+        if train.checkpoint:
+            suf = f"-{train.suffix}" if train.suffix is not None else ""
+            run_id = f"checkpoints/{dataset}/{model}-d_model={model.d_model}-lr={train.lr}-bsz={train.bsz}{suf}"
             ckpt_path = checkpoints.save_checkpoint(
                 run_id,
                 state,
                 epoch,
-                keep=epochs,
+                keep=train.epochs,
             )
 
         if (classification and test_acc > best_acc) or (
             not classification and test_loss < best_loss
         ):
             # Create new "best-{step}.ckpt and remove old one
-            if checkpoint:
+            if train.checkpoint:
                 shutil.copy(ckpt_path, f"{run_id}/best_{epoch}")
                 if os.path.exists(f"{run_id}/best_{best_epoch}"):
                     os.remove(f"{run_id}/best_{best_epoch}")
@@ -439,57 +428,7 @@ def example_train(
 @hydra.main(version_base=None, config_path="", config_name="config")
 def main(cfg : DictConfig) -> None:
     print(OmegaConf.to_yaml(cfg))
-
-    # breakpoint()
-
-    # import argparse
-
-    # parser = argparse.ArgumentParser()
-    # parser.add_argument(
-    #     "--dataset", type=str, choices=Datasets.keys(), required=True
-    # )
-    # parser.add_argument(
-    #     "--model", type=str, choices=Models.keys(), required=True
-    # )
-    # parser.add_argument("--epochs", type=int, default=10)
-    # parser.add_argument("--bsz", type=int, default=128)
-    # parser.add_argument("--suffix", type=str, default=None)
-
-    # # Model Parameters
-    # parser.add_argument("--d_model", type=int, default=128)
-    # parser.add_argument("--n_layers", type=int, default=4)
-    # parser.add_argument("--p_dropout", type=float, default=0.2)
-    # parser.add_argument("--prenorm", action="store_true")
-
-    # # S4 Specific Parameters
-    # parser.add_argument("--d_state", type=int, default=64)
-
-    # # Optimization Parameters
-    # parser.add_argument("--lr", type=float, default=1e-3)
-    # parser.add_argument("--lr_schedule", default=False, action="store_true")
-    # parser.add_argument("--weight_decay", default=0.01, action="store_true")
-
-    # # Weights and Biases Parameters
-    # parser.add_argument(
-    #     "--wandb", action="store_true",
-    #     help="Whether to use W&B for metric logging",
-    # )
-    # parser.add_argument(
-    #     "--wandb_project",
-    #     default="s4",
-    #     type=str,
-    #     help="Name of the W&B Project",
-    # )
-    # parser.add_argument(
-    #     "--wandb_entity",
-    #     default=None,
-    #     type=str,
-    #     help="entity to use for W&B logging",
-    # )
-
-    # parser.add_argument("--checkpoint", action="store_true")
-
-    # args = parser.parse_args()
+    OmegaConf.set_struct(cfg, False) # Allow writing keys
 
     if cfg.get('wandb', None) is not None:
         assert wandb is not None, "wandb is not installed"
@@ -497,23 +436,7 @@ def main(cfg : DictConfig) -> None:
     else:
         wandb = None
 
-
-    example_train(
-        cfg.model,
-        cfg.dataset,
-        epochs=cfg.epochs,
-        d_model=cfg.d_model,
-        prenorm=cfg.prenorm,
-        bsz=cfg.bsz,
-        d_state=cfg.d_state,
-        lr=cfg.lr,
-        lr_schedule=cfg.lr_schedule,
-        weight_decay=cfg.weight_decay,
-        n_layers=cfg.n_layers,
-        p_dropout=cfg.p_dropout,
-        suffix=cfg.suffix,
-        checkpoint=cfg.checkpoint,
-    )
+    example_train(**cfg)
 
 if __name__ == "__main__":
     main()

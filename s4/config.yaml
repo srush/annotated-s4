@@ -1,22 +1,24 @@
 dataset: mnist-classification
-model: s4
+layer: s4
 
-epochs: 10
-bsz: 128
-suffix: null
-d_model: 128
-n_layers: 4
-p_dropout: 0.0
-prenorm: true
-d_state: 64
+model:
+  d_model: 128
+  n_layers: 4
+  dropout: 0.0
+  prenorm: true
+  layer:
+    N: 64
 
-lr: 0.001
-lr_schedule: false
-weight_decay: 0.01
+train:
+  epochs: 10
+  bsz: 128
+  lr: 0.001
+  lr_schedule: false
+  weight_decay: 0.01
+  checkpoint: false
+  suffix: null # String to use for checkpoint suffix
 
-checkpoint: false
-
-# Pass in 'wandb=null' or 'wandb=false' to turn off wandb
+# Pass in 'wandb=null' to turn off wandb
 wandb:
   project: s4
   entity: null
