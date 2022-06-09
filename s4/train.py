@@ -17,11 +17,12 @@ from .s4d import S4DLayer
 
 
 try:
-    import wandb
+    # Slightly nonstandard import name to make config easier - see example_train()
+    import wandb as wb
 
-    assert hasattr(wandb, "__version__")  # verify package import not local dir
+    assert hasattr(wb, "__version__")  # verify package import not local dir
 except (ImportError, AssertionError):
-    wandb = None
+    wb = None
 
 # ## Baseline Models
 #
@@ -312,6 +313,11 @@ def example_train(
     if not train.checkpoint:
         print("[*] Warning: not checkpointing models")
 
+    if wandb is not None:
+        assert wb is not None, "wandb is not installed"
+        wb.init(project=wandb.project, entity=wandb.entity)
+
+
     # Set randomness...
     print("[*] Setting Randomness...")
     key = jax.random.PRNGKey(0)
@@ -411,8 +417,8 @@ def example_train(
             f" {best_acc:.4f} at Epoch {best_epoch + 1}\n"
         )
 
-        if wandb is not None:
-            wandb.log(
+        if wb is not None:
+            wb.log(
                 {
                     "train/loss": train_loss,
                     "train/accuracy": train_acc,
@@ -420,21 +426,15 @@ def example_train(
                     "test/accuracy": test_acc,
                 }
             )
-            wandb.run.summary["Best Test Loss"] = best_loss
-            wandb.run.summary["Best Test Accuracy"] = best_acc
-            wandb.run.summary["Best Epoch"] = best_epoch
+            wb.run.summary["Best Test Loss"] = best_loss
+            wb.run.summary["Best Test Accuracy"] = best_acc
+            wb.run.summary["Best Epoch"] = best_epoch
 
 
 @hydra.main(version_base=None, config_path="", config_name="config")
 def main(cfg : DictConfig) -> None:
     print(OmegaConf.to_yaml(cfg))
     OmegaConf.set_struct(cfg, False) # Allow writing keys
-
-    if cfg.get('wandb', None) is not None:
-        assert wandb is not None, "wandb is not installed"
-        wandb.init(project=cfg.wandb.project, entity=cfg.wandb.entity)
-    else:
-        wandb = None
 
     example_train(**cfg)
 
