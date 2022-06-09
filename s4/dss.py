@@ -34,14 +34,16 @@
 # Space (DSS) variant can be easily implemented in PyTorch with some minor changes.
 
 # import s4.s4 as s4  TODO -- For some reason breaks streamlit...
-import s4
+from . import s4
 from functools import partial
 import jax
 import jax.numpy as np
 from flax import linen as nn
-from jax.nn.initializers import lecun_normal
+from jax.nn.initializers import lecun_normal, normal
 
-rng = jax.random.PRNGKey(1)
+
+if __name__ == '__main__':
+    rng = jax.random.PRNGKey(1)
 
 # ## Table of Contents
 # <nav id="TOC">
@@ -317,24 +319,20 @@ def test_conversion(N=8, L=16):
     step = 1.0 / L
     W = lecun_normal()(rng, (1, N, 2))
     W = W[..., 0] + 1j * W[..., 1]
-    _, Lambda, _, _, _ = s4.make_NPLR_HiPPO(2 * N)
-    Lambda = Lambda[np.nonzero(Lambda.imag > 0, size=N)]
+    Lambda, _, _, _ = s4.make_DPLR_HiPPO(N)
 
     K = dss_kernel(W, Lambda, L, step)
     ssm = dss_ssm(W, Lambda, L, step)
 
     # Apply CNN
     u = np.arange(L) * 1.0
-    y1 = s4.non_circular_convolution(u, K.real)
+    y1 = s4.causal_convolution(u, K.real)
 
     # Apply RNN
     _, y2 = s4.scan_SSM(
         *ssm, u[:, np.newaxis], np.zeros((N,)).astype(np.complex64)
     )
     assert np.allclose(y1, y2.reshape(-1).real, atol=1e-4, rtol=1e-4)
-
-
-test_conversion()
 
 
 # ### Secret Sauce – Part 1: Complex Softmax
@@ -421,21 +419,24 @@ test_conversion()
 # we're ready to put the DSS layer together!
 
 
-def DSSLayerInit(N):
-    _, Lambda, _, _, _ = s4.make_NPLR_HiPPO(2 * N)
-    Lambda = Lambda[np.nonzero(Lambda.imag > 0, size=N)]
-    return partial(DSSLayer, N=N, Lambda=Lambda)
-
-
 class DSSLayer(nn.Module):
-    Lambda: np.DeviceArray
     N: int
     l_max: int
     decode: bool = False
 
+    lr = {
+        "Lambda_re": 0.1,
+        "Lambda_im": 0.1,
+        "log_step": 0.1,
+    }
+
     def setup(self):
         # Learned Parameters
-        self.W = self.param("W", lecun_normal(), (1, self.N, 2))
+        hippo_Lambda_real_initializer, hippo_Lambda_imag_initializer, hippo_p_initializer, hippo_B_initializer = s4.hippo_initializer(self.N)
+        self.Lambda_re = self.param("Lambda_re", hippo_Lambda_real_initializer, (self.N,))
+        self.Lambda_im = self.param("Lambda_im", hippo_Lambda_imag_initializer, (self.N,))
+        self.Lambda = self.Lambda_re + 1j*self.Lambda_im
+        self.W = self.param("W", normal(stddev=.5**.5), (1, self.N, 2))
         self.W = self.W[..., 0] + 1j * self.W[..., 1]
         self.D = self.param("D", nn.initializers.ones, (1,))
         self.step = np.exp(
@@ -459,13 +460,12 @@ class DSSLayer(nn.Module):
 
     def __call__(self, u):
         if not self.decode:
-            return s4.non_circular_convolution(u, self.K) + self.D * u
+            return s4.causal_convolution(u, self.K) + self.D * u
         else:
             x_k, y_s = s4.scan_SSM(*self.ssm, u[:, np.newaxis], self.x_k_1.value)
             if self.is_mutable_collection("cache"):
                 self.x_k_1.value = x_k
             return y_s.reshape(-1).real + self.D * u
-
 
 DSSLayer = s4.cloneLayer(DSSLayer)
 

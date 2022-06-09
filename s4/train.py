@@ -5,11 +5,13 @@ import jax
 import jax.numpy as np
 import optax
 from flax import linen as nn
+from flax.core import freeze
 from flax.training import checkpoints, train_state
 from tqdm import tqdm
 from .data import Datasets
-from .dss import DSSLayerInit
-from .s4 import BatchStackedModel, S4LayerInit, SSMInit
+from .dss import DSSLayer
+from .s4 import BatchStackedModel, S4Layer, SSMLayer
+from .s4d import S4DLayer
 
 
 try:
@@ -56,66 +58,86 @@ def map_nested_fn(fn):
 
 
 def create_train_state(
-    model_name,
     model_cls,
     rng,
-    in_dim=1,
-    bsz=128,
-    seq_len=784,
+    in_shape,
     lr=1e-3,
+    lr_layer=None,
     lr_schedule=False,
+    weight_decay=0.0,
     total_steps=-1,
 ):
     model = model_cls(training=True)
     init_rng, dropout_rng = jax.random.split(rng, num=2)
     params = model.init(
         {"params": init_rng, "dropout": dropout_rng},
-        np.ones((bsz, seq_len, in_dim)),
-    )[
-        "params"
-    ].unfreeze()  # Note: Added immediate `unfreeze()` to play well w/ Optax. See below!
+        np.ones(in_shape),
+    )
+    # Note: Added immediate `unfreeze()` to play well w/ Optax. See below!
+    params = params["params"].unfreeze()
 
-    # Implement LR Schedule (No change for first 30% of training, then decay w/ cubic polynomial to 0 for last 70%)
+    # Handle learning rates:
+    # - LR scheduler
+    # - Set custom learning rates on some SSM parameters
+
+    # Note for Debugging... this is all undocumented and so weird. The following links are helpful...
+    #
+    #   > Flax "Recommended" interplay w/ Optax (this bridge needs ironing):
+    #       https://github.com/google/flax/blob/main/docs/flip/1009-optimizer-api.md#multi-optimizer
+    #
+    #   > But... masking doesn't work like the above example suggests!
+    #       Root Explanation: https://github.com/deepmind/optax/issues/159
+    #       Fix: https://github.com/deepmind/optax/discussions/167
+    #
+    #   > Also... Flax FrozenDict doesn't play well with rest of Jax + Optax...
+    #       https://github.com/deepmind/optax/issues/160#issuecomment-896460796
+    #
+    #   > Solution: Use Optax.multi_transform!
+
     if lr_schedule:
-        lr = optax.polynomial_schedule(
-            init_value=lr,
-            end_value=0.0,
-            power=3,
-            transition_begin=int(0.3 * total_steps),
-            transition_steps=int(0.7 * total_steps),
+        schedule_fn = lambda lr: optax.cosine_onecycle_schedule(
+            peak_value=lr,
+            transition_steps=total_steps,
+            pct_start=0.1,
         )
-
-    # # S4 uses a Fixed LR = 1e-3 with NO weight decay for the S4 Matrices, higher LR elsewhere
-    if "s4" in model_name or "dss" in model_name:
-        # Note for Debugging... this is all undocumented and so weird. The following links are helpful...
-        #
-        #   > Flax "Recommended" interplay w/ Optax (this bridge needs ironing):
-        #       https://github.com/google/flax/blob/main/docs/flip/1009-optimizer-api.md#multi-optimizer
-        #
-        #   > But... masking doesn't work like the above example suggests!
-        #       Root Explanation: https://github.com/deepmind/optax/issues/159
-        #       Fix: https://github.com/deepmind/optax/discussions/167
-        #
-        #   > Also... Flax FrozenDict doesn't play well with rest of Jax + Optax...
-        #       https://github.com/deepmind/optax/issues/160#issuecomment-896460796
-        #
-        #   > Solution: Use Optax.multi_transform!
-        s4_fn = map_nested_fn(
-            lambda k, _: "s4"
-            if k in ["B", "Ct", "D", "log_step", "W"]
-            else ("none" if k in [] else "regular")
-        )
-        tx = optax.multi_transform(
-            {
-                "none": optax.sgd(learning_rate=0.0),
-                "s4": optax.adam(learning_rate=1e-3),
-                "regular": optax.adamw(learning_rate=lr, weight_decay=0.01),
-            },
-            s4_fn,
-        )
-
     else:
-        tx = optax.adamw(learning_rate=lr, weight_decay=0.01)
+        schedule_fn = lambda lr: lr
+    # lr_layer is a dictionary from parameter name to LR multiplier
+    if lr_layer is None:
+        lr_layer = {}
+
+    optimizers = {
+        k: optax.adam(learning_rate=schedule_fn(v * lr))
+        for k, v in lr_layer.items()
+    }
+    # Add default optimizer
+    # Note: it would be better to use a dummy key such as None that can't conflict with parameter names,
+    # but this causes a hard-to-trace error; it seems that the transforms keys list is being sorted inside optax.multi_transform
+    # which causes an error since None can't be compared to str
+    optimizers["__default__"] = optax.adamw(
+        learning_rate=schedule_fn(lr),
+        weight_decay=weight_decay,
+    )
+    name_map = map_nested_fn(lambda k, _: k if k in lr_layer else "__default__")
+    tx = optax.multi_transform(optimizers, name_map)
+    # For debugging, this would be the default transform with no scheduler or special params
+    # tx = optax.adamw(learning_rate=lr, weight_decay=0.01)
+
+    # Check that all special parameter names are actually parameters
+    extra_keys = set(lr_layer.keys()) - set(jax.tree_leaves(name_map(params)))
+    assert (
+        len(extra_keys) == 0
+    ), f"Special params {extra_keys} do not correspond to actual params"
+
+    # Print parameter count
+    _is_complex = lambda x: x.dtype in [np.complex64, np.complex128]
+    param_sizes = map_nested_fn(
+        lambda k, param: param.size * (2 if _is_complex(param) else 1)
+        if lr_layer.get(k, lr) > 0.0
+        else 0
+    )(params)
+    print(f"[*] Trainable Parameters: {sum(jax.tree_leaves(param_sizes))}")
+    print(f"[*] Total training steps: {total_steps}")
 
     return train_state.TrainState.create(
         apply_fn=model.apply, params=params, tx=tx
@@ -130,12 +152,12 @@ def create_train_state(
 def train_epoch(state, rng, model, trainloader, classification=False):
     # Store Metrics
     model = model(training=True)
-    batch_losses = []
+    batch_losses, batch_accuracies = [], []
     for batch_idx, (inputs, labels) in enumerate(tqdm(trainloader)):
         inputs = np.array(inputs.numpy())
         labels = np.array(labels.numpy())  # Not the most efficient...
         rng, drop_rng = jax.random.split(rng)
-        state, loss = train_step(
+        state, loss, acc = train_step(
             state,
             drop_rng,
             inputs,
@@ -144,9 +166,14 @@ def train_epoch(state, rng, model, trainloader, classification=False):
             classification=classification,
         )
         batch_losses.append(loss)
+        batch_accuracies.append(acc)
 
     # Return average loss over batches
-    return state, np.mean(np.array(batch_losses))
+    return (
+        state,
+        np.mean(np.array(batch_losses)),
+        np.mean(np.array(batch_accuracies)),
+    )
 
 
 def validate(params, model, testloader, classification=False):
@@ -201,6 +228,7 @@ def train_step(
                 mutable=["intermediates"],
             )
             loss = np.mean(cross_entropy_loss(logits, batch_labels))
+            acc = np.mean(compute_accuracy(logits, batch_labels))
         else:
             logits, mod_vars = model.apply(
                 {"params": params},
@@ -209,12 +237,13 @@ def train_step(
                 mutable=["intermediates"],
             )
             loss = np.mean(cross_entropy_loss(logits, batch_inputs[:, 1:, 0]))
-        return loss, logits
+            acc = np.mean(compute_accuracy(logits, batch_inputs[:, 1:, 0]))
+        return loss, (logits, acc)
 
     grad_fn = jax.value_and_grad(loss_fn, has_aux=True)
-    (loss, logits), grads = grad_fn(state.params)
+    (loss, (logits, acc)), grads = grad_fn(state.params)
     state = state.apply_gradients(grads=grads)
-    return state, loss
+    return state, loss, acc
 
 
 @partial(jax.jit, static_argnums=(3, 4))
@@ -263,9 +292,10 @@ class LSTMRecurrentModel(nn.Module):
 Models = {
     "ff": FeedForwardModel,
     "lstm": LSTMRecurrentModel,
-    "ssm-naive": SSMInit,
-    "s4": S4LayerInit,
-    "dss": DSSLayerInit,
+    "ssm": SSMLayer,
+    "s4": S4Layer,
+    "dss": DSSLayer,
+    "s4d": S4DLayer,
 }
 
 
@@ -275,59 +305,60 @@ def example_train(
     d_model=128,
     bsz=128,
     epochs=10,
-    ssm_n=64,
+    d_state=64,
     lr=1e-3,
     lr_schedule=False,
+    weight_decay=0.0,
     n_layers=4,
     p_dropout=0.2,
     suffix=None,
-    use_wandb=True,
-    wandb_project="s4",
-    wandb_entity=None,
+    checkpoint=False,
 ):
     # Set randomness...
     print("[*] Setting Randomness...")
     key = jax.random.PRNGKey(0)
     key, rng, train_rng = jax.random.split(key, num=3)
 
-    if use_wandb:
-        wandb.init(project=wandb_project, entity=wandb_entity)
-
-    # Get model class and dataset creation function
-    create_dataset_fn = Datasets[dataset]
-    if model in ["ssm-naive", "s4", "dss"]:
-        model_cls = Models[model](N=ssm_n)
-    else:
-        model_cls = Models[model]
-
     # Check if classification dataset
     classification = "classification" in dataset
 
-    # Create dataset...
-    trainloader, testloader, n_classes, seq_len, in_dim = create_dataset_fn(
+    # Create dataset
+    create_dataset_fn = Datasets[dataset]
+    trainloader, testloader, n_classes, l_seq, d_input = create_dataset_fn(
         bsz=bsz
     )
+    l_max = l_seq if classification else l_seq - 1  # Max length that model sees
+    in_shape = (bsz, l_max, d_input)  # Input shape
+
+    # Get model class and arguments
+    model_cls = Models[model]
+    layer_args = {} if d_state is None else {"N": d_state}
+    layer_args["l_max"] = l_max
+
+    # Extract custom hyperparameters from model class
+    lr_layer = getattr(model_cls, "lr", None)
+
     print(f"[*] Starting `{model}` Training on `{dataset}` =>> Initializing...")
 
     model_cls = partial(
         BatchStackedModel,
         layer=model_cls,
+        layer_args=freeze(layer_args),
         d_model=d_model,
         d_output=n_classes,
         dropout=p_dropout,
         n_layers=n_layers,
-        l_max=seq_len if classification else seq_len - 1,
         classification=classification,
     )
+
     state = create_train_state(
-        model,
         model_cls,
         rng,
-        in_dim=in_dim,
-        bsz=bsz,
-        seq_len=seq_len if classification else seq_len - 1,
+        in_shape,
         lr=lr,
+        lr_layer=lr_layer,
         lr_schedule=lr_schedule,
+        weight_decay=weight_decay,
         total_steps=len(trainloader) * epochs,
     )
 
@@ -335,7 +366,7 @@ def example_train(
     best_loss, best_acc, best_epoch = 10000, 0, 0
     for epoch in range(epochs):
         print(f"[*] Starting Training Epoch {epoch + 1}...")
-        state, train_loss = train_epoch(
+        state, train_loss, train_acc = train_epoch(
             state,
             train_rng,
             model_cls,
@@ -350,27 +381,30 @@ def example_train(
 
         print(f"\n=>> Epoch {epoch + 1} Metrics ===")
         print(
-            f"\tTrain Loss: {train_loss:.5f} -- Test Loss: {test_loss:.5f} --"
-            f" Test Accuracy: {test_acc:.4f}"
+            f"\tTrain Loss: {train_loss:.5f} -- Train Accuracy:"
+            f" {train_acc:.4f}\n\tTest Loss: {test_loss:.5f} -- Test Accuracy:"
+            f" {test_acc:.4f}"
         )
 
         # Save a checkpoint each epoch & handle best (test loss... not "copacetic" but ehh)
-        suf = f"-{suffix}" if suffix is not None else ""
-        run_id = f"checkpoints/{dataset}/{model}-d_model={d_model}-lr={lr}-bsz={bsz}{suf}"
+        if checkpoint:
+            suf = f"-{suffix}" if suffix is not None else ""
+            run_id = f"checkpoints/{dataset}/{model}-d_model={d_model}-lr={lr}-bsz={bsz}{suf}"
+            ckpt_path = checkpoints.save_checkpoint(
+                run_id,
+                state,
+                epoch,
+                keep=epochs,
+            )
 
-        ckpt_path = checkpoints.save_checkpoint(
-            run_id,
-            state,
-            epoch,
-            keep=epochs,
-        )
         if (classification and test_acc > best_acc) or (
             not classification and test_loss < best_loss
         ):
             # Create new "best-{step}.ckpt and remove old one
-            shutil.copy(ckpt_path, f"{run_id}/best_{epoch}")
-            if os.path.exists(f"{run_id}/best_{best_epoch}"):
-                os.remove(f"{run_id}/best_{best_epoch}")
+            if checkpoint:
+                shutil.copy(ckpt_path, f"{run_id}/best_{epoch}")
+                if os.path.exists(f"{run_id}/best_{best_epoch}"):
+                    os.remove(f"{run_id}/best_{best_epoch}")
 
             best_loss, best_acc, best_epoch = test_loss, test_acc, epoch
 
@@ -380,12 +414,13 @@ def example_train(
             f" {best_acc:.4f} at Epoch {best_epoch + 1}\n"
         )
 
-        if use_wandb:
+        if wandb is not None:
             wandb.log(
                 {
-                    "Training Loss": train_loss,
-                    "Test Loss": test_loss,
-                    "Test Accuracy": test_acc,
+                    "train/loss": train_loss,
+                    "train/accuracy": train_acc,
+                    "test/loss": test_loss,
+                    "test/accuracy": test_acc,
                 }
             )
             wandb.run.summary["Best Test Loss"] = best_loss
@@ -413,17 +448,16 @@ if __name__ == "__main__":
     parser.add_argument("--p_dropout", type=float, default=0.2)
 
     # S4 Specific Parameters
-    parser.add_argument("--ssm_n", type=int, default=64)
+    parser.add_argument("--d_state", type=int, default=64)
 
     # Optimization Parameters
     parser.add_argument("--lr", type=float, default=1e-3)
     parser.add_argument("--lr_schedule", default=False, action="store_true")
+    parser.add_argument("--weight_decay", default=0.01, action="store_true")
 
     # Weights and Biases Parameters
     parser.add_argument(
-        "--use_wandb",
-        default=False,
-        type=bool,
+        "--wandb", action="store_true",
         help="Whether to use W&B for metric logging",
     )
     parser.add_argument(
@@ -439,7 +473,15 @@ if __name__ == "__main__":
         help="entity to use for W&B logging",
     )
 
+    parser.add_argument("--checkpoint", action="store_true")
+
     args = parser.parse_args()
+
+    if args.wandb:
+        wandb.init(project=args.wandb_project, entity=args.wandb_entity)
+    else:
+        wandb = None
+
 
     example_train(
         args.model,
@@ -447,13 +489,12 @@ if __name__ == "__main__":
         epochs=args.epochs,
         d_model=args.d_model,
         bsz=args.bsz,
-        ssm_n=args.ssm_n,
+        d_state=args.d_state,
         lr=args.lr,
         lr_schedule=args.lr_schedule,
+        weight_decay=args.weight_decay,
         n_layers=args.n_layers,
         p_dropout=args.p_dropout,
         suffix=args.suffix,
-        use_wandb=args.use_wandb,
-        wandb_project=args.wandb_project,
-        wandb_entity=args.wandb_entity,
+        checkpoint=args.checkpoint,
     )
