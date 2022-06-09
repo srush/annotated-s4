@@ -543,7 +543,8 @@ class StackedModel(nn.Module):
     d_output: int
     d_model: int
     n_layers: int
-    dropout: float = 0.2
+    prenorm: bool = True
+    dropout: float = 0.0
     training: bool = True
     classification: bool = False
     decode: bool = False  # Probably should be moved into layer_args
@@ -555,6 +556,7 @@ class StackedModel(nn.Module):
             SequenceBlock(
                 layer=self.layer,
                 layer_args=self.layer_args,
+                prenorm=self.prenorm,
                 d_model=self.d_model,
                 dropout=self.dropout,
                 training=self.training,

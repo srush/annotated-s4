@@ -303,6 +303,7 @@ def example_train(
     model,
     dataset,
     d_model=128,
+    prenorm=True,
     bsz=128,
     epochs=10,
     d_state=64,
@@ -348,6 +349,7 @@ def example_train(
         BatchStackedModel,
         layer=model_cls,
         layer_args=freeze(layer_args),
+        prenorm=prenorm,
         d_model=d_model,
         d_output=n_classes,
         dropout=p_dropout,
@@ -450,6 +452,7 @@ if __name__ == "__main__":
     parser.add_argument("--d_model", type=int, default=128)
     parser.add_argument("--n_layers", type=int, default=4)
     parser.add_argument("--p_dropout", type=float, default=0.2)
+    parser.add_argument("--prenorm", action="store_true")
 
     # S4 Specific Parameters
     parser.add_argument("--d_state", type=int, default=64)
@@ -493,6 +496,7 @@ if __name__ == "__main__":
         args.dataset,
         epochs=args.epochs,
         d_model=args.d_model,
+        prenorm=args.prenorm,
         bsz=args.bsz,
         d_state=args.d_state,
         lr=args.lr,
