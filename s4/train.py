@@ -321,13 +321,10 @@ def example_train(
     trainloader, testloader, n_classes, l_max, d_input = create_dataset_fn(
         bsz=train.bsz
     )
-    # l_max = l_seq if classification else l_seq - 1  # Max length that model sees
     in_shape = (train.bsz, l_max, d_input)  # Input shape
 
     # Get model class and arguments
     layer_cls = Models[layer]
-    # layer_args = {} if model.d_state is None else {"N": model.d_state}
-    # layer_args["l_max"] = l_max
     model.layer.l_max = l_max
 
     # Extract custom hyperparameters from model class
@@ -338,7 +335,6 @@ def example_train(
     model_cls = partial(
         BatchStackedModel,
         layer_cls=layer_cls,
-        # layer_args=freeze(layer_args),
         d_output=n_classes,
         classification=classification,
         **model,
