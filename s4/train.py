@@ -308,6 +308,7 @@ def example_train(
     model : DictConfig,
     train : DictConfig,
     wandb : Optional[DictConfig],
+    seed : int,
 ):
     # Warnings and sanity checks
     if not train.checkpoint:
@@ -320,7 +321,8 @@ def example_train(
 
     # Set randomness...
     print("[*] Setting Randomness...")
-    key = jax.random.PRNGKey(0)
+    torch.random.manual_seed(seed) # For dataloader order
+    key = jax.random.PRNGKey(seed)
     key, rng, train_rng = jax.random.split(key, num=3)
 
     # Check if classification dataset
