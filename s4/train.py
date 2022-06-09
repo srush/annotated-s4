@@ -232,25 +232,6 @@ def train_step(
         )
         loss = np.mean(cross_entropy_loss(logits, batch_labels))
         acc = np.mean(compute_accuracy(logits, batch_labels))
-        # else:
-        # if classification:
-        #     logits, mod_vars = model.apply(
-        #         {"params": params},
-        #         batch_inputs,
-        #         rngs={"dropout": rng},
-        #         mutable=["intermediates"],
-        #     )
-        #     loss = np.mean(cross_entropy_loss(logits, batch_labels))
-        #     acc = np.mean(compute_accuracy(logits, batch_labels))
-        # else:
-        #     logits, mod_vars = model.apply(
-        #         {"params": params},
-        #         batch_inputs[:, :-1],
-        #         rngs={"dropout": rng},
-        #         mutable=["intermediates"],
-        #     )
-        #     loss = np.mean(cross_entropy_loss(logits, batch_inputs[:, 1:, 0]))
-        #     acc = np.mean(compute_accuracy(logits, batch_inputs[:, 1:, 0]))
         return loss, (logits, acc)
 
     if not classification:
@@ -269,14 +250,6 @@ def eval_step(batch_inputs, batch_labels, params, model, classification=False):
     logits = model.apply({"params": params}, batch_inputs)
     loss = np.mean(cross_entropy_loss(logits, batch_labels))
     acc = np.mean(compute_accuracy(logits, batch_labels))
-    # if classification:
-    #     logits = model.apply({"params": params}, batch_inputs)
-    #     loss = np.mean(cross_entropy_loss(logits, batch_labels))
-    #     acc = np.mean(compute_accuracy(logits, batch_labels))
-    # else:
-    #     logits = model.apply({"params": params}, batch_inputs[:, :-1])
-    #     loss = np.mean(cross_entropy_loss(logits, batch_inputs[:, 1:, 0]))
-    #     acc = np.mean(compute_accuracy(logits, batch_inputs[:, 1:, 0]))
     return loss, acc
 
 
