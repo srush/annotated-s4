@@ -314,6 +314,10 @@ def example_train(
     suffix=None,
     checkpoint=False,
 ):
+    # Warnings and sanity checks
+    if not checkpoint:
+        print("[*] Warning: not checkpointing models")
+
     # Set randomness...
     print("[*] Setting Randomness...")
     key = jax.random.PRNGKey(0)
@@ -478,6 +482,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     if args.wandb:
+        assert wandb is not None, "wandb is not installed"
         wandb.init(project=args.wandb_project, entity=args.wandb_entity)
     else:
         wandb = None
