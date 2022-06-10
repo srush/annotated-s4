@@ -547,15 +547,17 @@ class StackedModel(nn.Module):
     dropout: float = 0.0
     training: bool = True
     classification: bool = False
+    embedding: bool = False
     decode: bool = False  # Probably should be moved into layer_args
 
     def setup(self):
         if self.classification:
             self.encoder = nn.Dense(self.d_model)
         else:
-            self.encoder = nn.Dense(self.d_model)
-            # self.encoder = nn.Embed(self.d_output+1, self.d_model)
-            
+            if self.embedding:
+                self.encoder = nn.Embed(self.d_output+1, self.d_model)
+            else:
+                self.encoder = nn.Dense(self.d_model)
         self.decoder = nn.Dense(self.d_output)
         self.layers = [
             SequenceBlock(
@@ -574,10 +576,10 @@ class StackedModel(nn.Module):
         print(x.shape)
         print(self.encoder)
         if not self.classification and not self.decode:
-            # x = np.pad(x[:-1, 0], (1, 0), constant_values=self.d_output)
-            x = np.pad(x[:-1], (1, 0))
-        if self.decode:
-            x = np.pad(x[:], [(0, 0), (1, 0)])
+            if self.embedding:
+                x = np.pad(x[:-1, 0], (1, 0), constant_values=self.d_output)
+            else:
+                x = np.pad(x[:-1], [(1, 0), (0, 0)], constant_values=self.d_output)
         print(x.shape)
         x = self.encoder(x)
         for layer in self.layers:
@@ -1476,7 +1478,7 @@ def sample_mnist_prefix(path, model, length, rng, prefix=300, bsz=32, n_batches=
             ax2.axis("off")
             ax2.imshow(final2[k] / 256.0)
             fig.savefig("im%d.%d.png" % (j, k))
-            fig.close()
+            plt.close()
             print(f"Sampled batch {j} image {k}")
     return final2
 
