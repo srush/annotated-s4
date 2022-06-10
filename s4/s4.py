@@ -1423,7 +1423,16 @@ def sample_checkpoint(path, model, length, rng):
 # <img src="images/im0.8.png" width="45%">
 
 
-def sample_mnist_prefix(path, model, length, rng, prefix=300, bsz=32, n_batches=None):
+def sample_mnist_prefix(
+    path,
+    model,
+    length,
+    rng,
+    prefix=300,
+    bsz=32,
+    n_batches=None,
+    verbose=True,
+):
     import matplotlib.pyplot as plt
     import numpy as onp
     from .data import Datasets
@@ -1479,7 +1488,8 @@ def sample_mnist_prefix(path, model, length, rng, prefix=300, bsz=32, n_batches=
             ax2.imshow(final2[k] / 256.0)
             fig.savefig("im%d.%d.png" % (j, k))
             plt.close()
-            print(f"Sampled batch {j} image {k}")
+            if verbose:
+                print(f"Sampled batch {j} image {k}")
     return final2
 
 

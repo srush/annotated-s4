@@ -400,7 +400,12 @@ def example_train(
                     classification=classification,
                     **model,
                 )
-                samples, examples = sample_fn(run_id, model_cls(decode=True, training=False), rng=rng)
+                samples, examples = sample_fn(
+                    run_id,
+                    model_cls(decode=True, training=False),
+                    rng=rng, n_batches=1,
+                    verbose=False,
+                )
                 if wandb is not None:
                     samples = [wandb.Image(sample) for sample in samples]
                     wandb.log({"samples": samples}, commit=False)
