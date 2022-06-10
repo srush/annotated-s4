@@ -576,10 +576,9 @@ class StackedModel(nn.Module):
         print(x.shape)
         print(self.encoder)
         if not self.classification and not self.decode:
+            x = np.pad(x[:-1], [(1, 0), (0, 0)], constant_values=self.d_output)
             if self.embedding:
                 x = np.pad(x[:-1, 0], (1, 0), constant_values=self.d_output)
-            else:
-                x = np.pad(x[:-1], [(1, 0), (0, 0)], constant_values=self.d_output)
         print(x.shape)
         x = self.encoder(x)
         for layer in self.layers:
@@ -1490,7 +1489,7 @@ def sample_mnist_prefix(
             plt.close()
             if verbose:
                 print(f"Sampled batch {j} image {k}")
-    return final2
+    return final, final2
 
 
 # ### Experiments: QuickDraw
