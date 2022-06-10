@@ -553,8 +553,9 @@ class StackedModel(nn.Module):
         if self.classification:
             self.encoder = nn.Dense(self.d_model)
         else:
-            self.encoder = nn.Embed(self.d_output+1, self.d_model)
-
+            self.encoder = nn.Dense(self.d_model)
+            # self.encoder = nn.Embed(self.d_output+1, self.d_model)
+            
         self.decoder = nn.Dense(self.d_output)
         self.layers = [
             SequenceBlock(
@@ -570,8 +571,14 @@ class StackedModel(nn.Module):
         ]
 
     def __call__(self, x):
+        print(x.shape)
+        print(self.encoder)
         if not self.classification and not self.decode:
-            x = np.pad(x[:-1, 0], (1, 0), constant_values=self.d_output)
+            # x = np.pad(x[:-1, 0], (1, 0), constant_values=self.d_output)
+            x = np.pad(x[:-1], (1, 0))
+        if self.decode:
+            x = np.pad(x[:], [(0, 0), (1, 0)])
+        print(x.shape)
         x = self.encoder(x)
         for layer in self.layers:
             x = layer(x)
@@ -1332,7 +1339,7 @@ def sample(model, params, prime, cache, x, start, end, rng):
 
         def update(x, out):
             p = jax.random.categorical(r, out[0])
-            x = x.at[i + 1].set(p)
+            x = x.at[i + 1, 0].set(p)
             return x
 
         x = jax.vmap(update)(x, out)
@@ -1368,7 +1375,9 @@ def init_from_checkpoint(model, checkpoint, init_x, rng):
 
 
 def sample_checkpoint(path, model, length, rng):
-    start = np.zeros((1, length), dtype=int)
+    # start = np.zeros((1, length), dtype=int)
+    start = np.zeros((1, length, 1), dtype=int)
+
     print("[*] Initializing from checkpoint %s" % path)
     params, prime, cache = init_from_checkpoint(model, path, start[:, :-1], rng)
     print("[*] Sampling output")
@@ -1419,14 +1428,15 @@ def sample_mnist_prefix(path, model, length, rng):
 
     BATCH = 32
     START = 300
-    start = np.zeros((BATCH, length), dtype=int)
+    # start = np.zeros((BATCH, length), dtype=int)
+    start = np.zeros((BATCH, length, 1))
     params, prime, init_cache = init_from_checkpoint(model, path, start[:, :-1], rng)
 
     _, testloader, _, _, _ = Datasets["mnist"](bsz=BATCH)
     it = iter(testloader)
     for j, im in enumerate(it):
         image = im[0].numpy()
-        image = np.pad(image[:, :-1, 0], [(0, 0), (1, 0)], constant_values=256)
+        image = np.pad(image[:, :-1, :], [(0, 0), (1, 0), (0, 0)], constant_values=256)
         cur = onp.array(image)
         # cur[:, START + 1 :, 0] = 0
         # cur = np.pad(cur[:, :-1, 0], [(0, 0), (1, 0)], constant_values=256)
