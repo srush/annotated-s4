@@ -678,14 +678,16 @@ S4DLayer = cloneLayer(S4DLayer)
 # </center>
 
 
-# Finally, what happens with other DPLR matrices? A follow-up theoretical paper to S4 and HiPPO derived other variants, for example a new SSM $(\bm{A}, \bm{B})$ that produces **truncated Fourier** basis functions (*Left*). This is particularly useful as a way to generalize standard local convolutions, since the basis goes to $0$ after finite time.
+# Finally, what happens with other DPLR matrices? A follow-up theoretical paper to S4 and HiPPO derived other variants, for example a new SSM $(\bm{A}, \bm{B})$ that produces **truncated Fourier** basis functions (*Left*). This is particularly useful as a way to generalize standard CNNs, since the basis kernels are local.
 # This matrix $\bm{A}$ can also be written in DPLR form, so it can be computed efficiently with S4 (a variant called S4-FouT).
-# But the same trick of dropping the low-rank term produces basis functions that are qualitatively quite different - oscillating infinitely instead of defined locally (*Right*) - and performs quite poorly empirically!
+# But the same trick of dropping the low-rank term produces basis functions that are qualitatively quite different - oscillating infinitely instead of being truncated (*Right*) - and performs quite poorly empirically!
 
 # <center>
 # <img src="images/basis_fout_1024.png" width="48%"/>
 # <img src="images/basis_fout_norank.png" width="48%"/>
 # </center>
+
+# It's worth repeating: the particular HiPPO variant that S4 uses, and the fact that a particular low-rank correct makes it normal/diagonal while preserving the same basis, is *really* special!
 
 # ### Other Diagonal Initializations
 
