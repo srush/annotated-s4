@@ -1421,12 +1421,12 @@ def sample_checkpoint(path, model, length, rng):
 # <img src="images/im0.8.png" width="45%">
 
 
-def sample_mnist_prefix(path, model, length, rng):
+def sample_mnist_prefix(path, model, length, rng, bsz=32, n_batches=None):
     import matplotlib.pyplot as plt
     import numpy as onp
     from .data import Datasets
 
-    BATCH = 32
+    BATCH = bsz
     START = 300
     # start = np.zeros((BATCH, length), dtype=int)
     start = np.zeros((BATCH, length, 1))
@@ -1435,6 +1435,9 @@ def sample_mnist_prefix(path, model, length, rng):
     _, testloader, _, _, _ = Datasets["mnist"](bsz=BATCH)
     it = iter(testloader)
     for j, im in enumerate(it):
+        if n_batches is not None and j >= n_batches:
+            break
+
         image = im[0].numpy()
         image = np.pad(image[:, :-1, :], [(0, 0), (1, 0), (0, 0)], constant_values=256)
         cur = onp.array(image)
@@ -1473,7 +1476,9 @@ def sample_mnist_prefix(path, model, length, rng):
             ax2.axis("off")
             ax2.imshow(final2[k] / 256.0)
             fig.savefig("im%d.%d.png" % (j, k))
-            print(j)
+            fig.close()
+            print(f"Sampled batch {j} image {k}")
+    return final2
 
 
 # ### Experiments: QuickDraw

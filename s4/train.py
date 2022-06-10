@@ -15,6 +15,7 @@ from .data import Datasets
 from .dss import DSSLayer
 from .s4 import BatchStackedModel, S4Layer, SSMLayer
 from .s4d import S4DLayer
+from .s4 import sample_mnist_prefix
 
 
 try:
@@ -386,6 +387,21 @@ def example_train(
                 keep=train.epochs,
             )
 
+            # HACK Sample MNIST
+            model_cls = partial(
+                BatchStackedModel,
+                layer_cls=layer_cls,
+                d_output=n_classes,
+                classification=classification,
+                **model,
+            )
+            samples, examples = sample_mnist_prefix(run_id, model_cls(decode=True, training=False), 784, rng)
+            if wandb is not None:
+                samples = [wandb.Image(sample) for sample in samples]
+                wandb.log({"samples": samples}, commit=False)
+                examples = [wandb.Image(example) for example in examples]
+                wandb.log({"examples": examples}, commit=False)
+
         if (classification and test_acc > best_acc) or (
             not classification and test_loss < best_loss
         ):
@@ -410,7 +426,8 @@ def example_train(
                     "train/accuracy": train_acc,
                     "test/loss": test_loss,
                     "test/accuracy": test_acc,
-                }
+                },
+                step=epoch,
             )
             wandb.run.summary["Best Test Loss"] = best_loss
             wandb.run.summary["Best Test Accuracy"] = best_acc
