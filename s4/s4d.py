@@ -303,6 +303,7 @@ def s4d_ssm(C, A, L, step):
     Abar = np.diag(Abar)
     Bbar = Bbar.reshape(N, 1)
     Cbar = C.reshape(1, N)
+    print(Abar.shape, Bbar.shape, Cbar.shape)
     return Abar, Bbar, Cbar
 
 

@@ -569,7 +569,7 @@ class StackedModel(nn.Module):
         ]
 
     def __call__(self, x):
-        if not self.classification:
+        if not self.classification and not self.decode:
             x = np.pad(x[:-1, 0], (1, 0), constant_values=self.d_output)
         x = self.encoder(x)
         for layer in self.layers:
@@ -1331,7 +1331,7 @@ def sample(model, params, prime, cache, x, start, end, rng):
 
         def update(x, out):
             p = jax.random.categorical(r, out[0])
-            x = x.at[i + 1, 0].set(p)
+            x = x.at[i + 1].set(p)
             return x
 
         x = jax.vmap(update)(x, out)
@@ -1345,7 +1345,7 @@ def sample(model, params, prime, cache, x, start, end, rng):
 # "prime" collection of variables.
 
 
-def init_from_checkpoint(model, checkpoint, init_x):
+def init_from_checkpoint(model, checkpoint, init_x, rng):
     from flax.training import checkpoints
 
     print("[*] Loading")
@@ -1366,10 +1366,10 @@ def init_from_checkpoint(model, checkpoint, init_x):
 # Putting this altogether we can sample from a model directly.
 
 
-def sample_checkpoint(path, model, length):
-    start = np.zeros((1, length, 1))
+def sample_checkpoint(path, model, length, rng):
+    start = np.zeros((1, length), dtype=int)
     print("[*] Initializing from checkpoint %s" % path)
-    params, prime, cache = init_from_checkpoint(model, path, start[:, :-1])
+    params, prime, cache = init_from_checkpoint(model, path, start[:, :-1], rng)
     print("[*] Sampling output")
     return sample(model, params, prime, cache, start, 0, length - 1, rng)
 
@@ -1411,15 +1411,15 @@ def sample_checkpoint(path, model, length):
 # <img src="images/im0.8.png" width="45%">
 
 
-def sample_mnist_prefix(path, model, length):
+def sample_mnist_prefix(path, model, length, rng):
     import matplotlib.pyplot as plt
     import numpy as onp
     from .data import Datasets
 
     BATCH = 32
     START = 300
-    start = np.zeros((BATCH, length, 1))
-    params, prime, init_cache = init_from_checkpoint(model, path, start[:, :-1])
+    start = np.zeros((BATCH, length), dtype=int)
+    params, prime, init_cache = init_from_checkpoint(model, path, start[:, :-1], rng)
 
     _, testloader, _, _, _ = Datasets["mnist"](bsz=BATCH)
     it = iter(testloader)
@@ -1428,7 +1428,8 @@ def sample_mnist_prefix(path, model, length):
 
         cur = onp.array(image)
         cur[:, START + 1 :, 0] = 0
-        cur = np.array(cur)
+        cur = np.pad(cur[:, :-1, 0], [(0, 0), (0, 1)], constant_values=256)
+        cur = np.array(cur[:, :])
 
         # Cache the first `start` inputs.
         out, vars = model.apply(
@@ -1438,7 +1439,6 @@ def sample_mnist_prefix(path, model, length):
         )
         cache = vars["cache"].unfreeze()
         out = sample(model, params, prime, cache, cur, START, length - 1, rng)
-        print(j)
 
         # Visualization
         out = out.reshape(BATCH, 28, 28)

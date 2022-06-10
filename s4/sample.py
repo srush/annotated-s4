@@ -6,28 +6,36 @@ import numpy as onp
 import seaborn
 from flax.training import checkpoints
 from .data import Datasets
-from .s4 import S4LayerInit
-from .train import BatchSeqModel
+from .s4 import S4Layer
+from .s4d import S4DLayer
+from .train import BatchStackedModel
 
 
 seaborn.set_context("paper")
 
 if __name__ == "__main__":
+    layer_args = {}
+    layer_args["N"] = 64
+    layer_args["l_max"] = 784
 
-    model = S4LayerInit(N=64)
+    model = S4DLayer
     model = partial(
-        BatchSeqModel,
-        layer=model,
+        BatchStackedModel,
+        layer_cls=model,
+        layer=layer_args,
         d_output=256,
         d_model=512,
         n_layers=6,
-        l_max=783,
+        prenorm=True,
+        classification=False,
+        decode=True
     )
 
     rng = jax.random.PRNGKey(0)
     state = checkpoints.restore_checkpoint(
-        "checkpoints/mnist/s4-d_model=512/best_90", None
+        "checkpoints/mnist/{'d_model': 512, 'n_layers': 6, 'dropout': 0.0, 'prenorm': True, 'layer': {'N': 64, 'l_max': 784}}-d_model=512-lr=0.005-bsz=32", None
     )
+    
     _, testloader, _, _, _ = Datasets["mnist"](bsz=1)
     # print(validate(state["params"], model, testloader, classification=False))
     model = model(training=False)
