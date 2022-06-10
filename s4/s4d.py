@@ -1,6 +1,7 @@
 # <center>
 # <h1>
-# The Annotated S4D
+# The Annotated DSS / S4D:  
+# Diagonal State Space Models
 # </h1>
 # </center>
 
@@ -29,16 +30,16 @@
 
 # Yet, S4 has an intricate algorithm that requires a complicated implementation for **diagonal plus low rank** (DPLR) state space models (SSM).
 # To motivate this representation, S4 considered the case of **diagonal** state matrices,
-# and outlined an extremely simple algorithm that can be implemented in just a few lines.
+# and outlined a simple method that can be implemented in just a few lines.
 # However, this was not used because no diagonal SSMs were known that could mathematically model long-range dependencies - S4's ultimate goal.
 # Instead, S4 used a class of special matrices that could not be diagonalized, but found a way to transform them into *almost diagonal* form,
 # leading to the more general DPLR representation.
 
 # However, at the end of March 2022 - an effective diagonal model was discovered in [[Diagonal State Spaces are as Effective as Structured State Spaces](https://arxiv.org/abs/2203.14343)] based on approximating S4's matrix (DSS).
-# This important observation allows diagonal SSMs to be used while preserving the empirical strengths of S4!
+# This important observation allowed diagonal SSMs to be used while preserving the empirical strengths of S4!
 # Diagonal SSMs were further fleshed out in [[On the Parameterization and Initialization of Diagonal State Space Models](https://TODO)],
-# which implemented S4's original diagonal algorithm combined with new theory explaining why this particular diagonal initialization can model long-range dependencies (S4D).
-# The rest of this post steps through this much simpler model, an *even more structured* state space.
+# which used an even simpler method based on S4's original outline, combined with new theory explaining why DSS's diagonal initialization can model long-range dependencies (S4D).
+# The rest of this post steps through the incredibly simple model and theoretical intuition of S4D, an *even more structured* state space.
 #
 # This post aims to be **a complete standalone for Section 2** of the original Annotated S4 post.
 # We'll still be using Jax with the Flax NN Library for consistency with the original post, and PyTorch versions of [DSS](https://github.com/ag1988/dss) and [S4D](https://github.com/HazyResearch/state-spaces) models are publically available.
@@ -66,9 +67,10 @@ if __name__ == '__main__':
 # <nav id="TOC">
 # * [Part I. A Refresher on State Space Models]
 # * [Part II. Diagonal State Space Models]
-#     - [The Diagonal SSM Algorithm: Vandermonde Matrix Multiplication]
+#     - [The Diagonal SSM Kernel: Vandermonde Matrix Multiplication]
 #     - [Implementing the S4D Kernel]
-#     - [Comparing SSM Parameterizations]
+#     - [Comparing SSM Parameterizations and Efficiency]
+#     - [Computational Complexities]
 #     - [The Complete S4D Layer]
 # * [Part IIIa. The Central Challenge: Initialization]
 #     - [A Brief Refresher on S4 and HiPPO]
@@ -197,11 +199,15 @@ if __name__ == '__main__':
 # Note that Lemma 1 provides an immediately implies the expressivity of diagonal SSMs.
 # To spell it out: suppose we have a state space with parameters $(\boldsymbol{A}, \boldsymbol{B}, \boldsymbol{C})$ where the matrix $\boldsymbol{A}$ is diagonalizable - in other words, there exists a matrix $\boldsymbol{V}$ such that $\boldsymbol{V}^{-1}\boldsymbol{A}\boldsymbol{V}$ is diagonal.
 # Then the state space $(\boldsymbol{V}^{-1} \boldsymbol{A} \boldsymbol{V}, \boldsymbol{V}^{-1}\boldsymbol{B}, \boldsymbol{C}\boldsymbol{V})$ is a diagonal SSM that is *exactly equivalent*, or in other words defines the exact same sequence-to-sequence transformation $u \mapsto y$!
-# ^[This shows the equivalence of the *continuous* SSMs. The equivalence of their discretizations follows immediately because the *discrete* SSM (viewed as the map $u_k \mapsto y_k$) depends only on the step size $\Delta$ and the continuous SSM ($u(t) \mapsto y(t)$). A more complicated version of this expressivity result is presented as Proposition 1 of the DSS paper, which focuses on the discrete case.]
 
-# Furthermore, it's well known that [almost all matrices are diagonalizable](https://chiasme.wordpress.com/2013/09/03/almost-all-matrices-are-diagonalizable/), so that diagonal SSMs are essentially fully expressive (with a caveat that we'll talk about in Part III).
+# Furthermore, it's well known that [almost all square matrices are diagonalizable](https://chiasme.wordpress.com/2013/09/03/almost-all-matrices-are-diagonalizable/), so that diagonal SSMs are essentially fully expressive (with a caveat that we'll talk about in Part III).
 
-# ### The Diagonal SSM Algorithm: Vandermonde Matrix Multiplication
+# **Remark.** Note that Lemma 1 is about equivalence of *continuous* SSMs. The equivalence of their discretizations follows immediately because the *discrete* SSM (viewed as the map $u_k \mapsto y_k$) depends only on the step size $\Delta$ and the continuous SSM (as the map $u(t) \mapsto y(t)$). A longer version of this expressivity result is presented as Proposition 1 of the DSS paper, which focuses on the discrete case.]
+
+#
+# [**AG:** Not sure if the above remark is useful or just distracting]
+
+# ### The Diagonal SSM Kernel: Vandermonde Matrix Multiplication
 
 # So what's the computational advantage of diagonal SSMs? S4 outlined the main idea:
 
@@ -209,10 +215,13 @@ if __name__ == '__main__':
 # > For example, if $\bm{A}$ were diagonal, the resulting computations become much more tractable.
 # > In particular, the desired $\bm{\overline{K}}$ would be a **Vandermonde product** which theoretically only needs $O((N+L)\log^2(N+L))$ arithmetic operations.
 
-# Let's elaborate on this in more detail.
+# Let's elaborate.
 # The key idea is that when $\boldsymbol{\overline{A}}$ is diagonal, the matrix power can be broken into a collection of *scalar* powers,
 # dramatically simplifying the structure of the kernel $\boldsymbol{\overline{K}}$.
-# In particular, the $\ell$-th element of the convolution kernel is
+
+# Notationally, recall that $\boldsymbol{\overline{A}} \in \mathbb{C}^{N \times N}, \boldsymbol{\overline{B}} \in \mathbb{C}^{N \times 1}, \boldsymbol{C} \in \mathbb{C}^{1 \times N}$. When $\boldsymbol{\overline{A}}$ is diagonal, we'll slightly overload notation to let $\boldsymbol{\overline{A}}_i, \boldsymbol{\overline{B}}_i, \boldsymbol{C}_i$ denote their scalar entries for simplicity.
+
+# So the $\ell$-th element of the convolution kernel is (a scalar)
 # $$
 # \boldsymbol{\overline{K}}_\ell = \boldsymbol{C}\boldsymbol{\overline{A}}^\ell\boldsymbol{\overline{B}} = \sum_{n=0}^{N-1} \boldsymbol{C}_n \boldsymbol{\overline{A}}_n^\ell \boldsymbol{\overline{B}}_n
 # $$
@@ -237,13 +246,20 @@ if __name__ == '__main__':
 
 
 # More importantly, writing the kernel in this form immediately exposes the computational complexity!
-# Naively, materializing the matrix requires $O(NL)$ space and the multiplication takes $O(NL)$ time.
+# Naively, materializing the $N \times L$ matrix requires $O(NL)$ space and the multiplication takes $O(NL)$ time.
 # But Vandermonde matrices are very well-studied, and it's known that they can be multiplied in $\widetilde{O}(N+L)$ operations and $O(N+L)$ space,
-# providing an asymptotic efficiency improvement.
+# providing a theoretical asymptotic efficiency improvement.
 
-# We make note of a small implementation detail: from the above formula, diagonal SSMs depends only on the elementwise product $\boldsymbol{C} \circ \boldsymbol{B}$.
+# In practice, our implementation below will use the naive $O(NL)$ summation but leverage the structure of the Vandermonde matrix to avoid materializing it, reducing the space complexity to $O(N+L)$.
+#  The main idea is that the Vandermonde matrix has a simple formula in terms of its parameters $\boldsymbol{A}$, so its entries can be computed on demand instead of all in advance. For example, computing each $\boldsymbol{\overline{K}}_\ell$ one by one, materializing one column of the matrix at a time, would be much more memory efficient. In JAX, this can be automatically handled by JIT and XLA compilation.
+# This is a nice sweet spot that's simple to implement, memory efficient, and quite fast on modern parallelizable hardware like GPUs and TPUs.
+# We'll comment more on the efficiency in [[Comparing SSM Parameterizations and Efficiency]].
+
+# We also make note of another small implementation detail: from the above formula, diagonal SSMs depends only on the elementwise product $\boldsymbol{C} \circ \boldsymbol{B}$.
 # So we can assume without loss of generality that $\boldsymbol{B} = \boldsymbol{1}$ and choose to either train it (as in S4(D)) or freeze it (as in DSS).
+# <!--
 # ^[Instead of the notation $\bm{B}$ and $\bm{C}$, DSS defines a $\bm{W}$ parameter which represents $\boldsymbol{C} \circ \boldsymbol{B}$. This is equivalent to setting $\bm{B} = \bm{1}$ and freezing it, while S4D chooses to train it in the style of the original S4.]
+# -->
 
 # ### Implementing the S4D Kernel
 
@@ -253,46 +269,39 @@ if __name__ == '__main__':
 
 def discretize(A, B, step, mode="zoh"):
     if mode == "bilinear":
-        num, denom = 1 + step/2 * A, 1 - step/2 * A
-        return num / denom , step * B / denom
+        num, denom = 1 + .5 * step*A, 1 - .5 * step*A
+        return num / denom, step * B / denom
     elif mode == "zoh":
         return np.exp(step*A), (np.exp(step*A)-1)/A * B
 
 # Here we show both the Bilinear method used in S4 and HiPPO, and the ZOH method used in other SSMs such as DSS and [LMU](https://papers.nips.cc/paper/2019/hash/952285b9b7e7a1be5aa7849f32ffff05-Abstract.html).
 # (As discussed in Part 1 of the Annotated S4 [AG: if we put more about discretization there], these are closely related and have no real empirical difference.)
 
-# The Vandermonde matrix multiplication is almost trivial to implement and can be applied to *any discretization* of a diagonal SSM.
+# As described in the original paper, the kernel in the diagonal case is just a single **Vandermonde matrix-vector product**. This is almost trivial to implement and can be applied to *any discretization* of a diagonal SSM.
 
-def vandermonde_kernel(v, L, alpha):
-    """
-    Computes v @ Vandermonde(alpha, L)
-    v, alpha: shape (N,)
-    Returns: shape (L,)
-    """
+def vandermonde_product(v, alpha, L):
     V = alpha[:, np.newaxis] ** np.arange(L)  # Vandermonde matrix
     return (v[np.newaxis, :] @ V)[0]
 
 
 def s4d_kernel(C, A, L, step):
     Abar, Bbar = discretize(A, 1.0, step)
-    return vandermonde_kernel(C * Bbar, L, Abar).real
+    return vandermonde_product(C * Bbar, Abar, L).real
 
 
-# Finally, this Vandermonde matrix multiply can be slightly optimized.
+# Finally, this kernel can be slightly optimized.
 # First, computing powers $\alpha^k$ explicitly can be slower than exponentiating $\exp(k \log(\alpha))$.
 # Second, in the case of ZOH discretization (which directly involves a matrix exponential), a $\log \circ \exp$ term can be removed, saving a pointwise operation.
-# Finally, materializing the full matrix is unnecessary and can be optimized away to save a lot of memory! In JAX, this can be automatically handled by JIT and XLA compilation.
+# Finally, as mentioned above, materializing the full matrix is unnecessary and can be optimized away to save a lot of memory! We simply write the kernel in a way that exposes the structure (via `vmap`) and let JAX and XLA handle the rest.
 
 
 @partial(jax.jit, static_argnums=2)
 def s4d_kernel_zoh(C, A, L, step):
-    """A version of the kernel specialized to B=1 and ZOH"""
     kernel_l = lambda l: (C * (np.exp(step*A)-1)/A * np.exp(l*step*A)).sum()
     return jax.vmap(kernel_l)(np.arange(L)).real
 
 
-# As the original S4 paper described, this kernel in the diagonal case is just a single **Vandermonde matrix-vector product**.
-# We emphasize that the above *2 lines of code* is a drop-in replacement for all the intricate machinery of the full S4 model!
+# We highlight that the above *2 lines of code* is a drop-in replacement for all the intricate machinery of the full S4 model!
 #
 # Just as with all SSMs, we can test that convolving by this kernel produces the same answer as the sequential scan.
 
@@ -333,10 +342,9 @@ def test_conversion(N=8, L=16):
 if __name__ == '__main__':
     test_conversion()
 
-# ### Comparing SSM Parameterizations
+# ### Comparing SSM Parameterizations and Efficiency
 
-# With all these different SSM methods floating around, let's quickly compare some versions of SSMs to understand their similarities and differences.
-# The different parameterizations are the full S4 (for DPLR matrices), S4D (the diagonal case of S4, presented above), and DSS (an alternate version of diagonal matrices).
+# With all these different SSM methods floating around, let's quickly compare some versions of SSMs to understand their similarities and differences, historical context, and computational complexities.
 
 # **S4.**
 # First, let's revisit once more the main point of S4's algorithm, which dramatically improved the efficiency of computing the SSM kernel for DPLR matrices.
@@ -347,20 +355,36 @@ if __name__ == '__main__':
 # > This results in $\widetilde{O}(N+L)$ computation and $O(N+L)$ memory usage, which is essentially tight for sequence models.
 
 # In other words, all of S4's complicated algorithm was to reduce the DPLR SSM kernel to a [Cauchy matrix](https://en.wikipedia.org/wiki/Cauchy_matrix) multiplication which is well-studied and fast.
+# In practice, an optimized naive algorithm with $O(NL)$ computation and $O(N+L)$ space is efficient enough.
+# This space reduction required a custom kernel in the original PyTorch version of S4.
+
+# **DSS.**
+# Although S4 outlined the diagonal case, it focused on the DPLR case for theoretical reasons we'll expand on in Part III.
+# DSS found that *truncating S4's matrix to be diagonal* was still empirically effective, and introduced a simple method to take advantage of diagonal SSMs.
+# Beyond the choice of diagonal vs DPLR, its parameterization differs from S4's in several ways.
+# Most notably, it introduces a **complex softmax** which is specialized to the ZOH discretization and normalizes over the sequence length. These differences were subsequently ablated by S4D which found slight improvements with S4's original design choices.
+# 
+# <!--
+# This was introduced to potentially stabilize the case when $\boldsymbol{A}$ can have positive eigenvalues, but has some disadvantages including being somewhat more complicated and less efficient, and calibrated only to a particular sequence length.
+# -->
 
 # **S4D.**
-# Notice that the S4D algorithm is very similar, ultimately reducing to a Vandermonde matrix multiplication which has the same asymptotic efficiency.
+# Presented above, S4D simplified DSS by fleshing out the outline for diagonal kernels based on Vandermonde products, and also theoretically explained the effectiveness of DSS's initialization.
+# It found this combination of diagonal initialization together with S4's parameterization to have the best of all worlds: extremely simple to implement, theoretically principled, and empirically effective.
+
+
+# ***Computational Complexities.***
+# Notice that the S4D kernel computation is very similar to the original S4 algorithm in that they both ultimately reduce to a structured matrix vector product (Vandermonde or Cauchy), which actually have the same asymptotic efficiencies.
 # In fact, this is no surprise - Vandermonde matrices and Cauchy matrices are very closely related, and have essentially identical computational complexities because they can be easily [transformed to one another](https://arxiv.org/abs/1311.3729).
 # It's neat that generalizing the diagonal case to diagonal plus low-rank simply reduces to a slightly different, but computationally equivalent, linear algebra primitive!
 
-# We note that in practice, the near-linear $\widetilde{O}(N+L)$ time algorithm for Vandermonde and Cauchy matrices may be less efficient than naively doing the $O(NL)$ summation on hardware such as GPUs and TPUs.
-# However, exposing the structure of Vandermonde and Cauchy matrices allows the kernels to be written in a way that avoids materializing the full matrix (as our code above does),
-# reducing the space complexity from $O(NL)$ to $O(N+L)$.
+# Note that these primitives can be implemented in many ways, which has been the source of some confusion about their efficiencies (is diagonal faster than DPLR?) and implementations (does DPLR require a custom CUDA kernel?).
+# In summary, the DPLR kernel (i.e. Cauchy) and all versions of diagonal kernels (i.e. Vandermonde) actually have the *exact same computational complexities* as well as "implementation complexity", because the computational core in all cases is a similar structured matrix product. This can be computed in:
+#
+# * $O(NL)$ time and $O(NL)$ space, by naively materializing the matrix
+# * $O(NL)$ time and $O(N+L)$ space, which either requires a custom kernel (e.g. in PyTorch) or taking advantage of clever compilers (e.g. JAX with XLA) as in our implementation above
+# * $\widetilde{O}(N+L)$ time and $O(N+L)$ space theoretically, from a rich body of literature in scientific computing
 
-# **DSS.**
-# Finally, DSS presented a slightly different version of the S4D algorithm, which was specialized to the ZOH discretization and introduced a **softmax** that normalizes over the sequence length.
-# This was introduced to potentially stabilize the case when $\boldsymbol{A}$ can have positive eigenvalues, but has some disadvantages including being somewhat more complicated and less efficient, and calibrated only to a particular sequence length.
-# A more in depth comparison is discussed in the S4D paper.
 
 # ### The Complete S4D Layer
 #
@@ -601,7 +625,7 @@ S4DLayer = cloneLayer(S4DLayer)
 
 # For example, the first basis function (*Blue*) is just $e^{-\frac{1}{2}t} e^{i\pi t}$.
 # Notice how the *real* part of $\bm{A}$ controls the decay of these functions (*dotted lines*),
-# while the *imaginary* part controls the frequency.
+# while the *imaginary* part controls the frequency!
 
 # What about $y(t)$? This is just a linear combination of the state, $y(t) = \bm{C} x(t)$.
 # But by linearity of convolution, we can push $\bm{C}$ inside:
@@ -624,8 +648,8 @@ S4DLayer = cloneLayer(S4DLayer)
 # Although we've been focusing on $\bm{A}$, which is the more important matrix, HiPPO actually provides exact formulas for
 # $\bm{A}$ *and* $\bm{B}$.
 # So with the above interpretation, *HiPPO provides a specific set of basis functions*, and the parameter $\bm{C}$ then learns a weighted combination of these to use as the final convolution kernel.
-# For the particular $(\bm{A}, \bm{B})$ that S4 uses, each basis function actually has a closed-form formula as exponentially-warped Legendre polynomials $L_n(e^{-t})$.
-# Intuitively, the state $x(t)$ of S4 is convolving the input by each of these very smooth, infinitely-long kernels, which gives rise to its long-range modeling abilities.
+# For the particular $(\bm{A}, \bm{B})$ that S4 uses, each basis function actually has a closed-form formula as [exponentially-warped Legendre polynomials](https://TODO) $L_n(e^{-t})$.
+# Intuitively, S4's state $x(t)$ convolves the input by each of these very smooth, infinitely-long kernels, which gives rise to its long-range modeling abilities.
 
 # <center>
 # <img src="images/basis_legs_clean.png" width="60%"/>
@@ -636,14 +660,32 @@ S4DLayer = cloneLayer(S4DLayer)
 # Here it is for $N=256$ (*Left*) and $N=1024$ (*Right*):
 
 # <center>
-# <img src="images/basis_legsd_256_zoh.png" width="48%"/>
+# <img src="images/basis_legsd_256_bilinear.png" width="48%"/>
 # <img src="images/basis_legsd_1024_bilinear.png" width="48%"/>
 # </center>
 
-# [AG: TODO clean up figures e.g. make x/y axes the same]
-
 # We can see that this matrix $\boldsymbol{A}^{(N)}$ (a dense, diagonalizable matrix) *generates noisy approximations to the same kernels as $\bm{A}$* (a triangular, hard-to-diagonalize matrix) that are *exactly equal* as $N\to\infty$.
 # This is what we meant by saying the diagonal-HiPPO matrix is a perfect approximation to the original HiPPO matrix, which really seems like a remarkable mathematical coincidence!
+
+# Just to drive home the point, let's show some other bases. Once again, the normal-HiPPO matrix is $\bm{A}^{(N)} = \bm{A} + \bm{P}\bm{P}^\top$ for a matrix $\bm{P}$ with entries of order $N^{\frac{1}{2}}$.
+# What happens if we replace $\bm{P}$ with a random vector? The basis quickly becomes unstable even for very small magnitudes of $\bm{P}$!
+
+# <center>
+# <img src="images/basis_legs_std_03.png" width="32%"/>
+# <img src="images/basis_legs_std_04.png" width="32%"/>
+# <img src="images/basis_legs_std_05.png" width="32%"/>
+# Random low-rank perturbation $\bm{P}$, i.i.d. Gaussian with standard deviations $\sigma = 0.3, 0.4, 0.5$.
+# </center>
+
+
+# Finally, what happens with other DPLR matrices? A follow-up theoretical paper to S4 and HiPPO derived other variants, for example a new SSM $(\bm{A}, \bm{B})$ that produces **truncated Fourier** basis functions (*Left*). This is particularly useful as a way to generalize standard local convolutions, since the basis goes to $0$ after finite time.
+# This matrix $\bm{A}$ can also be written in DPLR form, so it can be computed efficiently with S4 (a variant called S4-FouT).
+# But the same trick of dropping the low-rank term produces basis functions that are qualitatively quite different - oscillating infinitely instead of defined locally (*Right*) - and performs quite poorly empirically!
+
+# <center>
+# <img src="images/basis_fout_1024.png" width="48%"/>
+# <img src="images/basis_fout_norank.png" width="48%"/>
+# </center>
 
 # ### Other Diagonal Initializations
 
@@ -651,14 +693,14 @@ S4DLayer = cloneLayer(S4DLayer)
 # In fact, the example in the previous section with $\boldsymbol{A}_n = -\frac{1}{2} + i \pi n$ is the simplest variant, called **S4D-Lin** because the imaginary part scales linearly in $n$.
 
 # However, for now, it seems like the full HiPPO matrix is core to S4's long-range modeling abilities, and the diagonal-HiPPO initialization also seems empirically best among diagonal SSMs.
-# The following table shows results for several variants of S4 and S4D with various $(\boldsymbol{A}, \boldsymbol{B})$ initializations, using an architecture compared to the original S4 paper.
+# The following table shows results for several variants of S4 and S4D with various $(\boldsymbol{A}, \boldsymbol{B})$ initializations, which all define difference bases functions and have different strengths.
 
 # <center>
 # <img src="images/lra.png" width=95%"/>
 #
-# **Long Range Arena (LRA)**. (*Top*) S4 variants with DPLR representation; LegS is equivalent to the original S4 $\bm{A}$.
-# (*Middle*) S4D variants; LegS is the diagonal-HiPPO $\bm{A}^{(D)}$.
-# (*Bottom*) Previous results, including the original S4 with different hyperparameter settings.
+# **Long Range Arena (LRA)**. (*Top*) S4 variants with DPLR $\bm{A}$; LegS is equivalent to the original S4.
+# (*Middle*) S4D variants; LegS refers to diagonal-HiPPO $\bm{A}^{(D)}$.
+# (*Bottom*) Previous results, including the original S4 which had a different architecture and hyperparameters.
 # </center>
 
 # We see that all of them perform very well in general, and the very simple S4D-Lin initialization is even best on several of the 5 main tasks.
