@@ -118,7 +118,7 @@ def create_mnist_dataset(bsz=128):
         [
             transforms.ToTensor(),
             transforms.Lambda(
-                lambda x: (x.view(1, SEQ_LENGTH).t() * 256).int()
+                lambda x: (x.view(IN_DIM, SEQ_LENGTH).t() * 255).int()
             ),
         ]
     )
@@ -132,10 +132,10 @@ def create_mnist_dataset(bsz=128):
 
     # Return data loaders, with the provided batch size
     trainloader = torch.utils.data.DataLoader(
-        train, batch_size=bsz, shuffle=True
+        train, batch_size=bsz, shuffle=True,
     )
     testloader = torch.utils.data.DataLoader(
-        test, batch_size=bsz, shuffle=False
+        test, batch_size=bsz, shuffle=False,
     )
 
     return trainloader, testloader, N_CLASSES, SEQ_LENGTH, IN_DIM
@@ -367,9 +367,8 @@ def create_mnist_classification_dataset(bsz=128):
     tf = transforms.Compose(
         [
             transforms.ToTensor(),
-            transforms.Lambda(
-                lambda x: (x.view(1, SEQ_LENGTH).t() * 256).int()
-            ),
+            transforms.Normalize(mean=0.5, std=0.5),
+            transforms.Lambda(lambda x: x.view(IN_DIM, SEQ_LENGTH).t()),
         ]
     )
 
@@ -404,7 +403,7 @@ def create_cifar_classification_dataset(bsz=128):
             transforms.Normalize(
                 (0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)
             ),
-            transforms.Lambda(lambda x: x.view(3, 1024).t()),
+            transforms.Lambda(lambda x: x.view(IN_DIM, SEQ_LENGTH).t()),
         ]
     )
 
@@ -600,7 +599,7 @@ def create_listops_classification_dataset(bsz):
         ),
     )
 
-    # step 3, numerialize
+    # step 3, numericalize
     vocab.set_default_index(vocab["<unk>"])
 
     dataset = dataset.map(

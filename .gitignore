@@ -1,3 +1,8 @@
+# Logs
+outputs/
+wandb/
+s4/*.md
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]

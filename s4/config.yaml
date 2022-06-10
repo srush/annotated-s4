@@ -1,0 +1,39 @@
+dataset: mnist-classification
+layer: s4
+seed: 0
+
+model:
+  d_model: 128
+  n_layers: 4
+  dropout: 0.0
+  prenorm: true
+  layer:
+    N: 64
+
+train:
+  epochs: 10
+  bsz: 128
+  lr: 0.001
+  lr_schedule: false
+  weight_decay: 0.01
+  checkpoint: false
+  suffix: null # String to use for checkpoint suffix
+
+# Pass in 'wandb.mode=online' to turn on wandb logging
+wandb:
+  mode: disabled
+  project: s4
+  entity: null
+
+# hydra creates a working directory in outputs/ that manages jobs,
+# e.g. saving configs and log files
+# Uncomment the below lines to suppress this
+# defaults:
+#   - _self_
+#   - override hydra/hydra_logging: disabled
+#   - override hydra/job_logging: disabled
+
+# hydra:
+#   output_subdir: null
+#   run:
+#     dir: .

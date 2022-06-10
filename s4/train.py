@@ -1,13 +1,16 @@
 import os
 import shutil
 from functools import partial
+import hydra
 import jax
 import jax.numpy as np
 import optax
+import torch
 from flax import linen as nn
-from flax.core import freeze
 from flax.training import checkpoints, train_state
+from omegaconf import DictConfig, OmegaConf
 from tqdm import tqdm
+from typing import Optional
 from .data import Datasets
 from .dss import DSSLayer
 from .s4 import BatchStackedModel, S4Layer, SSMLayer
@@ -15,6 +18,7 @@ from .s4d import S4DLayer
 
 
 try:
+    # Slightly nonstandard import name to make config easier - see example_train()
     import wandb
 
     assert hasattr(wandb, "__version__")  # verify package import not local dir
@@ -58,9 +62,9 @@ def map_nested_fn(fn):
 
 
 def create_train_state(
-    model_cls,
     rng,
-    in_shape,
+    model_cls,
+    trainloader,
     lr=1e-3,
     lr_layer=None,
     lr_schedule=False,
@@ -71,7 +75,7 @@ def create_train_state(
     init_rng, dropout_rng = jax.random.split(rng, num=2)
     params = model.init(
         {"params": init_rng, "dropout": dropout_rng},
-        np.ones(in_shape),
+        np.array(next(iter(trainloader))[0].numpy()),
     )
     # Note: Added immediate `unfreeze()` to play well w/ Optax. See below!
     params = params["params"].unfreeze()
@@ -220,25 +224,18 @@ def train_step(
     state, rng, batch_inputs, batch_labels, model, classification=False
 ):
     def loss_fn(params):
-        if classification:
-            logits, mod_vars = model.apply(
-                {"params": params},
-                batch_inputs,
-                rngs={"dropout": rng},
-                mutable=["intermediates"],
-            )
-            loss = np.mean(cross_entropy_loss(logits, batch_labels))
-            acc = np.mean(compute_accuracy(logits, batch_labels))
-        else:
-            logits, mod_vars = model.apply(
-                {"params": params},
-                batch_inputs[:, :-1],
-                rngs={"dropout": rng},
-                mutable=["intermediates"],
-            )
-            loss = np.mean(cross_entropy_loss(logits, batch_inputs[:, 1:, 0]))
-            acc = np.mean(compute_accuracy(logits, batch_inputs[:, 1:, 0]))
+        logits, mod_vars = model.apply(
+            {"params": params},
+            batch_inputs,
+            rngs={"dropout": rng},
+            mutable=["intermediates"],
+        )
+        loss = np.mean(cross_entropy_loss(logits, batch_labels))
+        acc = np.mean(compute_accuracy(logits, batch_labels))
         return loss, (logits, acc)
+
+    if not classification:
+        batch_labels = batch_inputs[:, :, 0]
 
     grad_fn = jax.value_and_grad(loss_fn, has_aux=True)
     (loss, (logits, acc)), grads = grad_fn(state.params)
@@ -248,14 +245,11 @@ def train_step(
 
 @partial(jax.jit, static_argnums=(3, 4))
 def eval_step(batch_inputs, batch_labels, params, model, classification=False):
-    if classification:
-        logits = model.apply({"params": params}, batch_inputs)
-        loss = np.mean(cross_entropy_loss(logits, batch_labels))
-        acc = np.mean(compute_accuracy(logits, batch_labels))
-    else:
-        logits = model.apply({"params": params}, batch_inputs[:, :-1])
-        loss = np.mean(cross_entropy_loss(logits, batch_inputs[:, 1:, 0]))
-        acc = np.mean(compute_accuracy(logits, batch_inputs[:, 1:, 0]))
+    if not classification:
+        batch_labels = batch_inputs[:, :, 0]
+    logits = model.apply({"params": params}, batch_inputs)
+    loss = np.mean(cross_entropy_loss(logits, batch_labels))
+    acc = np.mean(compute_accuracy(logits, batch_labels))
     return loss, acc
 
 
@@ -300,23 +294,20 @@ Models = {
 
 
 def example_train(
-    model,
-    dataset,
-    d_model=128,
-    bsz=128,
-    epochs=10,
-    d_state=64,
-    lr=1e-3,
-    lr_schedule=False,
-    weight_decay=0.0,
-    n_layers=4,
-    p_dropout=0.2,
-    suffix=None,
-    checkpoint=False,
+    dataset : str,
+    layer: str,
+    seed : int,
+    model : DictConfig,
+    train : DictConfig,
 ):
+    # Warnings and sanity checks
+    if not train.checkpoint:
+        print("[*] Warning: models are not being checkpoint")
+
     # Set randomness...
     print("[*] Setting Randomness...")
-    key = jax.random.PRNGKey(0)
+    torch.random.manual_seed(seed) # For dataloader order
+    key = jax.random.PRNGKey(seed)
     key, rng, train_rng = jax.random.split(key, num=3)
 
     # Check if classification dataset
@@ -324,47 +315,46 @@ def example_train(
 
     # Create dataset
     create_dataset_fn = Datasets[dataset]
-    trainloader, testloader, n_classes, l_seq, d_input = create_dataset_fn(
-        bsz=bsz
+    trainloader, testloader, n_classes, l_max, d_input = create_dataset_fn(
+        bsz=train.bsz
     )
-    l_max = l_seq if classification else l_seq - 1  # Max length that model sees
-    in_shape = (bsz, l_max, d_input)  # Input shape
+    # l_max = l_seq if classification else l_seq - 1  # Max length that model sees
+    in_shape = (train.bsz, l_max, d_input)  # Input shape
 
     # Get model class and arguments
-    model_cls = Models[model]
-    layer_args = {} if d_state is None else {"N": d_state}
-    layer_args["l_max"] = l_max
+    layer_cls = Models[layer]
+    # layer_args = {} if model.d_state is None else {"N": model.d_state}
+    # layer_args["l_max"] = l_max
+    model.layer.l_max = l_max
 
     # Extract custom hyperparameters from model class
-    lr_layer = getattr(model_cls, "lr", None)
+    lr_layer = getattr(layer_cls, "lr", None)
 
-    print(f"[*] Starting `{model}` Training on `{dataset}` =>> Initializing...")
+    print(f"[*] Starting `{layer}` Training on `{dataset}` =>> Initializing...")
 
     model_cls = partial(
         BatchStackedModel,
-        layer=model_cls,
-        layer_args=freeze(layer_args),
-        d_model=d_model,
+        layer_cls=layer_cls,
+        # layer_args=freeze(layer_args),
         d_output=n_classes,
-        dropout=p_dropout,
-        n_layers=n_layers,
         classification=classification,
+        **model,
     )
 
     state = create_train_state(
-        model_cls,
         rng,
-        in_shape,
-        lr=lr,
+        model_cls,
+        trainloader,
+        lr=train.lr,
         lr_layer=lr_layer,
-        lr_schedule=lr_schedule,
-        weight_decay=weight_decay,
-        total_steps=len(trainloader) * epochs,
+        lr_schedule=train.lr_schedule,
+        weight_decay=train.weight_decay,
+        total_steps=len(trainloader) * train.epochs,
     )
 
     # Loop over epochs
     best_loss, best_acc, best_epoch = 10000, 0, 0
-    for epoch in range(epochs):
+    for epoch in range(train.epochs):
         print(f"[*] Starting Training Epoch {epoch + 1}...")
         state, train_loss, train_acc = train_epoch(
             state,
@@ -387,21 +377,21 @@ def example_train(
         )
 
         # Save a checkpoint each epoch & handle best (test loss... not "copacetic" but ehh)
-        if checkpoint:
-            suf = f"-{suffix}" if suffix is not None else ""
-            run_id = f"checkpoints/{dataset}/{model}-d_model={d_model}-lr={lr}-bsz={bsz}{suf}"
+        if train.checkpoint:
+            suf = f"-{train.suffix}" if train.suffix is not None else ""
+            run_id = f"checkpoints/{dataset}/{model}-d_model={model.d_model}-lr={train.lr}-bsz={train.bsz}{suf}"
             ckpt_path = checkpoints.save_checkpoint(
                 run_id,
                 state,
                 epoch,
-                keep=epochs,
+                keep=train.epochs,
             )
 
         if (classification and test_acc > best_acc) or (
             not classification and test_loss < best_loss
         ):
             # Create new "best-{step}.ckpt and remove old one
-            if checkpoint:
+            if train.checkpoint:
                 shutil.copy(ckpt_path, f"{run_id}/best_{epoch}")
                 if os.path.exists(f"{run_id}/best_{best_epoch}"):
                     os.remove(f"{run_id}/best_{best_epoch}")
@@ -428,73 +418,20 @@ def example_train(
             wandb.run.summary["Best Epoch"] = best_epoch
 
 
+@hydra.main(version_base=None, config_path="", config_name="config")
+def main(cfg : DictConfig) -> None:
+    print(OmegaConf.to_yaml(cfg))
+    OmegaConf.set_struct(cfg, False) # Allow writing keys
+
+    # Track with wandb
+    if wandb is not None:
+        wandb_cfg = cfg.pop("wandb")
+        wandb.init(
+            **wandb_cfg,
+            config=OmegaConf.to_container(cfg, resolve=True)
+        )
+
+    example_train(**cfg)
+
 if __name__ == "__main__":
-    import argparse
-
-    parser = argparse.ArgumentParser()
-    parser.add_argument(
-        "--dataset", type=str, choices=Datasets.keys(), required=True
-    )
-    parser.add_argument(
-        "--model", type=str, choices=Models.keys(), required=True
-    )
-    parser.add_argument("--epochs", type=int, default=10)
-    parser.add_argument("--bsz", type=int, default=128)
-    parser.add_argument("--suffix", type=str, default=None)
-
-    # Model Parameters
-    parser.add_argument("--d_model", type=int, default=128)
-    parser.add_argument("--n_layers", type=int, default=4)
-    parser.add_argument("--p_dropout", type=float, default=0.2)
-
-    # S4 Specific Parameters
-    parser.add_argument("--d_state", type=int, default=64)
-
-    # Optimization Parameters
-    parser.add_argument("--lr", type=float, default=1e-3)
-    parser.add_argument("--lr_schedule", default=False, action="store_true")
-    parser.add_argument("--weight_decay", default=0.01, action="store_true")
-
-    # Weights and Biases Parameters
-    parser.add_argument(
-        "--wandb", action="store_true",
-        help="Whether to use W&B for metric logging",
-    )
-    parser.add_argument(
-        "--wandb_project",
-        default="s4",
-        type=str,
-        help="Name of the W&B Project",
-    )
-    parser.add_argument(
-        "--wandb_entity",
-        default=None,
-        type=str,
-        help="entity to use for W&B logging",
-    )
-
-    parser.add_argument("--checkpoint", action="store_true")
-
-    args = parser.parse_args()
-
-    if args.wandb:
-        wandb.init(project=args.wandb_project, entity=args.wandb_entity)
-    else:
-        wandb = None
-
-
-    example_train(
-        args.model,
-        args.dataset,
-        epochs=args.epochs,
-        d_model=args.d_model,
-        bsz=args.bsz,
-        d_state=args.d_state,
-        lr=args.lr,
-        lr_schedule=args.lr_schedule,
-        weight_decay=args.weight_decay,
-        n_layers=args.n_layers,
-        p_dropout=args.p_dropout,
-        suffix=args.suffix,
-        checkpoint=args.checkpoint,
-    )
+    main()
