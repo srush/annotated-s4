@@ -204,8 +204,9 @@ def validate(params, model, testloader, classification=False):
 
 class FeedForwardModel(nn.Module):
     d_model: int
+    N : int
     l_max: int
-
+    decode: bool = False
     def setup(self):
         self.dense = nn.Dense(self.d_model)
 
@@ -259,8 +260,10 @@ def eval_step(batch_inputs, batch_labels, params, model, classification=False):
 
 
 class LSTMRecurrentModel(nn.Module):
-    d_model: int
+    N : int
     l_max: int
+    d_model: int
+
 
     def setup(self):
         LSTM = nn.scan(

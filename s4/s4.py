@@ -554,6 +554,7 @@ class StackedModel(nn.Module):
             self.encoder = nn.Dense(self.d_model)
         else:
             self.encoder = nn.Embed(self.d_output+1, self.d_model)
+
         self.decoder = nn.Dense(self.d_output)
         self.layers = [
             SequenceBlock(
@@ -1425,10 +1426,10 @@ def sample_mnist_prefix(path, model, length, rng):
     it = iter(testloader)
     for j, im in enumerate(it):
         image = im[0].numpy()
-
+        image = np.pad(image[:, :-1, 0], [(0, 0), (1, 0)], constant_values=256)
         cur = onp.array(image)
-        cur[:, START + 1 :, 0] = 0
-        cur = np.pad(cur[:, :-1, 0], [(0, 0), (1, 0)], constant_values=256)
+        # cur[:, START + 1 :, 0] = 0
+        # cur = np.pad(cur[:, :-1, 0], [(0, 0), (1, 0)], constant_values=256)
         cur = np.array(cur[:, :])
 
         # Cache the first `start` inputs.
