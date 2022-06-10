@@ -387,20 +387,25 @@ def example_train(
                 keep=train.epochs,
             )
 
-            # HACK Sample MNIST
-            model_cls = partial(
-                BatchStackedModel,
-                layer_cls=layer_cls,
-                d_output=n_classes,
-                classification=classification,
-                **model,
-            )
-            samples, examples = sample_mnist_prefix(run_id, model_cls(decode=True, training=False), 784, rng)
-            if wandb is not None:
-                samples = [wandb.Image(sample) for sample in samples]
-                wandb.log({"samples": samples}, commit=False)
-                examples = [wandb.Image(example) for example in examples]
-                wandb.log({"examples": examples}, commit=False)
+            if train.sample is not None:
+                if dataset == "mnist":
+                    sample_fn = partial(sample_mnist_prefix, length=784, prefix=train.sample)
+                else:
+                    raise NotImplementedError("Sampling currently only supported for MNIST")
+
+                model_cls = partial(
+                    BatchStackedModel,
+                    layer_cls=layer_cls,
+                    d_output=n_classes,
+                    classification=classification,
+                    **model,
+                )
+                samples, examples = sample_fn(run_id, model_cls(decode=True, training=False), rng=rng)
+                if wandb is not None:
+                    samples = [wandb.Image(sample) for sample in samples]
+                    wandb.log({"samples": samples}, commit=False)
+                    examples = [wandb.Image(example) for example in examples]
+                    wandb.log({"examples": examples}, commit=False)
 
         if (classification and test_acc > best_acc) or (
             not classification and test_loss < best_loss

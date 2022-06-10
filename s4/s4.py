@@ -1421,13 +1421,13 @@ def sample_checkpoint(path, model, length, rng):
 # <img src="images/im0.8.png" width="45%">
 
 
-def sample_mnist_prefix(path, model, length, rng, bsz=32, n_batches=None):
+def sample_mnist_prefix(path, model, length, rng, prefix=300, bsz=32, n_batches=None):
     import matplotlib.pyplot as plt
     import numpy as onp
     from .data import Datasets
 
     BATCH = bsz
-    START = 300
+    START = prefix
     # start = np.zeros((BATCH, length), dtype=int)
     start = np.zeros((BATCH, length, 1))
     params, prime, init_cache = init_from_checkpoint(model, path, start[:, :-1], rng)
