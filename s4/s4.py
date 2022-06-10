@@ -1428,7 +1428,7 @@ def sample_mnist_prefix(path, model, length, rng):
 
         cur = onp.array(image)
         cur[:, START + 1 :, 0] = 0
-        cur = np.pad(cur[:, :-1, 0], [(0, 0), (0, 1)], constant_values=256)
+        cur = np.pad(cur[:, :-1, 0], [(0, 0), (1, 0)], constant_values=256)
         cur = np.array(cur[:, :])
 
         # Cache the first `start` inputs.
