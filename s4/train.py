@@ -371,14 +371,14 @@ def example_train(
         print(f"\n=>> Epoch {epoch + 1} Metrics ===")
         print(
             f"\tTrain Loss: {train_loss:.5f} -- Train Accuracy:"
-            f" {train_acc:.4f}\n\tTest Loss: {test_loss:.5f} -- Test Accuracy:"
+            f" {train_acc:.4f}\n\t Test Loss: {test_loss:.5f} --  Test Accuracy:"
             f" {test_acc:.4f}"
         )
 
         # Save a checkpoint each epoch & handle best (test loss... not "copacetic" but ehh)
         if train.checkpoint:
             suf = f"-{train.suffix}" if train.suffix is not None else ""
-            run_id = f"checkpoints/{dataset}/{model}-d_model={model.d_model}-lr={train.lr}-bsz={train.bsz}{suf}"
+            run_id = f"checkpoints/{dataset}/{layer}-d_model={model.d_model}-lr={train.lr}-bsz={train.bsz}{suf}"
             ckpt_path = checkpoints.save_checkpoint(
                 run_id,
                 state,
