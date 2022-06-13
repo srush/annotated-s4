@@ -549,6 +549,7 @@ class StackedModel(nn.Module):
     classification: bool = False
     embedding: bool = False
     normalize: bool = False
+    center: bool = False
     decode: bool = False  # Probably should be moved into layer_args
 
     def setup(self):
@@ -575,8 +576,10 @@ class StackedModel(nn.Module):
             x = np.pad(x[:-1], [(1, 0), (0, 0)], constant_values=self.d_output)
         if self.embedding:
             x = x[:, 0]
+        if self.center:
+            x = x - 127.5
         if self.normalize:
-            x = x / 127.5 - 1.0
+            x = x / 127.5
         x = self.encoder(x)
         for layer in self.layers:
             x = layer(x)

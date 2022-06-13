@@ -389,7 +389,7 @@ def example_train(
 
             if train.sample is not None:
                 if dataset == "mnist":
-                    sample_fn = partial(sample_mnist_prefix, length=784, prefix=train.sample)
+                    sample_fn = partial(sample_mnist_prefix, length=784, bsz=64, prefix=train.sample)
                 else:
                     raise NotImplementedError("Sampling currently only supported for MNIST")
 

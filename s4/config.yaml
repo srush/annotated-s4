@@ -9,6 +9,7 @@ model:
   prenorm: true
   embedding: false
   normalize: false
+  center: false
   layer:
     N: 64
 
