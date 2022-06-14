@@ -549,6 +549,7 @@ class StackedModel(nn.Module):
     classification: bool = False
     embedding: bool = False
     normalize: bool = False
+    ln: bool = False
     center: bool = False
     decode: bool = False  # Probably should be moved into layer_args
 
@@ -558,6 +559,8 @@ class StackedModel(nn.Module):
         else:
             self.encoder = nn.Dense(self.d_model)
         self.decoder = nn.Dense(self.d_output)
+        if self.ln:
+            self.norm = nn.LayerNorm()
         self.layers = [
             SequenceBlock(
                 layer_cls=self.layer_cls,
@@ -581,6 +584,8 @@ class StackedModel(nn.Module):
         if self.normalize:
             x = x / 127.5
         x = self.encoder(x)
+        if self.ln:
+            x = self.norm(x)
         for layer in self.layers:
             x = layer(x)
         if self.classification:
@@ -1439,7 +1444,7 @@ def sample_mnist_prefix(
     BATCH = bsz
     START = prefix
     # start = np.zeros((BATCH, length), dtype=int)
-    start = np.zeros((BATCH, length, 1))
+    start = np.zeros((BATCH, length, 1), dtype=int)
     params, prime, init_cache = init_from_checkpoint(model, path, start[:, :-1], rng)
 
     _, testloader, _, _, _ = Datasets["mnist"](bsz=BATCH)

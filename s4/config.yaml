@@ -10,6 +10,7 @@ model:
   embedding: false
   normalize: false
   center: false
+  ln: false
   layer:
     N: 64
 
