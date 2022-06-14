@@ -536,6 +536,14 @@ class SequenceBlock(nn.Module):
 # to produce a stack of SSM layers. This can be used for
 # classification or generation in the standard way as a Transformer.
 
+class Embedding(nn.Embed):
+    num_embeddings: int
+    features: int
+
+    @nn.compact
+    def __call__(self, x):
+        y = nn.Embed(self.num_embeddings, self.features)(x[..., 0])
+        return np.where(x > 0, y, 0.)
 
 class StackedModel(nn.Module):
     layer_cls: nn.Module
@@ -555,7 +563,7 @@ class StackedModel(nn.Module):
 
     def setup(self):
         if self.embedding:
-            self.encoder = nn.Embed(self.d_output+1, self.d_model)
+            self.encoder = Embedding(self.d_output, self.d_model)
         else:
             self.encoder = nn.Dense(self.d_model)
         self.decoder = nn.Dense(self.d_output)
@@ -576,9 +584,7 @@ class StackedModel(nn.Module):
 
     def __call__(self, x):
         if not self.classification and not self.decode:
-            x = np.pad(x[:-1], [(1, 0), (0, 0)], constant_values=self.d_output)
-        if self.embedding:
-            x = x[:, 0]
+            x = np.pad(x[:-1], [(1, 0), (0, 0)])
         if self.center:
             x = x - 127.5
         if self.normalize:
@@ -1454,7 +1460,7 @@ def sample_mnist_prefix(
             break
 
         image = im[0].numpy()
-        image = np.pad(image[:, :-1, :], [(0, 0), (1, 0), (0, 0)], constant_values=256)
+        image = np.pad(image[:, :-1, :], [(0, 0), (1, 0), (0, 0)], constant_values=0)
         cur = onp.array(image)
         # cur[:, START + 1 :, 0] = 0
         # cur = np.pad(cur[:, :-1, 0], [(0, 0), (1, 0)], constant_values=256)
