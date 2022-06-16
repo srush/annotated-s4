@@ -362,7 +362,7 @@ if __name__ == '__main__':
 # Although S4 outlined the diagonal case, it focused on the DPLR case for theoretical reasons we'll expand on in Part III.
 # DSS found that *truncating S4's matrix to be diagonal* was still empirically effective, and introduced a simple method to take advantage of diagonal SSMs.
 # Beyond the choice of diagonal vs DPLR, its parameterization differs from S4's in several ways.
-# Most notably, it introduces a **complex softmax** which is specialized to the ZOH discretization and normalizes over the sequence length. These differences were subsequently ablated by S4D which found slight improvements with S4's original design choices.
+# Most notably, it introduces a **complex softmax** which is specialized to the ZOH discretization and normalizes over the sequence length. These differences were subsequently ablated by S4D which found slight improvements with S4's original parameterization.
 # 
 # <!--
 # This was introduced to potentially stabilize the case when $\boldsymbol{A}$ can have positive eigenvalues, but has some disadvantages including being somewhat more complicated and less efficient, and calibrated only to a particular sequence length.
@@ -687,7 +687,7 @@ S4DLayer = cloneLayer(S4DLayer)
 # <img src="images/basis_fout_norank.png" width="48%"/>
 # </center>
 
-# It's worth repeating: the particular HiPPO variant that S4 uses, and the fact that a particular low-rank correct makes it normal/diagonal while preserving the same basis, is *really* special!
+# It's worth repeating: the particular HiPPO matrix that S4 uses, and its DPLR representation which can be truncated while preserving the same basis, is *really* special!
 
 # ### Other Diagonal Initializations
 
