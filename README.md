@@ -14,7 +14,7 @@
 python -m s4.train dataset=mnist layer=s4 train.epochs=100 train.bsz=128 model.d_model=128 model.layer.d_state=64
 ```
 
-The following command uses a larger model (5M params) and logs generated samples to wandb every epoch. It achieves 0.3596 test NLL (0.5188 bits per dimension), a substantial state-of-the-art on this task.
+The following command uses a larger model (5M params) and logs generated samples to wandb every epoch. It achieves 0.36 test NLL (0.52 bits per dimension), a state-of-the-art on this task.
 ```bash
 python -m s4.train dataset=mnist layer=s4 train.epochs=100 train.bsz=50 train.lr=5e-3 train.lr_schedule=true model.d_model=512 model.n_layers=6 model.dropout=0.0 train.weight_decay=0.05 train.checkpoint=true model.prenorm=true model.embedding=true wandb.mode=online train.sample=308 
 ```
@@ -40,13 +40,12 @@ Gets "best" 99.27% accuracy after 20 epochs @ 17s/epoch on an A100
 #### CIFAR-10 Classification
 
 ```
-python -m s4.train --dataset cifar-classification --model {s4,dss,s4d} --epoch 100 --bsz 50 --n_layers 6 --d_model 512 --p_dropout 0.25 --lr 5e-3 --lr_schedule
-python -m s4.train dataset=cifar-classification layer={s4,dss,s4d} train.epochs=100 train.bsz=50 model.n_layers=6 model.d_model=512 model.dropout=0.25 train.lr=5e-3 train.weight_decay=0.01 train.lr_schedule=true
+python -m s4.train dataset=cifar-classification layer={s4,dss,s4d} train.epochs=100 train.bsz=50 model.n_layers=6 model.d_model=512 model.dropout=0.25 train.lr=5e-3 train.weight_decay=0.01 train.lr_schedule=true seed=1
 ```
 
-S4 gets "best" 91.03% accuracy after 100 epochs @ 2m16s/epoch on an A100
-DSS gets "best" 89.22% accuracy after 100 epochs @ 1m41s/epoch on an A100
-S4D gets "best" 89.70% accuracy after 100 epochs @ 1m32s/epoch on an A100
+S4 gets "best" 91.23% accuracy after 100 epochs @ 2m16s/epoch on an A100
+DSS gets "best" 89.31% accuracy after 100 epochs @ 1m41s/epoch on an A100
+S4D gets "best" 89.76% accuracy after 100 epochs @ 1m32s/epoch on an A100
 
 
 ---
