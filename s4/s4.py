@@ -1365,16 +1365,10 @@ def sample(model, params, prime, cache, x, start, end, rng):
 # "prime" collection of variables.
 
 
-def init_from_checkpoint(model, checkpoint, init_x, rng):
-    from flax.training import checkpoints
-
-    print("[*] Loading")
-    state = checkpoints.restore_checkpoint(checkpoint, None)
-    assert "params" in state
-    print("[*] Initializing")
+def init_recurrence(model, params, init_x, rng):
     variables = model.init(rng, init_x)
     vars = {
-        "params": state["params"],
+        "params": params,
         "cache": variables["cache"].unfreeze(),
         "prime": variables["prime"].unfreeze(),
     }
@@ -1387,11 +1381,13 @@ def init_from_checkpoint(model, checkpoint, init_x, rng):
 
 
 def sample_checkpoint(path, model, length, rng):
-    # start = np.zeros((1, length), dtype=int)
+    from flax.training import checkpoints
     start = np.zeros((1, length, 1), dtype=int)
 
     print("[*] Initializing from checkpoint %s" % path)
-    params, prime, cache = init_from_checkpoint(model, path, start[:, :-1], rng)
+    state = checkpoints.restore_checkpoint(checkpoint, None)
+    assert "params" in state
+    params, prime, cache = init_recurrence(model, state["params"], start[:, :-1], rng)
     print("[*] Sampling output")
     return sample(model, params, prime, cache, start, 0, length - 1, rng)
 
@@ -1433,28 +1429,37 @@ def sample_checkpoint(path, model, length, rng):
 # <img src="images/im0.8.png" width="45%">
 
 
-def sample_mnist_prefix(
-    path,
+def sample_image_prefix(
+    params,
     model,
-    length,
+    # length,
     rng,
+    dataloader,
     prefix=300,
-    bsz=32,
+    # bsz=32,
+    imshape=(28,28),
     n_batches=None,
     verbose=True,
 ):
+    """Sample a grayscale image represented as intensities in [0, 255]"""
     import matplotlib.pyplot as plt
     import numpy as onp
-    from .data import Datasets
+    # from .data import Datasets
 
-    BATCH = bsz
-    START = prefix
+    # BATCH = bsz
     # start = np.zeros((BATCH, length), dtype=int)
-    start = np.zeros((BATCH, length, 1), dtype=int)
-    params, prime, init_cache = init_from_checkpoint(model, path, start[:, :-1], rng)
+    # start = np.zeros((BATCH, length, 1), dtype=int)
+    start = np.array(next(iter(dataloader))[0].numpy())
+    # params, prime, cache = init_recurrence(model, params, start[:, :-1], rng)
+    params, prime, cache = init_recurrence(model, params, start, rng)
 
-    _, testloader, _, _, _ = Datasets["mnist"](bsz=BATCH)
-    it = iter(testloader)
+    BATCH = start.shape[0]
+    START = prefix
+    LENGTH = start.shape[1]
+    assert LENGTH == np.prod(imshape)
+
+    # _, dataloader, _, _, _ = Datasets["mnist"](bsz=BATCH)
+    it = iter(dataloader)
     for j, im in enumerate(it):
         if n_batches is not None and j >= n_batches:
             break
@@ -1468,23 +1473,23 @@ def sample_mnist_prefix(
 
         # Cache the first `start` inputs.
         out, vars = model.apply(
-            {"params": params, "prime": prime, "cache": init_cache},
+            {"params": params, "prime": prime, "cache": cache},
             cur[:, np.arange(0, START)],
             mutable=["cache"],
         )
         cache = vars["cache"].unfreeze()
-        out = sample(model, params, prime, cache, cur, START, length - 1, rng)
+        out = sample(model, params, prime, cache, cur, START, LENGTH - 1, rng)
 
         # Visualization
-        out = out.reshape(BATCH, 28, 28)
-        final = onp.zeros((BATCH, 28, 28, 3))
-        final2 = onp.zeros((BATCH, 28, 28, 3))
+        out = out.reshape(BATCH, *imshape)
+        final = onp.zeros((BATCH, *imshape, 3))
+        final2 = onp.zeros((BATCH, *imshape, 3))
         final[:, :, :, 0] = out
-        f = final.reshape(BATCH, 28 * 28, 3)
-        i = image.reshape(BATCH, 28 * 28)
+        f = final.reshape(BATCH, LENGTH, 3)
+        i = image.reshape(BATCH, LENGTH)
         f[:, :START, 1] = i[:, :START]
         f[:, :START, 2] = i[:, :START]
-        f = final2.reshape(BATCH, 28 * 28, 3)
+        f = final2.reshape(BATCH, LENGTH, 3)
         f[:, :, 1] = i
         f[:, :START, 0] = i[:, :START]
         f[:, :START, 2] = i[:, :START]

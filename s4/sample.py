@@ -46,5 +46,5 @@ out = sample_checkpoint(default_train_path, DefaultMNIST(MNIST_LEN), MNIST_LEN, 
 plt.imshow(out.reshape(28, 28))
 plt.savefig("sample.png")
 
-out = sample_mnist_prefix(default_train_path, DefaultMNIST(MNIST_LEN), MNIST_LEN, rng)
+# out = sample_mnist_prefix(default_train_path, DefaultMNIST(MNIST_LEN), MNIST_LEN, rng)
 
