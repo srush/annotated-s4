@@ -1439,7 +1439,7 @@ def sample_image_prefix(
     # bsz=32,
     imshape=(28,28),
     n_batches=None,
-    verbose=True,
+    save=True,
 ):
     """Sample a grayscale image represented as intensities in [0, 255]"""
     import matplotlib.pyplot as plt
@@ -1501,10 +1501,10 @@ def sample_image_prefix(
             ax1.axis("off")
             ax2.axis("off")
             ax2.imshow(final2[k] / 256.0)
-            fig.savefig("im%d.%d.png" % (j, k))
-            plt.close()
-            if verbose:
+            if save:
+                fig.savefig("im%d.%d.png" % (j, k))
                 print(f"Sampled batch {j} image {k}")
+            plt.close()
     return final, final2
 
 

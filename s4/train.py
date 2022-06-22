@@ -408,7 +408,7 @@ def example_train(
                 dataloader=testloader,
                 prefix=train.sample,
                 n_batches=1,
-                verbose=False,
+                save=False,
             )
             if wandb is not None:
                 samples = [wandb.Image(sample) for sample in samples]
