@@ -496,7 +496,7 @@ SSMLayer = cloneLayer(SSMLayer)
 
 class SequenceBlock(nn.Module):
     layer_cls: nn.Module
-    layer: dict # Hyperparameters of inner layer
+    layer: dict  # Hyperparameters of inner layer
     dropout: float
     d_model: int
     prenorm: bool = True
@@ -536,6 +536,7 @@ class SequenceBlock(nn.Module):
 # to produce a stack of SSM layers. This can be used for
 # classification or generation in the standard way as a Transformer.
 
+
 class Embedding(nn.Embed):
     num_embeddings: int
     features: int
@@ -543,7 +544,8 @@ class Embedding(nn.Embed):
     @nn.compact
     def __call__(self, x):
         y = nn.Embed(self.num_embeddings, self.features)(x[..., 0])
-        return np.where(x > 0, y, 0.)
+        return np.where(x > 0, y, 0.0)
+
 
 class StackedModel(nn.Module):
     layer_cls: nn.Module
@@ -1258,7 +1260,7 @@ class S4Layer(nn.Module):
         # C should be init as standard normal
         # This doesn't work due to how JAX handles complex optimizers https://github.com/deepmind/optax/issues/196
         # self.C = self.param("C", normal(stddev=1.0, dtype=np.complex64), (self.N,))
-        self.C = self.param("C", normal(stddev=0.5 ** 0.5), (self.N, 2))
+        self.C = self.param("C", normal(stddev=0.5**0.5), (self.N, 2))
         self.C = self.C[..., 0] + 1j * self.C[..., 1]
         self.D = self.param("D", nn.initializers.ones, (1,))
         self.step = np.exp(self.param("log_step", log_step_initializer(), (1,)))
@@ -1382,12 +1384,15 @@ def init_recurrence(model, params, init_x, rng):
 
 def sample_checkpoint(path, model, length, rng):
     from flax.training import checkpoints
+
     start = np.zeros((1, length, 1), dtype=int)
 
     print("[*] Initializing from checkpoint %s" % path)
     state = checkpoints.restore_checkpoint(path, None)
     assert "params" in state
-    params, prime, cache = init_recurrence(model, state["params"], start[:, :-1], rng)
+    params, prime, cache = init_recurrence(
+        model, state["params"], start[:, :-1], rng
+    )
     print("[*] Sampling output")
     return sample(model, params, prime, cache, start, 0, length - 1, rng)
 
@@ -1437,15 +1442,15 @@ def sample_image_prefix(
     dataloader,
     prefix=300,
     # bsz=32,
-    imshape=(28,28),
+    imshape=(28, 28),
     n_batches=None,
     save=True,
 ):
     """Sample a grayscale image represented as intensities in [0, 255]"""
     import matplotlib.pyplot as plt
     import numpy as onp
-    # from .data import Datasets
 
+    # from .data import Datasets
     # BATCH = bsz
     # start = np.zeros((BATCH, length), dtype=int)
     # start = np.zeros((BATCH, length, 1), dtype=int)
@@ -1465,7 +1470,9 @@ def sample_image_prefix(
             break
 
         image = im[0].numpy()
-        image = np.pad(image[:, :-1, :], [(0, 0), (1, 0), (0, 0)], constant_values=0)
+        image = np.pad(
+            image[:, :-1, :], [(0, 0), (1, 0), (0, 0)], constant_values=0
+        )
         cur = onp.array(image)
         # cur[:, START + 1 :, 0] = 0
         # cur = np.pad(cur[:, :-1, 0], [(0, 0), (1, 0)], constant_values=256)
@@ -1668,5 +1675,3 @@ def sample_image_prefix(
 #   * Added RNN decoding
 #   * Added Speech examples
 # * v1 - Original version
-
-

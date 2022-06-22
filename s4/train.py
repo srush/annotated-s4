@@ -10,7 +10,6 @@ from flax import linen as nn
 from flax.training import checkpoints, train_state
 from omegaconf import DictConfig, OmegaConf
 from tqdm import tqdm
-from typing import Optional
 from .data import Datasets
 from .dss import DSSLayer
 from .s4 import BatchStackedModel, S4Layer, SSMLayer, sample_image_prefix
@@ -204,9 +203,10 @@ def validate(params, model, testloader, classification=False):
 
 class FeedForwardModel(nn.Module):
     d_model: int
-    N : int
+    N: int
     l_max: int
     decode: bool = False
+
     def setup(self):
         self.dense = nn.Dense(self.d_model)
 
@@ -260,10 +260,9 @@ def eval_step(batch_inputs, batch_labels, params, model, classification=False):
 
 
 class LSTMRecurrentModel(nn.Module):
-    N : int
+    N: int
     l_max: int
     d_model: int
-
 
     def setup(self):
         LSTM = nn.scan(
@@ -297,11 +296,11 @@ Models = {
 
 
 def example_train(
-    dataset : str,
+    dataset: str,
     layer: str,
-    seed : int,
-    model : DictConfig,
-    train : DictConfig,
+    seed: int,
+    model: DictConfig,
+    train: DictConfig,
 ):
     # Warnings and sanity checks
     if not train.checkpoint:
@@ -309,7 +308,7 @@ def example_train(
 
     # Set randomness...
     print("[*] Setting Randomness...")
-    torch.random.manual_seed(seed) # For dataloader order
+    torch.random.manual_seed(seed)  # For dataloader order
     key = jax.random.PRNGKey(seed)
     key, rng, train_rng = jax.random.split(key, num=3)
 
@@ -321,7 +320,6 @@ def example_train(
     trainloader, testloader, n_classes, l_max, d_input = create_dataset_fn(
         bsz=train.bsz
     )
-    in_shape = (train.bsz, l_max, d_input)  # Input shape
 
     # Get model class and arguments
     layer_cls = Models[layer]
@@ -371,8 +369,8 @@ def example_train(
         print(f"\n=>> Epoch {epoch + 1} Metrics ===")
         print(
             f"\tTrain Loss: {train_loss:.5f} -- Train Accuracy:"
-            f" {train_acc:.4f}\n\t Test Loss: {test_loss:.5f} --  Test Accuracy:"
-            f" {test_acc:.4f}"
+            f" {train_acc:.4f}\n\t Test Loss: {test_loss:.5f} --  Test"
+            f" Accuracy: {test_acc:.4f}"
         )
 
         # Save a checkpoint each epoch & handle best (test loss... not "copacetic" but ehh)
@@ -387,10 +385,14 @@ def example_train(
             )
 
         if train.sample is not None:
-            if dataset == "mnist": # Should work for QuickDraw too but untested
-                sample_fn = partial(sample_image_prefix, imshape=(28,28)) # params=state["params"], length=784, bsz=64, prefix=train.sample)
+            if dataset == "mnist":  # Should work for QuickDraw too but untested
+                sample_fn = partial(
+                    sample_image_prefix, imshape=(28, 28)
+                )  # params=state["params"], length=784, bsz=64, prefix=train.sample)
             else:
-                raise NotImplementedError("Sampling currently only supported for MNIST")
+                raise NotImplementedError(
+                    "Sampling currently only supported for MNIST"
+                )
 
             # model_cls = partial(
             #     BatchStackedModel,
@@ -448,19 +450,19 @@ def example_train(
 
 
 @hydra.main(version_base=None, config_path="", config_name="config")
-def main(cfg : DictConfig) -> None:
+def main(cfg: DictConfig) -> None:
     print(OmegaConf.to_yaml(cfg))
-    OmegaConf.set_struct(cfg, False) # Allow writing keys
+    OmegaConf.set_struct(cfg, False)  # Allow writing keys
 
     # Track with wandb
     if wandb is not None:
         wandb_cfg = cfg.pop("wandb")
         wandb.init(
-            **wandb_cfg,
-            config=OmegaConf.to_container(cfg, resolve=True)
+            **wandb_cfg, config=OmegaConf.to_container(cfg, resolve=True)
         )
 
     example_train(**cfg)
+
 
 if __name__ == "__main__":
     main()

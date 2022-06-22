@@ -132,10 +132,14 @@ def create_mnist_dataset(bsz=128):
 
     # Return data loaders, with the provided batch size
     trainloader = torch.utils.data.DataLoader(
-        train, batch_size=bsz, shuffle=True,
+        train,
+        batch_size=bsz,
+        shuffle=True,
     )
     testloader = torch.utils.data.DataLoader(
-        test, batch_size=bsz, shuffle=False,
+        test,
+        batch_size=bsz,
+        shuffle=False,
     )
 
     return trainloader, testloader, N_CLASSES, SEQ_LENGTH, IN_DIM
