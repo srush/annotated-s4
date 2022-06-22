@@ -1,7 +1,7 @@
 # <center>
 # <h1>
-# The Annotated DSS / S4D:  
-# Diagonal State Space Models
+# Diagonal State Space Models  
+# (The Annotated S4D)
 # </h1>
 # </center>
 
@@ -70,7 +70,6 @@ if __name__ == '__main__':
 #     - [The Diagonal SSM Kernel: Vandermonde Matrix Multiplication]
 #     - [Implementing the S4D Kernel]
 #     - [Comparing SSM Parameterizations and Efficiency]
-#     - [Computational Complexities]
 #     - [The Complete S4D Layer]
 # * [Part IIIa. The Central Challenge: Initialization]
 #     - [A Brief Refresher on S4 and HiPPO]
@@ -94,11 +93,11 @@ if __name__ == '__main__':
 
 # ## Part I. A Refresher on State Space Models
 #
-# We're going to start by taking a step back – back to the original State Space Model (SSM) itself. The original
-# SSM is defined over *continuous* time inputs, as follows (from the original S4 paper)
-#
-# **[TODO: Link to original post]**
+# We're going to start by taking a step back to the original State Space Model (SSM) itself. This part is a quick recap of Part 1 of the original Annotated S4 with some more intuition on discretization.
 
+# ### The Continuous-time SSM
+# The original SSM is defined over *continuous* time inputs, as follows (from the original S4 paper)
+#
 # > The [state space model](https://en.wikipedia.org/wiki/State-space_representation) is defined by this simple equation.
 # > It maps a 1-D input signal $u(t)$ to an $N$-D latent state $x(t)$
 # > before projecting to a 1-D output signal $y(t)$.
@@ -116,13 +115,66 @@ if __name__ == '__main__':
 # > For simplicity, we assume the input and output are one-dimensional, and the state representation
 # > is $N$-dimensional. The first equation defines the change in $x(t)$ over time.
 
+# ### Discretization
+# <!--
 # [AG: In the DSS post, Sidd's elaboration on discretization is great and should be in Part 1 of the Annotated S4, as they are general facts about SSMs independent of S4/DSS. I also recommend looking at my [blog post on discretization](https://hazyresearch.stanford.edu/blog/2022-01-14-s4-3)]
+# -->
 
-# Recall also that in discrete time, the SSM is viewed as a sequence-to-sequence map $(u_k) \mapsto (y_k)$,
+# Recall also that in discrete time, the SSM is viewed as a sequence-to-sequence map $(u_k) \mapsto (y_k)$ on samples of the original continuous signals.
+# <!--
 # where the sequence $u_k = u(k \Delta)$ represents sampling the underlying continuous $u(t)$ with a fixed sampling interval or step size $\Delta$.
-
+# -->
 #
-# Part 1 of the S4 post showed that this discretized state-space model can be viewed as a linear RNN
+# > To be applied on a discrete input sequence $(u_0, u_1, \dots )$
+# > instead of continuous function $u(t)$, the SSM must be
+# > discretized by a **step size** $\Delta$ that represents the
+# > resolution of the input.  Conceptually, the inputs $u_k$ can be
+# > viewed as sampling an implicit underlying continuous signal $u(t)$,
+# > where $u_k = u(k \Delta)$.
+
+# Let's unpack more how this continuous-to-discrete conversion can be done. This part is a quick summary of a [longer blog post on discretization](https://hazyresearch.stanford.edu/blog/2022-01-14-s4-3) by the original S4 authors.
+# The idea is to simulate the differential equation using simple "numerical integration" techniques.
+# The simple illustrative example is Euler's method, which just applies the linearization $x(t+\Delta) = x(t) + \Delta x'(t)$.
+# Then
+# $$
+# \begin{aligned}
+# x( (k+1)\Delta) &\approx x(k \Delta) + \Delta x'(k\Delta) \\
+# &= x(k\Delta) + \Delta\left[ \bm{A} x(k\Delta) + \bm{B} u(k\Delta) \right] \\
+# &= (\bm{I}+\Delta\bm{A})x(k\Delta) + \Delta\bm{B} u(k\Delta) \\
+# \end{aligned}
+# $$
+# In other words, by defining the *discretized state matrices*
+# $$
+# \bm{\overline{A}} = \bm{I}+\Delta\bm{A} \qquad \qquad \bm{\overline{B}} = \Delta\bm{B},
+# $$
+# the continuous-time differential equation $x' = \bm{A}x + \bm{B}u$ turns into the discrete-time recurrence $x = \bm{\overline{A}}x + \bm{\overline{B}}u$!
+#
+# More sophisticated discretization techniques simply use different formulas for $(\bm{\overline{A}}, \bm{\overline{B}})$.
+# Here are two more very well-known discretizations that are more accurate than Euler's method:
+#
+# $$
+# \begin{aligned}
+#   (\textbf{Bilinear}) \:\: & \bm{\overline{A}} = (\bm{I} - \Delta/2 \bm{A})^{-1} (\bm{I} + \Delta/2 \bm{A}) &
+#   \\
+#   & \bm{\overline{B}} = (\bm{I} - \Delta/2 \bm{A})^{-1} \cdot \Delta \bm{B} &
+#   \\
+#   \\
+#   (\textbf{ZOH}) \:\: & \bm{\overline{A}} = \exp(\Delta \bm{A}) % (\bm{I} + \Delta/2 \cdot \bm{A})
+#   \\
+#   & \bm{\overline{B}} = (\Delta \bm{A})^{-1} (\exp(\Delta \cdot \bm{A}) - \bm{I}) \cdot \Delta \bm{B}
+# \end{aligned}
+# $$
+# The **bilinear method** is what S4 uses for computational efficiency, which can be seen as an approximation to ZOH.
+# The **zero-order hold (ZOH)** is perhaps the most standard and intuitive discretization for SSMs.
+# It has the interpretation of *holding* each discrete sample constant for $\Delta$ time, and then applying the original continuous-time ODE.
+# This can be solved in closed form for this simple SSM to [derive](https://users.wpi.edu/~zli11/teaching/rbe595_2017/LectureSlide_PDF/discretization.pdf) the ZOH formula.
+#
+# <img src="images/discretization.png" width="100%">
+#
+# The upshot is that the discrete-time SSM is a sequence-to-sequence mapping $(u_k) \mapsto (y_k)$ that has an intuitive interpretation using the continuous-time SSM $u(t) \mapsto y(t)$ as a black box!
+#
+# ### The Recurrent and Convolutional Representations
+# So the discretized SSM can be viewed as a linear RNN
 # with a transition matrix given by $\boldsymbol{\overline{A}}$:
 
 # $$
@@ -134,7 +186,7 @@ if __name__ == '__main__':
 
 # Note that when $\boldsymbol{A}$ is diagonal, the first equation decomposes as independent 1-dimensional recurrences over the elements of $x$ (*Splash figure, Left*)!
 
-# We then showed how we can turn the above recurrence into a *convolution* because of the repetitive structure (more formally because the recurrence is *time-invariant*).
+# The S4 paper then showed how we can turn the above recurrence into a *convolution* because of the repetitive structure (more formally because the recurrence is *time-invariant*).
 # Expanding out the recurrence gives a closed formula for $y$
 # $$
 # \begin{aligned}
@@ -157,7 +209,8 @@ if __name__ == '__main__':
 # \end{aligned}
 # $$
 
-# **Problem**: SSMs in deep learning have two core challenges. The *modeling* challenge is finding good parameters of the SSM, particular the state matrix $\boldsymbol{A}$, that can effectively model complex interactions in sequential data such as long-range dependencies. We defer this discussion, which is more theoretical, to Part III.
+# ### Challenges
+# SSMs in deep learning have two core challenges. The *modeling* challenge is finding good parameters of the SSM, particular the state matrix $\boldsymbol{A}$, that can effectively model complex interactions in sequential data such as long-range dependencies. We defer this discussion, which is more theoretical, to Part III.
 #
 # The core *computational* challenge of SSMs is constructing this kernel $\boldsymbol{\overline{K}}$ fast. Overcoming this requires imposing *structure* on the state space. Next, we'll see how diagonal SSMs provide a simple way to do this.
 
