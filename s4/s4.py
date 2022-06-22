@@ -1385,7 +1385,7 @@ def sample_checkpoint(path, model, length, rng):
     start = np.zeros((1, length, 1), dtype=int)
 
     print("[*] Initializing from checkpoint %s" % path)
-    state = checkpoints.restore_checkpoint(checkpoint, None)
+    state = checkpoints.restore_checkpoint(path, None)
     assert "params" in state
     params, prime, cache = init_recurrence(model, state["params"], start[:, :-1], rng)
     print("[*] Sampling output")
