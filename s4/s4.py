@@ -1456,7 +1456,7 @@ def sample_image_prefix(
     BATCH = start.shape[0]
     START = prefix
     LENGTH = start.shape[1]
-    assert LENGTH == np.prod(imshape)
+    assert LENGTH == onp.prod(imshape)
 
     # _, dataloader, _, _, _ = Datasets["mnist"](bsz=BATCH)
     it = iter(dataloader)

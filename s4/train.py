@@ -13,9 +13,8 @@ from tqdm import tqdm
 from typing import Optional
 from .data import Datasets
 from .dss import DSSLayer
-from .s4 import BatchStackedModel, S4Layer, SSMLayer
+from .s4 import BatchStackedModel, S4Layer, SSMLayer, sample_image_prefix
 from .s4d import S4DLayer
-from .s4 import sample_mnist_prefix
 
 
 try:
@@ -402,7 +401,7 @@ def example_train(
             # )
             samples, examples = sample_fn(
                 # run_id,
-                params=state["params"],
+                params=state.params,
                 model=model_cls(decode=True, training=False),
                 rng=rng,
                 dataloader=testloader,
