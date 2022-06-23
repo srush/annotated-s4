@@ -1453,6 +1453,7 @@ def sample_image_prefix(
     # start = np.zeros((BATCH, length), dtype=int)
     # start = np.zeros((BATCH, length, 1), dtype=int)
     start = np.array(next(iter(dataloader))[0].numpy())
+    start = np.zeros_like(start)
     # params, prime, cache = init_recurrence(model, params, start[:, :-1], rng)
     params, prime, cache = init_recurrence(model, params, start, rng)
 
