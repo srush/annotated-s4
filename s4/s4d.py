@@ -171,7 +171,8 @@ if __name__ == '__main__':
 #
 # <img src="images/discretization.png" width="100%">
 #
-# The upshot is that the discrete-time SSM is a sequence-to-sequence mapping $(u_k) \mapsto (y_k)$ that has an intuitive interpretation using the continuous-time SSM $u(t) \mapsto y(t)$ as a black box!
+# It's worth emphasizing that the concept of discretization illusrated in this figure is much more general than SSMs, and intuitively shows why any *black box* continuous-time "signal model" $u(t) \mapsto y(t)$ can be converted into a discrete-time "sequence model" $(u_k) \mapsto (y_k)$!
+# In the case of SSMs, this conversion has closed form formulas through these discretized parameters $\bm{\overline{A}}, \dots$.
 #
 # ### The Recurrent and Convolutional Representations
 # So the discretized SSM can be viewed as a linear RNN
@@ -186,7 +187,7 @@ if __name__ == '__main__':
 
 # Note that when $\boldsymbol{A}$ is diagonal, the first equation decomposes as independent 1-dimensional recurrences over the elements of $x$ (*Splash figure, Left*)!
 
-# The S4 paper then showed how we can turn the above recurrence into a *convolution* because of the repetitive structure (more formally because the recurrence is *time-invariant*).
+# The S4 paper then showed how we can turn the above recurrence into a *convolution* because of the repetitive structure (more formally because the recurrence is *linear* and *time-invariant*).
 # Expanding out the recurrence gives a closed formula for $y$
 # $$
 # \begin{aligned}
