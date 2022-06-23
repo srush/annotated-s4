@@ -566,8 +566,6 @@ class StackedModel(nn.Module):
         else:
             self.encoder = nn.Dense(self.d_model)
         self.decoder = nn.Dense(self.d_output)
-        if self.ln:
-            self.norm = nn.LayerNorm()
         self.layers = [
             SequenceBlock(
                 layer_cls=self.layer_cls,
