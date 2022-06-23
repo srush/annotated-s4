@@ -1493,18 +1493,18 @@ def sample_image_prefix(
         f[:, :, 1] = i
         f[:, :START, 0] = i[:, :START]
         f[:, :START, 2] = i[:, :START]
-        for k in range(BATCH):
-            fig, (ax1, ax2) = plt.subplots(ncols=2)
-            ax1.set_title("Sampled")
-            ax1.imshow(final[k] / 256.0)
-            ax2.set_title("True")
-            ax1.axis("off")
-            ax2.axis("off")
-            ax2.imshow(final2[k] / 256.0)
-            if save:
+        if save:
+            for k in range(BATCH):
+                fig, (ax1, ax2) = plt.subplots(ncols=2)
+                ax1.set_title("Sampled")
+                ax1.imshow(final[k] / 256.0)
+                ax2.set_title("True")
+                ax1.axis("off")
+                ax2.axis("off")
+                ax2.imshow(final2[k] / 256.0)
                 fig.savefig("im%d.%d.png" % (j, k))
+                plt.close()
                 print(f"Sampled batch {j} image {k}")
-            plt.close()
     return final, final2
 
 
