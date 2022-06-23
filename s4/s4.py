@@ -555,12 +555,9 @@ class StackedModel(nn.Module):
     n_layers: int
     prenorm: bool = True
     dropout: float = 0.0
-    training: bool = True
+    embedding: bool = False  # Use nn.Embed instead of nn.Dense encoder
     classification: bool = False
-    embedding: bool = False
-    normalize: bool = False
-    ln: bool = False
-    center: bool = False
+    training: bool = True
     decode: bool = False  # Probably should be moved into layer_args
 
     def setup(self):
@@ -585,15 +582,12 @@ class StackedModel(nn.Module):
         ]
 
     def __call__(self, x):
-        if not self.classification and not self.decode:
-            x = np.pad(x[:-1], [(1, 0), (0, 0)])
-        if self.center:
-            x = x - 127.5
-        if self.normalize:
-            x = x / 127.5
+        if not self.classification:
+            if not self.embedding:
+                x = x / 255.0  # Normalize
+            if not self.decode:
+                x = np.pad(x[:-1], [(1, 0), (0, 0)])
         x = self.encoder(x)
-        if self.ln:
-            x = self.norm(x)
         for layer in self.layers:
             x = layer(x)
         if self.classification:
