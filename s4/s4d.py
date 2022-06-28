@@ -12,7 +12,7 @@
 # </center>
 #
 # <center>
-# <p><a href="https://TODO">On the Parameterization and Initialization of Diagonal State Space Models</a></p>
+# <p><a href="https://arxiv.org/abs/2206.11893">On the Parameterization and Initialization of Diagonal State Space Models</a></p>
 # <p> Albert Gu, Ankit Gupta, Karan Goel, Christopher Ré.</p>
 # </center>
 # <img src="images/s4d.png" width="100%"/>
@@ -37,7 +37,7 @@
 
 # However, at the end of March 2022 - an effective diagonal model was discovered in [[Diagonal State Spaces are as Effective as Structured State Spaces](https://arxiv.org/abs/2203.14343)] based on approximating S4's matrix (DSS).
 # This important observation allowed diagonal SSMs to be used while preserving the empirical strengths of S4!
-# Diagonal SSMs were further fleshed out in [[On the Parameterization and Initialization of Diagonal State Space Models](https://TODO)],
+# Diagonal SSMs were further fleshed out in [[On the Parameterization and Initialization of Diagonal State Space Models](https://arxiv.org/abs/2206.11893)],
 # which used an even simpler method based on S4's original outline, combined with new theory explaining why DSS's diagonal initialization can model long-range dependencies (S4D).
 # The rest of this post steps through the incredibly simple model and theoretical intuition of S4D, an *even more structured* state space.
 #
@@ -603,7 +603,7 @@ S4DLayer = cloneLayer(S4DLayer)
 # It can be hard to appreciate how surprising and subtle this fact is.
 # It's important to note that writing the HiPPO matrix in DPLR form was S4's main contribution, but *this form was purely for computational purposes*.
 # In other words, *the diagonal and low-rank portions by themselves should have no mathematical meaning*.
-# In fact, other follow-ups that [generalize and explain S4](https://TODO) introduce different variants of S4 that all have a DPLR representation, but where dropping the low-rank term to convert it to a diagonal matrix performs much worse.
+# In fact, other follow-ups that [generalize and explain S4](https://arxiv.org/abs/2206.12037) introduce different variants of S4 that all have a DPLR representation, but where dropping the low-rank term to convert it to a diagonal matrix performs much worse.
 
 # It turns out that this particular matrix is extremely special, and the diagonal HiPPO matrix *does* have a theoretical interpretation. Dropping the low-rank term - leaving only the normal term $\boldsymbol{A}^{(N)}$ - *has the same dynamics as $\boldsymbol{A}$ in the limit as the state size $N \to \infty$*.
 # This is a pretty remarkable fact proved in the S4D paper, and honestly still seems like an incredible coincidence.
@@ -702,7 +702,7 @@ S4DLayer = cloneLayer(S4DLayer)
 # Although we've been focusing on $\bm{A}$, which is the more important matrix, HiPPO actually provides exact formulas for
 # $\bm{A}$ *and* $\bm{B}$.
 # So with the above interpretation, *HiPPO provides a specific set of basis functions*, and the parameter $\bm{C}$ then learns a weighted combination of these to use as the final convolution kernel.
-# For the particular $(\bm{A}, \bm{B})$ that S4 uses, each basis function actually has a closed-form formula as [exponentially-warped Legendre polynomials](https://TODO) $L_n(e^{-t})$.
+# For the particular $(\bm{A}, \bm{B})$ that S4 uses, each basis function actually has a closed-form formula as [exponentially-warped Legendre polynomials](https://arxiv.org/abs/2206.12037) $L_n(e^{-t})$.
 # Intuitively, S4's state $x(t)$ convolves the input by each of these very smooth, infinitely-long kernels, which gives rise to its long-range modeling abilities.
 
 # <center>
@@ -741,7 +741,7 @@ S4DLayer = cloneLayer(S4DLayer)
 # <img src="images/basis_fout_norank.png" width="48%"/>
 # </center>
 
-# It's worth repeating: the particular HiPPO matrix that S4 uses, and its DPLR representation which can be truncated while preserving the same basis, is *really* special!
+# It's worth repeating: the particular HiPPO matrix that S4 uses, and its DPLR representation which can be truncated while producing the same basis functions, is really special!
 
 # ### Other Diagonal Initializations
 
