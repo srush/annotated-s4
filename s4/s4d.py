@@ -433,9 +433,9 @@ if __name__ == '__main__':
 # It's neat that generalizing the diagonal case to diagonal plus low-rank simply reduces to a slightly different, but computationally equivalent, linear algebra primitive!
 
 # Note that these primitives can be implemented in many ways, which has been the source of some confusion about their efficiencies (is diagonal faster than DPLR?) and implementations (does DPLR require a custom CUDA kernel?).
-# In summary, the DPLR kernel (i.e. Cauchy) and all versions of diagonal kernels (i.e. Vandermonde) actually have the *exact same computational complexities* as well as "implementation complexity", because the computational core in all cases is a similar structured matrix product. This can be computed in:
+# In short, the DPLR kernel (i.e. Cauchy) and any version of diagonal kernel (i.e. Vandermonde) actually have the *exact same computational complexities* as well as "implementation complexity", because the computational core in all cases is a similar structured matrix product. This can be computed in:
 #
-# * $O(NL)$ time and $O(NL)$ space, by naively materializing the matrix
+# * $O(NL)$ time and $O(NL)$ space, by naively materializing the matrix (good enough for most purposes!)
 # * $O(NL)$ time and $O(N+L)$ space, which either requires a custom kernel (e.g. in PyTorch) or taking advantage of clever compilers (e.g. JAX with XLA) as in our implementation above
 # * $\widetilde{O}(N+L)$ time and $O(N+L)$ space theoretically, from a rich body of literature in scientific computing
 

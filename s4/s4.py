@@ -1401,12 +1401,12 @@ def sample_checkpoint(path, model, length, rng):
 # A more visually interesting task is generating MNIST digits, by predicting entire
 # sequences of pixels! Here, we simply feed in a sequence of pixels into the model and have it
 # predict the next one like language modeling. With a little
-# tweaking, we are able to get the model to an NLL of 0.52 on this
-# task with size 512 and 6 layers (~2m parameters).
+# tweaking, we are able to get the model to an NLL of 0.36 on this
+# task with size 512 and 6 layers (~4m parameters).
 #
 # The metric usually used for this task is *[bits per
 # dimension](https://paperswithcode.com/sota/image-generation-on-mnist)* which is
-# NLL in base 2 for MNIST. A score of 0.52 is ~0.76 BPD which is near PixelCNN++.
+# NLL in base 2 for MNIST. A loss of 0.36 is ~0.52 BPD which is SOTA according to PapersWithCode.
 
 
 # <img src="images/sample.png" width="100%">
