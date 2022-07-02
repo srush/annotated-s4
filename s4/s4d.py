@@ -450,6 +450,7 @@ class S4DLayer(nn.Module):
     N: int
     l_max: int
     decode: bool = False
+    scaling: str = "hippo"
 
     # The full training script has optimizer hooks that lower the LR on special params
     lr = {
@@ -462,9 +463,16 @@ class S4DLayer(nn.Module):
 
     def setup(self):
         # Learned Parameters
-        init_A_re, init_A_im, _, _ = hippo_initializer(self.N)
-        self.A_re = self.param("A_re", init_A_re, (self.N,))
-        self.A_im = self.param("A_im", init_A_im, (self.N,))
+        if self.scaling == "hippo":
+            init_A_re, init_A_im, _, _ = hippo_initializer(self.N)
+            self.A_re = self.param("A_re", init_A_re, (self.N,))
+            self.A_im = self.param("A_im", init_A_im, (self.N,))
+        elif self.scaling == "linear":
+            self.A_re = self.param("A_re", nn.initializers.constant(-0.5), (self.N,))
+            def arange_initializer(scale):
+                return lambda key, shape: scale * np.ones(shape) * np.arange(shape[-1])
+            self.A_im = self.param("A_im", arange_initializer(np.pi), (self.N,))
+        else: raise NotImplementedError
         self.A = np.clip(self.A_re, None, -1e-4) + 1j * self.A_im
         self.B_re = self.param("B_re", nn.initializers.ones, (self.N,))
         self.B_im = self.param("B_im", nn.initializers.zeros, (self.N,))
