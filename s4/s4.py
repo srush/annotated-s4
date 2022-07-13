@@ -496,7 +496,7 @@ SSMLayer = cloneLayer(SSMLayer)
 
 class SequenceBlock(nn.Module):
     layer_cls: nn.Module
-    layer: dict # Hyperparameters of inner layer
+    layer: dict  # Hyperparameters of inner layer
     dropout: float
     d_model: int
     prenorm: bool = True
@@ -537,6 +537,16 @@ class SequenceBlock(nn.Module):
 # classification or generation in the standard way as a Transformer.
 
 
+class Embedding(nn.Embed):
+    num_embeddings: int
+    features: int
+
+    @nn.compact
+    def __call__(self, x):
+        y = nn.Embed(self.num_embeddings, self.features)(x[..., 0])
+        return np.where(x > 0, y, 0.0)
+
+
 class StackedModel(nn.Module):
     layer_cls: nn.Module
     layer: dict  # Extra arguments to pass into layer constructor
@@ -545,15 +555,16 @@ class StackedModel(nn.Module):
     n_layers: int
     prenorm: bool = True
     dropout: float = 0.0
-    training: bool = True
+    embedding: bool = False  # Use nn.Embed instead of nn.Dense encoder
     classification: bool = False
+    training: bool = True
     decode: bool = False  # Probably should be moved into layer_args
 
     def setup(self):
-        if self.classification:
-            self.encoder = nn.Dense(self.d_model)
+        if self.embedding:
+            self.encoder = Embedding(self.d_output, self.d_model)
         else:
-            self.encoder = nn.Embed(self.d_output+1, self.d_model)
+            self.encoder = nn.Dense(self.d_model)
         self.decoder = nn.Dense(self.d_output)
         self.layers = [
             SequenceBlock(
@@ -570,7 +581,10 @@ class StackedModel(nn.Module):
 
     def __call__(self, x):
         if not self.classification:
-            x = np.pad(x[:-1, 0], (1, 0), constant_values=self.d_output)
+            if not self.embedding:
+                x = x / 255.0  # Normalize
+            if not self.decode:
+                x = np.pad(x[:-1], [(1, 0), (0, 0)])
         x = self.encoder(x)
         for layer in self.layers:
             x = layer(x)
@@ -1238,7 +1252,7 @@ class S4Layer(nn.Module):
         # C should be init as standard normal
         # This doesn't work due to how JAX handles complex optimizers https://github.com/deepmind/optax/issues/196
         # self.C = self.param("C", normal(stddev=1.0, dtype=np.complex64), (self.N,))
-        self.C = self.param("C", normal(stddev=0.5 ** 0.5), (self.N, 2))
+        self.C = self.param("C", normal(stddev=0.5**0.5), (self.N, 2))
         self.C = self.C[..., 0] + 1j * self.C[..., 1]
         self.D = self.param("D", nn.initializers.ones, (1,))
         self.step = np.exp(self.param("log_step", log_step_initializer(), (1,)))
@@ -1345,16 +1359,10 @@ def sample(model, params, prime, cache, x, start, end, rng):
 # "prime" collection of variables.
 
 
-def init_from_checkpoint(model, checkpoint, init_x):
-    from flax.training import checkpoints
-
-    print("[*] Loading")
-    state = checkpoints.restore_checkpoint(checkpoint, None)
-    assert "params" in state
-    print("[*] Initializing")
+def init_recurrence(model, params, init_x, rng):
     variables = model.init(rng, init_x)
     vars = {
-        "params": state["params"],
+        "params": params,
         "cache": variables["cache"].unfreeze(),
         "prime": variables["prime"].unfreeze(),
     }
@@ -1366,10 +1374,15 @@ def init_from_checkpoint(model, checkpoint, init_x):
 # Putting this altogether we can sample from a model directly.
 
 
-def sample_checkpoint(path, model, length):
-    start = np.zeros((1, length, 1))
+def sample_checkpoint(path, model, length, rng):
+    from flax.training import checkpoints
+
+    start = np.zeros((1, length, 1), dtype=int)
+
     print("[*] Initializing from checkpoint %s" % path)
-    params, prime, cache = init_from_checkpoint(model, path, start[:, :-1])
+    state = checkpoints.restore_checkpoint(path, None)
+    assert "params" in state
+    params, prime, cache = init_recurrence(model, state["params"], start, rng)
     print("[*] Sampling output")
     return sample(model, params, prime, cache, start, 0, length - 1, rng)
 
@@ -1388,12 +1401,12 @@ def sample_checkpoint(path, model, length):
 # A more visually interesting task is generating MNIST digits, by predicting entire
 # sequences of pixels! Here, we simply feed in a sequence of pixels into the model and have it
 # predict the next one like language modeling. With a little
-# tweaking, we are able to get the model to an NLL of 0.52 on this
-# task with size 512 and 6 layers (~2m parameters).
+# tweaking, we are able to get the model to an NLL of 0.36 on this
+# task with size 512 and 6 layers (~4m parameters).
 #
 # The metric usually used for this task is *[bits per
 # dimension](https://paperswithcode.com/sota/image-generation-on-mnist)* which is
-# NLL in base 2 for MNIST. A score of 0.52 is ~0.76 BPD which is near PixelCNN++.
+# NLL in base 2 for MNIST. A loss of 0.36 is ~0.52 BPD which is SOTA according to PapersWithCode.
 
 
 # <img src="images/sample.png" width="100%">
@@ -1411,58 +1424,86 @@ def sample_checkpoint(path, model, length):
 # <img src="images/im0.8.png" width="45%">
 
 
-def sample_mnist_prefix(path, model, length):
+def sample_image_prefix(
+    params,
+    model,
+    # length,
+    rng,
+    dataloader,
+    prefix=300,
+    # bsz=32,
+    imshape=(28, 28),
+    n_batches=None,
+    save=True,
+):
+    """Sample a grayscale image represented as intensities in [0, 255]"""
     import matplotlib.pyplot as plt
     import numpy as onp
-    from .data import Datasets
 
-    BATCH = 32
-    START = 300
-    start = np.zeros((BATCH, length, 1))
-    params, prime, init_cache = init_from_checkpoint(model, path, start[:, :-1])
+    # from .data import Datasets
+    # BATCH = bsz
+    # start = np.zeros((BATCH, length), dtype=int)
+    # start = np.zeros((BATCH, length, 1), dtype=int)
+    start = np.array(next(iter(dataloader))[0].numpy())
+    start = np.zeros_like(start)
+    # params, prime, cache = init_recurrence(model, params, start[:, :-1], rng)
+    params, prime, cache = init_recurrence(model, params, start, rng)
 
-    _, testloader, _, _, _ = Datasets["mnist"](bsz=BATCH)
-    it = iter(testloader)
+    BATCH = start.shape[0]
+    START = prefix
+    LENGTH = start.shape[1]
+    assert LENGTH == onp.prod(imshape)
+
+    # _, dataloader, _, _, _ = Datasets["mnist"](bsz=BATCH)
+    it = iter(dataloader)
     for j, im in enumerate(it):
-        image = im[0].numpy()
+        if n_batches is not None and j >= n_batches:
+            break
 
+        image = im[0].numpy()
+        image = np.pad(
+            image[:, :-1, :], [(0, 0), (1, 0), (0, 0)], constant_values=0
+        )
         cur = onp.array(image)
-        cur[:, START + 1 :, 0] = 0
-        cur = np.array(cur)
+        # cur[:, START + 1 :, 0] = 0
+        # cur = np.pad(cur[:, :-1, 0], [(0, 0), (1, 0)], constant_values=256)
+        cur = np.array(cur[:, :])
 
         # Cache the first `start` inputs.
         out, vars = model.apply(
-            {"params": params, "prime": prime, "cache": init_cache},
+            {"params": params, "prime": prime, "cache": cache},
             cur[:, np.arange(0, START)],
             mutable=["cache"],
         )
         cache = vars["cache"].unfreeze()
-        out = sample(model, params, prime, cache, cur, START, length - 1, rng)
-        print(j)
+        out = sample(model, params, prime, cache, cur, START, LENGTH - 1, rng)
 
         # Visualization
-        out = out.reshape(BATCH, 28, 28)
-        final = onp.zeros((BATCH, 28, 28, 3))
-        final2 = onp.zeros((BATCH, 28, 28, 3))
+        out = out.reshape(BATCH, *imshape)
+        final = onp.zeros((BATCH, *imshape, 3))
+        final2 = onp.zeros((BATCH, *imshape, 3))
         final[:, :, :, 0] = out
-        f = final.reshape(BATCH, 28 * 28, 3)
-        i = image.reshape(BATCH, 28 * 28)
+        f = final.reshape(BATCH, LENGTH, 3)
+        i = image.reshape(BATCH, LENGTH)
         f[:, :START, 1] = i[:, :START]
         f[:, :START, 2] = i[:, :START]
-        f = final2.reshape(BATCH, 28 * 28, 3)
+        f = final2.reshape(BATCH, LENGTH, 3)
         f[:, :, 1] = i
         f[:, :START, 0] = i[:, :START]
         f[:, :START, 2] = i[:, :START]
-        for k in range(BATCH):
-            fig, (ax1, ax2) = plt.subplots(ncols=2)
-            ax1.set_title("Sampled")
-            ax1.imshow(final[k] / 256.0)
-            ax2.set_title("True")
-            ax1.axis("off")
-            ax2.axis("off")
-            ax2.imshow(final2[k] / 256.0)
-            fig.savefig("im%d.%d.png" % (j, k))
-            print(j)
+        if save:
+            for k in range(BATCH):
+                fig, (ax1, ax2) = plt.subplots(ncols=2)
+                ax1.set_title("Sampled")
+                ax1.imshow(final[k] / 256.0)
+                ax2.set_title("True")
+                ax1.axis("off")
+                ax2.axis("off")
+                ax2.imshow(final2[k] / 256.0)
+                fig.savefig("im%d.%d.png" % (j, k))
+                plt.close()
+                print(f"Sampled batch {j} image {k}")
+    return final, final2
 
 
 # ### Experiments: QuickDraw
@@ -1625,5 +1666,3 @@ def sample_mnist_prefix(path, model, length):
 #   * Added RNN decoding
 #   * Added Speech examples
 # * v1 - Original version
-
-

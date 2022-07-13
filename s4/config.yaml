@@ -7,6 +7,7 @@ model:
   n_layers: 4
   dropout: 0.0
   prenorm: true
+  embedding: false
   layer:
     N: 64
 
@@ -18,6 +19,7 @@ train:
   weight_decay: 0.01
   checkpoint: false
   suffix: null # String to use for checkpoint suffix
+  sample: null # Sample during validation with desired prefix length
 
 # Pass in 'wandb.mode=online' to turn on wandb logging
 wandb:
