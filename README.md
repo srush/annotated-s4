@@ -32,10 +32,10 @@ python -m s4.train --dataset quickdraw --model s4 --epochs 1 --bsz 512 --d_model
 #### MNIST Classification
 
 ```bash
-python -m s4.train --dataset mnist-classification --model s4 --epochs 20 --bsz 128 --d_model 128 --p_dropout 0.25 --lr 5e-3 --lr_schedule
+python -m s4.train dataset=mnist-classification layer=s4 train.epochs=20 train.bsz=128 model.d_model=128 model.dropout=0.25 train.lr=5e-3 train.lr_schedule=true seed=1
 ```
 
-Gets "best" 99.27% accuracy after 20 epochs @ 17s/epoch on an A100
+Gets "best" 99.55% accuracy after 20 epochs @ 17s/epoch on an A100
 
 #### CIFAR-10 Classification
 
@@ -46,6 +46,11 @@ python -m s4.train dataset=cifar-classification layer={s4,dss,s4d} train.epochs=
 S4 gets "best" 91.23% accuracy after 100 epochs @ 2m16s/epoch on an A100
 DSS gets "best" 89.31% accuracy after 100 epochs @ 1m41s/epoch on an A100
 S4D gets "best" 89.76% accuracy after 100 epochs @ 1m32s/epoch on an A100
+
+The alternative S4D-Lin initialization performs slightly better with 90.98% accuracy.
+```
+python -m s4.train dataset=cifar-classification layer=s4d train.epochs=100 train.bsz=50 model.n_layers=6 model.d_model=512 model.dropout=0.25 train.lr=5e-3 train.weight_decay=0.01 train.lr_schedule=true seed=1 +model.layer.scaling=linear
+```
 
 
 ---

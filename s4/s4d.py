@@ -93,7 +93,7 @@ if __name__ == '__main__':
 
 # ## Part I. A Refresher on State Space Models
 #
-# We're going to start by taking a step back to the original State Space Model (SSM) itself. This part is a quick recap of Part 1 of the original Annotated S4 with some more intuition on discretization.
+# We're going to start by taking a step back to the original State Space Model (SSM) itself. This part is a quick recap of Part 1 of the original Annotated S4, with some additional intuition on discretization.
 
 # ### The Continuous-time SSM
 # The original SSM is defined over *continuous* time inputs, as follows (from the original S4 paper)
@@ -164,6 +164,7 @@ if __name__ == '__main__':
 #   & \bm{\overline{B}} = (\Delta \bm{A})^{-1} (\exp(\Delta \cdot \bm{A}) - \bm{I}) \cdot \Delta \bm{B}
 # \end{aligned}
 # $$
+# These are essentially interchangeable in terms of performance
 # The **bilinear method** is what S4 uses for computational efficiency, which can be seen as an approximation to ZOH.
 # The **zero-order hold (ZOH)** is perhaps the most standard and intuitive discretization for SSMs.
 # It has the interpretation of *holding* each discrete sample constant for $\Delta$ time, and then applying the original continuous-time ODE.
@@ -171,8 +172,8 @@ if __name__ == '__main__':
 #
 # <img src="images/discretization.png" width="100%">
 #
-# It's worth emphasizing that the concept of discretization illusrated in this figure is much more general than SSMs, and intuitively shows why any *black box* continuous-time "signal model" $u(t) \mapsto y(t)$ can be converted into a discrete-time "sequence model" $(u_k) \mapsto (y_k)$!
-# In the case of SSMs, this conversion has closed form formulas through these discretized parameters $\bm{\overline{A}}, \dots$.
+# It's worth emphasizing that the concept of discretization illustrated in this figure is much more general than SSMs, and intuitively shows why any *black box* continuous-time "signal model" $u(t) \mapsto y(t)$ can be converted into a discrete-time "sequence model" $(u_k) \mapsto (y_k)$!
+# In the case of SSMs, this conversion has closed form formulas through these discretized parameters $\bm{\overline{A}}, \bm{\overline{B}}$.
 #
 # ### The Recurrent and Convolutional Representations
 # So the discretized SSM can be viewed as a linear RNN
@@ -187,7 +188,7 @@ if __name__ == '__main__':
 
 # Note that when $\boldsymbol{A}$ is diagonal, the first equation decomposes as independent 1-dimensional recurrences over the elements of $x$ (*Splash figure, Left*)!
 
-# The S4 paper then showed how we can turn the above recurrence into a *convolution* because of the repetitive structure (more formally because the recurrence is *linear* and *time-invariant*).
+# The S4 paper then showed how we can turn the above recurrence into a *convolution* because of the repetitive structure (more formally, because the recurrence is *linear* and *time-invariant* (LTI)).
 # Expanding out the recurrence gives a closed formula for $y$
 # $$
 # \begin{aligned}
@@ -220,7 +221,7 @@ if __name__ == '__main__':
 # Let's now examine more closely how to compute the discretized SSM kernel.
 # This part will directly follow Section 3.1 of the original S4 paper.
 
-# > The fundamental bottleneck in computing the discrete-time SSM is that it involves repeated matrix multiplication by $\boldsymbol{\overline{A}}$.
+# > The fundamental bottleneck in computing the discrete-time SSM is that it involves repeated matrix-vector multiplication by $\boldsymbol{\overline{A}}$.
 # > For example, computing $\boldsymbol{\overline{K}}$ naively involves $L$ successive multiplications by $\boldsymbol{\overline{A}}$, requiring $O(N^2 L)$ operations and $O(NL)$ space.
 
 # In other words, computing this kernel $\boldsymbol{\overline{K}}$ can be
@@ -250,11 +251,11 @@ if __name__ == '__main__':
 # Why is this important? It allows replacing $\boldsymbol{A}$ with a [canonical form](https://en.wikipedia.org/wiki/Canonical_form#Linear_algebra) such as diagonal matrices,
 # imposing simpler *structure* while preserving expressivity! Ideally, this structure would simplify and speed up the computation of the SSM kernel.
 #
-# Note that Lemma 1 provides an immediately implies the expressivity of diagonal SSMs.
+# Note that Lemma 1 immediately implies the expressivity of diagonal SSMs.
 # To spell it out: suppose we have a state space with parameters $(\boldsymbol{A}, \boldsymbol{B}, \boldsymbol{C})$ where the matrix $\boldsymbol{A}$ is diagonalizable - in other words, there exists a matrix $\boldsymbol{V}$ such that $\boldsymbol{V}^{-1}\boldsymbol{A}\boldsymbol{V}$ is diagonal.
 # Then the state space $(\boldsymbol{V}^{-1} \boldsymbol{A} \boldsymbol{V}, \boldsymbol{V}^{-1}\boldsymbol{B}, \boldsymbol{C}\boldsymbol{V})$ is a diagonal SSM that is *exactly equivalent*, or in other words defines the exact same sequence-to-sequence transformation $u \mapsto y$!
 
-# Furthermore, it's well known that [almost all square matrices are diagonalizable](https://chiasme.wordpress.com/2013/09/03/almost-all-matrices-are-diagonalizable/), so that diagonal SSMs are essentially fully expressive (with a caveat that we'll talk about in Part III).
+# Furthermore, it's well known that [almost all square matrices are diagonalizable](https://chiasme.wordpress.com/2013/09/03/almost-all-matrices-are-diagonalizable/), so that complex diagonal SSMs are essentially fully expressive (with a caveat that we'll talk about in Part III).
 
 # **Remark.** Note that Lemma 1 is about equivalence of *continuous* SSMs. The equivalence of their discretizations follows immediately because the *discrete* SSM (viewed as the map $u_k \mapsto y_k$) depends only on the step size $\Delta$ and the continuous SSM (as the map $u(t) \mapsto y(t)$). A longer version of this expressivity result is presented as Proposition 1 of the DSS paper, which focuses on the discrete case.]
 
@@ -305,7 +306,7 @@ if __name__ == '__main__':
 # providing a theoretical asymptotic efficiency improvement.
 
 # In practice, our implementation below will use the naive $O(NL)$ summation but leverage the structure of the Vandermonde matrix to avoid materializing it, reducing the space complexity to $O(N+L)$.
-#  The main idea is that the Vandermonde matrix has a simple formula in terms of its parameters $\boldsymbol{A}$, so its entries can be computed on demand instead of all in advance. For example, computing each $\boldsymbol{\overline{K}}_\ell$ one by one, materializing one column of the matrix at a time, would be much more memory efficient. In JAX, this can be automatically handled by JIT and XLA compilation.
+#  The main idea is that the Vandermonde matrix has a simple formula in terms of its parameters $\boldsymbol{A}$, so its entries can be computed "on demand" instead of all in advance. For example, computing each $\boldsymbol{\overline{K}}_\ell$ one by one, materializing one column of the matrix at a time, would be much more memory efficient. In JAX, this can be automatically handled by JIT and XLA compilation.
 # This is a nice sweet spot that's simple to implement, memory efficient, and quite fast on modern parallelizable hardware like GPUs and TPUs.
 # We'll comment more on the efficiency in [[Comparing SSM Parameterizations and Efficiency]].
 
@@ -511,7 +512,7 @@ class S4DLayer(nn.Module):
 S4DLayer = cloneLayer(S4DLayer)
 
 
-# The core of the S4D layer is the same as the traditional SSM layer defined in the first part of the post. We define our SSM parameters $(\bm{A}, \bm{B}, \bm{C}, \bm{D})$ and then call the kernel code written above as a convolution during training.
+# The core of the S4D layer is the same as the traditional SSM layer defined in the first part of the post. We define our SSM parameters $(\bm{A}, \bm{B}, \bm{C})$ and then call the kernel code written above as a convolution during training.
 # Finally, during discrete decoding, we use the initial recurrence computed above.
 # Note that much of the above code is boilerplate for initialization and handling the recurrence case, and the core forward pass (kernel construction and convolution) really only requires < 10 LoC.
 
@@ -781,7 +782,13 @@ S4DLayer = cloneLayer(S4DLayer)
 # In writing this post, we hope that fleshing out the details of these models can lower the barrier to understanding S4 and inspire future ideas in this area.
 # There's much left to understand here, and we believe that perhaps even simpler and better models will be uncovered!
 
-# [**Final citations / links to resources**]
+# **Acknowledgements**
+#
+# Thanks to Jimmy Smith, Tri Dao, John Thickstun, Bryan Gass, and Eric Nguyen for proofreading and helpful fedback on this post.
 
-# [**Acknowledgements**]
-
+# **Resources**
+# - [S4](https://arxiv.org/abs/2111.00396) paper
+# - [DSS](https://arxiv.org/abs/2203.14343), [S4D](https://arxiv.org/abs/2206.11893) papers
+# - [HIPPO](https://arxiv.org/abs/2008.07669) and [HTTYH](https://arxiv.org/abs/2206.12037) papers on the theory of S4's long-range abilities
+# - Another [blog post](https://hazyresearch.stanford.edu/blog/2022-06-11-simplifying-s4) on explaining S4D, with a focus on discretization
+# - [Minimal PyTorch implementation](https://github.com/HazyResearch/state-spaces/blob/4bc304d756e8cc031f4cf98ed4dbe8170f88c2e0/src/models/sequence/ss/standalone/s4d_minimal.py) of S4D
