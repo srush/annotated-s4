@@ -10,10 +10,9 @@ from flax import linen as nn
 from flax.training import checkpoints, train_state
 from omegaconf import DictConfig, OmegaConf
 from tqdm import tqdm
-from typing import Optional
 from .data import Datasets
 from .dss import DSSLayer
-from .s4 import BatchStackedModel, S4Layer, SSMLayer
+from .s4 import BatchStackedModel, S4Layer, SSMLayer, sample_image_prefix
 from .s4d import S4DLayer
 
 
@@ -204,7 +203,9 @@ def validate(params, model, testloader, classification=False):
 
 class FeedForwardModel(nn.Module):
     d_model: int
+    N: int
     l_max: int
+    decode: bool = False
 
     def setup(self):
         self.dense = nn.Dense(self.d_model)
@@ -259,8 +260,9 @@ def eval_step(batch_inputs, batch_labels, params, model, classification=False):
 
 
 class LSTMRecurrentModel(nn.Module):
-    d_model: int
+    N: int
     l_max: int
+    d_model: int
 
     def setup(self):
         LSTM = nn.scan(
@@ -294,11 +296,11 @@ Models = {
 
 
 def example_train(
-    dataset : str,
+    dataset: str,
     layer: str,
-    seed : int,
-    model : DictConfig,
-    train : DictConfig,
+    seed: int,
+    model: DictConfig,
+    train: DictConfig,
 ):
     # Warnings and sanity checks
     if not train.checkpoint:
@@ -306,7 +308,7 @@ def example_train(
 
     # Set randomness...
     print("[*] Setting Randomness...")
-    torch.random.manual_seed(seed) # For dataloader order
+    torch.random.manual_seed(seed)  # For dataloader order
     key = jax.random.PRNGKey(seed)
     key, rng, train_rng = jax.random.split(key, num=3)
 
@@ -318,13 +320,9 @@ def example_train(
     trainloader, testloader, n_classes, l_max, d_input = create_dataset_fn(
         bsz=train.bsz
     )
-    # l_max = l_seq if classification else l_seq - 1  # Max length that model sees
-    in_shape = (train.bsz, l_max, d_input)  # Input shape
 
     # Get model class and arguments
     layer_cls = Models[layer]
-    # layer_args = {} if model.d_state is None else {"N": model.d_state}
-    # layer_args["l_max"] = l_max
     model.layer.l_max = l_max
 
     # Extract custom hyperparameters from model class
@@ -335,7 +333,6 @@ def example_train(
     model_cls = partial(
         BatchStackedModel,
         layer_cls=layer_cls,
-        # layer_args=freeze(layer_args),
         d_output=n_classes,
         classification=classification,
         **model,
@@ -372,20 +369,53 @@ def example_train(
         print(f"\n=>> Epoch {epoch + 1} Metrics ===")
         print(
             f"\tTrain Loss: {train_loss:.5f} -- Train Accuracy:"
-            f" {train_acc:.4f}\n\tTest Loss: {test_loss:.5f} -- Test Accuracy:"
-            f" {test_acc:.4f}"
+            f" {train_acc:.4f}\n\t Test Loss: {test_loss:.5f} --  Test"
+            f" Accuracy: {test_acc:.4f}"
         )
 
         # Save a checkpoint each epoch & handle best (test loss... not "copacetic" but ehh)
         if train.checkpoint:
             suf = f"-{train.suffix}" if train.suffix is not None else ""
-            run_id = f"checkpoints/{dataset}/{model}-d_model={model.d_model}-lr={train.lr}-bsz={train.bsz}{suf}"
+            run_id = f"checkpoints/{dataset}/{layer}-d_model={model.d_model}-lr={train.lr}-bsz={train.bsz}{suf}"
             ckpt_path = checkpoints.save_checkpoint(
                 run_id,
                 state,
                 epoch,
                 keep=train.epochs,
             )
+
+        if train.sample is not None:
+            if dataset == "mnist":  # Should work for QuickDraw too but untested
+                sample_fn = partial(
+                    sample_image_prefix, imshape=(28, 28)
+                )  # params=state["params"], length=784, bsz=64, prefix=train.sample)
+            else:
+                raise NotImplementedError(
+                    "Sampling currently only supported for MNIST"
+                )
+
+            # model_cls = partial(
+            #     BatchStackedModel,
+            #     layer_cls=layer_cls,
+            #     d_output=n_classes,
+            #     classification=classification,
+            #     **model,
+            # )
+            samples, examples = sample_fn(
+                # run_id,
+                params=state.params,
+                model=model_cls(decode=True, training=False),
+                rng=rng,
+                dataloader=testloader,
+                prefix=train.sample,
+                n_batches=1,
+                save=False,
+            )
+            if wandb is not None:
+                samples = [wandb.Image(sample) for sample in samples]
+                wandb.log({"samples": samples}, commit=False)
+                examples = [wandb.Image(example) for example in examples]
+                wandb.log({"examples": examples}, commit=False)
 
         if (classification and test_acc > best_acc) or (
             not classification and test_loss < best_loss
@@ -411,7 +441,8 @@ def example_train(
                     "train/accuracy": train_acc,
                     "test/loss": test_loss,
                     "test/accuracy": test_acc,
-                }
+                },
+                step=epoch,
             )
             wandb.run.summary["Best Test Loss"] = best_loss
             wandb.run.summary["Best Test Accuracy"] = best_acc
@@ -419,19 +450,19 @@ def example_train(
 
 
 @hydra.main(version_base=None, config_path="", config_name="config")
-def main(cfg : DictConfig) -> None:
+def main(cfg: DictConfig) -> None:
     print(OmegaConf.to_yaml(cfg))
-    OmegaConf.set_struct(cfg, False) # Allow writing keys
+    OmegaConf.set_struct(cfg, False)  # Allow writing keys
 
     # Track with wandb
     if wandb is not None:
         wandb_cfg = cfg.pop("wandb")
         wandb.init(
-            **wandb_cfg,
-            config=OmegaConf.to_container(cfg, resolve=True)
+            **wandb_cfg, config=OmegaConf.to_container(cfg, resolve=True)
         )
 
     example_train(**cfg)
+
 
 if __name__ == "__main__":
     main()
