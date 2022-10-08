@@ -19,10 +19,14 @@
 #
 # ---
 
-# *Blog Post by Albert Gu, Sidd Karamcheti, and Sasha Rush, meant as a complementary but standalone post to the original [Annotated S4](https://srush.github.io/annotated-s4).*
+# *This blog post is a complementary but standalone post to the original [Annotated S4](https://srush.github.io/annotated-s4), with contribution from Albert Gu.*
+#
+# Initial version: June 2022
+#
+# Latest revision: Oct 2022
 #
 #
-# The months following the release of the S4 paper by Gu et al. were characterized by a wave of excitement around the new
+# The months following the release of the S4 paper were characterized by a wave of excitement around the new
 # model, it's ability to handle extremely long sequences, and generally, what such a departure from Transformer-based
 # architectures could mean. The original authors came out with a
 # [follow-up paper applying S4 to audio generation](https://arxiv.org/abs/2202.09729), and weeks later, a [completely

@@ -11,7 +11,7 @@
 #### MNIST Sequence Modeling
 
 ```bash
-python -m s4.train dataset=mnist layer=s4 train.epochs=100 train.bsz=128 model.d_model=128 model.layer.d_state=64
+python -m s4.train dataset=mnist layer=s4 train.epochs=100 train.bsz=128 model.d_model=128 model.layer.N=64
 ```
 
 The following command uses a larger model (5M params) and logs generated samples to wandb every epoch. It achieves 0.36 test NLL (0.52 bits per dimension), a state-of-the-art on this task.
@@ -23,10 +23,10 @@ python -m s4.train dataset=mnist layer=s4 train.epochs=100 train.bsz=50 train.lr
 
 ```bash
 # Default arguments
-python -m s4.train --dataset quickdraw --model s4 --epochs 10 --bsz 128 --d_model 128 --ssm_n 64
+python -m s4.train dataset=quickdraw layer=s4 train.epochs=10 train.bsz=128 model.d_model=128 model.layer.N=64
 
 # "Run in a day" variant
-python -m s4.train --dataset quickdraw --model s4 --epochs 1 --bsz 512 --d_model 256 --ssm_n 64 --p_dropout 0.05
+python -m s4.train dataset=quickdraw layer=s4 train.epochs=1 train.bsz=512 model.d_model=256 model.layer.N=64 model.dropout=0.05
 ```
 
 #### MNIST Classification
@@ -44,10 +44,13 @@ python -m s4.train dataset=cifar-classification layer={s4,dss,s4d} train.epochs=
 ```
 
 S4 gets "best" 91.23% accuracy after 100 epochs @ 2m16s/epoch on an A100
+
 DSS gets "best" 89.31% accuracy after 100 epochs @ 1m41s/epoch on an A100
+
 S4D gets "best" 89.76% accuracy after 100 epochs @ 1m32s/epoch on an A100
 
 The alternative S4D-Lin initialization performs slightly better with 90.98% accuracy.
+
 ```
 python -m s4.train dataset=cifar-classification layer=s4d train.epochs=100 train.bsz=50 model.n_layers=6 model.d_model=512 model.dropout=0.25 train.lr=5e-3 train.weight_decay=0.01 train.lr_schedule=true seed=1 +model.layer.scaling=linear
 ```
