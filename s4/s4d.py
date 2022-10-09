@@ -18,11 +18,15 @@
 # <img src="images/s4d.png" width="100%"/>
 #
 # ---
+
+# *This blog post is a complementary but standalone post to the original [Annotated S4](https://srush.github.io/annotated-s4), with contribution from Albert Gu.*
 #
-# *Note: This page is meant as a standalone complement to Section 2 [TODO Link] of the original
-# blog post.*
+# Initial version: June 2022
 #
-# The months following the release of the S4 paper by Gu et al. were characterized by a wave of excitement around the new
+# Latest revision: Oct 2022
+#
+#
+# The months following the release of the S4 paper were characterized by a wave of excitement around the new
 # model, it's ability to handle extremely long sequences, and generally, what such a departure from Transformer-based
 # architectures could mean. The original authors came out with a
 # [follow-up paper applying S4 to audio generation](https://arxiv.org/abs/2202.09729), and weeks later, a [completely
@@ -75,6 +79,8 @@ if __name__ == '__main__':
 #     - [A Brief Refresher on S4 and HiPPO]
 #     - [The Diagonal HiPPO Matrix]
 # * [Part IIIb. An Intuitive Understanding of SSMs]
+# * [More Diagonal SSMs: Other Follow-up Works]
+# * [Conclusion]
 # </nav>
 # <!--
 #     - [Case: 1-dimensional State]
@@ -116,9 +122,6 @@ if __name__ == '__main__':
 # > is $N$-dimensional. The first equation defines the change in $x(t)$ over time.
 
 # ### Discretization
-# <!--
-# [AG: In the DSS post, Sidd's elaboration on discretization is great and should be in Part 1 of the Annotated S4, as they are general facts about SSMs independent of S4/DSS. I also recommend looking at my [blog post on discretization](https://hazyresearch.stanford.edu/blog/2022-01-14-s4-3)]
-# -->
 
 # Recall also that in discrete time, the SSM is viewed as a sequence-to-sequence map $(u_k) \mapsto (y_k)$ on samples of the original continuous signals.
 # <!--
@@ -257,10 +260,10 @@ if __name__ == '__main__':
 
 # Furthermore, it's well known that [almost all square matrices are diagonalizable](https://chiasme.wordpress.com/2013/09/03/almost-all-matrices-are-diagonalizable/), so that complex diagonal SSMs are essentially fully expressive (with a caveat that we'll talk about in Part III).
 
-# **Remark.** Note that Lemma 1 is about equivalence of *continuous* SSMs. The equivalence of their discretizations follows immediately because the *discrete* SSM (viewed as the map $u_k \mapsto y_k$) depends only on the step size $\Delta$ and the continuous SSM (as the map $u(t) \mapsto y(t)$). A longer version of this expressivity result is presented as Proposition 1 of the DSS paper, which focuses on the discrete case.]
+# <!--
+# **Remark.** Note that Lemma 1 is about equivalence of *continuous* SSMs. The equivalence of their discretizations follows immediately because the *discrete* SSM (viewed as the map $u_k \mapsto y_k$) depends only on the step size $\Delta$ and the continuous SSM (as the map $u(t) \mapsto y(t)$). A longer version of this expressivity result is presented as Proposition 1 of the DSS paper, which focuses on the discrete case.
+# -->
 
-#
-# [**AG:** Not sure if the above remark is useful or just distracting]
 
 # ### The Diagonal SSM Kernel: Vandermonde Matrix Multiplication
 
@@ -330,7 +333,7 @@ def discretize(A, B, step, mode="zoh"):
         return np.exp(step*A), (np.exp(step*A)-1)/A * B
 
 # Here we show both the Bilinear method used in S4 and HiPPO, and the ZOH method used in other SSMs such as DSS and [LMU](https://papers.nips.cc/paper/2019/hash/952285b9b7e7a1be5aa7849f32ffff05-Abstract.html).
-# (As discussed in Part 1 of the Annotated S4 [AG: if we put more about discretization there], these are closely related and have no real empirical difference.)
+# These are closely related, and the paper ablates that they are interchangeable and have no real empirical difference.
 
 # As described in the original paper, the kernel in the diagonal case is just a single **Vandermonde matrix-vector product**. This is almost trivial to implement and can be applied to *any discretization* of a diagonal SSM.
 
@@ -771,9 +774,20 @@ S4DLayer = cloneLayer(S4DLayer)
 # We see that all of them perform very well in general, and the very simple S4D-Lin initialization is even best on several of the 5 main tasks.
 # However, the original S4 initialization and its diagonal approximation are so far the only ones that can solve Path-X.
 
-# **Open challenge**: are there alternative SSMs not based on HiPPO that can get to 90% on Path-X?
+# **Open challenge**: are there alternative pure SSMs not based on HiPPO that can get to 90% on Path-X?
 
-# The S4D paper performed a careful empirical studying ablating the parameterization and initializations of SSM variants, and found that controlling for all other hyperparameters, S4's full DPLR representation is often slightly better than S4D's diagonal variant, especially for harder tasks. However, diagonal SSMs can certainly provide a lot more bang-for-your-buck in terms of complexity to payoff, and we highly recommend starting here for understanding SSMs and exploring them for applications!
+# The S4D paper performed a careful empirical studying ablating the parameterization and initializations of SSM variants, and found that controlling for all other hyperparameters, S4's full DPLR representation is sometimes slightly better than S4D's diagonal variant, especially for harder tasks. However, diagonal SSMs can certainly provide a lot more bang-for-your-buck in terms of complexity to payoff, and we highly recommend starting here for understanding SSMs and exploring them for applications!
+
+# ## More Diagonal SSMs: Other Follow-up Works
+
+# Since DSS and S4D, a number of additional models have been introduced that continue to refine S4 and provide different variations on diagonal SSMs.
+# As of the time of this update (October 2022), these models include:
+
+# **[GSS (Gated State Space)](https://arxiv.org/abs/2206.13947)**: Uses a similar model to DSS, but finds a different (random) initialization, and adds a gate (multiplicative residual branch) to the neural network architecture. These changes are specialized to language modeling (LM).
+
+# **[S5 (Simplified S4)](https://arxiv.org/abs/2208.04933)**: Uses the same diagonal-HiPPO initialization as DSS and S4D, but changes the parameterization of the algorithm to a *MIMO (multi-input multi-output)* system instead of S4's *SISO (single-input single-output)* model, and additionally changes the computation from the *convolution* to a *scan* (similar to a prefix sum). These changes allow materializing the SSM state and can be advantageous when explicit recurrence is desired.
+
+# [**Mega (Moving Average Equipped Gated Attention)**](https://arxiv.org/abs/2209.10655): Combines an SSM variant together with an attention variant into a neural network block. The SSM variant is described as an exponential moving average (EMA) layer, which is equivalent to a (real-valued) version of S4D that uses the Vandermonde kernel as a black box.
 
 # ## Conclusion
 
@@ -784,11 +798,12 @@ S4DLayer = cloneLayer(S4DLayer)
 
 # **Acknowledgements**
 #
-# Thanks to Jimmy Smith, Tri Dao, John Thickstun, Bryan Gass, and Eric Nguyen for proofreading and helpful fedback on this post.
+# Thanks to Jimmy Smith, Tri Dao, John Thickstun, Bryan Gass, and Eric Nguyen for proofreading and helpful feedback on this post.
 
 # **Resources**
+#
 # - [S4](https://arxiv.org/abs/2111.00396) paper
 # - [DSS](https://arxiv.org/abs/2203.14343), [S4D](https://arxiv.org/abs/2206.11893) papers
 # - [HIPPO](https://arxiv.org/abs/2008.07669) and [HTTYH](https://arxiv.org/abs/2206.12037) papers on the theory of S4's long-range abilities
-# - Another [blog post](https://hazyresearch.stanford.edu/blog/2022-06-11-simplifying-s4) on explaining S4D, with a focus on discretization
+# - Another [blog post](https://hazyresearch.stanford.edu/blog/2022-06-11-simplifying-s4) on explaining diagonal SSMs, with a focus on discretization
 # - [Minimal PyTorch implementation](https://github.com/HazyResearch/state-spaces/blob/4bc304d756e8cc031f4cf98ed4dbe8170f88c2e0/src/models/sequence/ss/standalone/s4d_minimal.py) of S4D
